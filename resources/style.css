@@ -1,0 +1,114 @@
+.main-window {
+	background:
+		radial-gradient(circle at top left, rgba(219, 178, 55, 0.16), transparent 28%),
+		radial-gradient(circle at bottom right, rgba(39, 100, 188, 0.18), transparent 34%),
+		linear-gradient(135deg, #11161b 0%, #18212a 42%, #10161d 100%);
+	color: #edf2f7;
+}
+
+.info-pane {
+	background: transparent;
+}
+
+.date-label {
+	color: rgba(237, 242, 247, 0.78);
+	font-size: 18px;
+	letter-spacing: 0.08em;
+}
+
+.time-label {
+	color: #f6efe0;
+	font-size: 72px;
+	font-weight: 700;
+	letter-spacing: -0.06em;
+}
+
+.eyebrow-label {
+	color: #d6af45;
+	font-size: 13px;
+	font-weight: 700;
+	letter-spacing: 0.18em;
+	text-transform: uppercase;
+}
+
+.headline-label {
+	color: #f7fafc;
+	font-size: 34px;
+	font-weight: 700;
+	line-height: 1.1;
+}
+
+.hostname-label {
+	color: rgba(237, 242, 247, 0.72);
+	font-size: 17px;
+}
+
+.login-card {
+	background: rgba(15, 21, 28, 0.84);
+	border: 1px solid rgba(255, 255, 255, 0.08);
+	border-radius: 22px;
+	box-shadow: 0 18px 48px rgba(0, 0, 0, 0.32);
+}
+
+.card-title {
+	color: #f8fafc;
+	font-size: 28px;
+	font-weight: 700;
+}
+
+.avatar-label {
+	background: linear-gradient(180deg, #d6af45 0%, #bb952f 100%);
+	border-radius: 999px;
+	color: #16120a;
+	font-size: 28px;
+	font-weight: 800;
+	min-width: 58px;
+	min-height: 58px;
+	padding: 8px;
+}
+
+.identity-label {
+	color: rgba(237, 242, 247, 0.9);
+	font-size: 17px;
+	font-weight: 600;
+}
+
+.session-label,
+.status-label {
+	color: rgba(237, 242, 247, 0.72);
+	font-size: 15px;
+}
+
+.greeter-entry,
+.session-picker {
+	background: rgba(255, 255, 255, 0.05);
+	border: 1px solid rgba(255, 255, 255, 0.08);
+	border-radius: 12px;
+	color: #f8fafc;
+	min-height: 46px;
+	padding: 0 12px;
+}
+
+.greeter-entry:focus,
+.session-picker:focus {
+	border-color: rgba(214, 175, 69, 0.88);
+	box-shadow: 0 0 0 3px rgba(214, 175, 69, 0.18);
+}
+
+.primary-button,
+.secondary-button {
+	min-height: 44px;
+	border-radius: 12px;
+	font-weight: 700;
+}
+
+.primary-button {
+	background: linear-gradient(180deg, #d6af45 0%, #bb952f 100%);
+	color: #16120a;
+}
+
+.secondary-button {
+	background: rgba(255, 255, 255, 0.06);
+	color: #f1f5f9;
+	border: 1px solid rgba(255, 255, 255, 0.08);
+}

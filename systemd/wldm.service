@@ -1,0 +1,16 @@
+[Unit]
+Description=Wayland Login Display Manager
+Documentation=file:/etc/wldm.ini
+After=systemd-user-sessions.service systemd-logind.service
+Wants=systemd-logind.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/wldm
+Restart=on-failure
+RestartSec=1
+KillMode=control-group
+
+[Install]
+Alias=display-manager.service
+WantedBy=graphical.target

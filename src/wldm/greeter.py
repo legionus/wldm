@@ -1,0 +1,490 @@
+#!/usr/bin/env python
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026  Alexey Gladkov <legion@kernel.org>
+
+import argparse
+import configparser
+import json
+import os
+import os.path
+import socket
+import sys
+import threading
+import time
+import traceback
+
+from typing import Optional, Dict, List, Any
+
+import gi  # type: ignore[import-untyped]
+gi.require_version("Gtk", "4.0")
+
+# pylint: disable-next=wrong-import-position
+from gi.repository import Gtk, Gdk, Gio, GLib  # type: ignore[import-untyped]
+
+# pylint: disable-next=wrong-import-position
+import wldm
+# pylint: disable-next=wrong-import-position
+import wldm.protocol
+
+logger = wldm.logger
+resource_path: str
+lock = threading.Lock()
+
+
+def account_service_profile(username: str) -> Dict[str, str]:
+    profile = {
+        "display_name": username,
+        "avatar_path": "",
+    }
+
+    if not username:
+        return profile
+
+    path = os.path.join("/var/lib/AccountsService/users", username)
+    if not os.path.isfile(path):
+        return profile
+
+    data = configparser.ConfigParser()
+    try:
+        data.read(path)
+    except OSError:
+        return profile
+
+    profile["display_name"] = data.get("User", "RealName", fallback=username) or username
+    avatar_path = data.get("User", "Icon", fallback="")
+    if avatar_path and os.path.isfile(avatar_path):
+        profile["avatar_path"] = avatar_path
+
+    return profile
+
+
+def desktop_sessions() -> List[List[str]]:
+    res: List[List[str]] = []
+
+    datadir = "/usr/share/wayland-sessions"
+
+    try:
+        with os.scandir(datadir) as it:
+            for entry in it:
+                if entry.is_file() and entry.name.endswith(".desktop"):
+                    desktop = configparser.ConfigParser()
+                    desktop.read(os.path.join(datadir, entry.name))
+
+                    entry_type = desktop.get('Desktop Entry', 'type',
+                                             fallback='').lower()
+                    entry_name = desktop.get('Desktop Entry', 'name', fallback='')
+                    entry_exec = desktop.get('Desktop Entry', 'exec', fallback='')
+                    entry_comment = desktop.get('Desktop Entry', 'comment', fallback='')
+
+                    if entry_type != 'application' or not entry_name or not entry_exec:
+                        continue
+
+                    res.append([entry_name, entry_exec, entry_comment])
+    except OSError as e:
+        logger.warning("unable to read wayland sessions from %s: %s", datadir, e)
+
+    return sorted(res)
+
+
+class SocketClient:
+    def __init__(self, path: str) -> None:
+        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.sock.connect(path)
+        self.reader = self.sock.makefile("r", encoding="utf-8")
+
+    def writeline(self, data: str) -> None:
+        self.sock.sendall((data + "\n").encode())
+
+    def readline(self) -> str:
+        return self.reader.readline()
+
+    def close(self) -> None:
+        try:
+            self.reader.close()
+        except Exception:
+            pass
+        self.sock.close()
+
+
+def new_ipc_client() -> Any:
+    socket_path = os.environ.get("WLDM_SOCKET", "")
+    if not socket_path:
+        raise RuntimeError("environ variable `WLDM_SOCKET' not specified")
+    return SocketClient(socket_path)
+
+
+def setup_greeter_logging() -> None:
+    def log_uncaught_exception(exc_type: type[BaseException],
+                               exc_value: BaseException,
+                               exc_traceback: Any) -> None:
+        logger.critical(
+            "uncaught greeter exception:\n%s",
+            "".join(traceback.format_exception(exc_type, exc_value, exc_traceback)).rstrip(),
+        )
+
+    sys.excepthook = log_uncaught_exception
+
+
+def default_resource_path() -> str:
+    if "WLDM_RESOURCES_PATH" in os.environ:
+        return os.path.abspath(os.environ["WLDM_RESOURCES_PATH"])
+    return os.path.join(sys.prefix, "share", "wldm", "resources")
+
+
+class LoginApp:
+    def __init__(self, client: Optional[Any]=None) -> None:
+        self.app = Gtk.Application(application_id="com.example.LoginApp",
+                                   flags=Gio.ApplicationFlags.FLAGS_NONE)
+
+        self.app.connect('activate', self.on_activate)
+
+        self.username_entry: Optional[Any] = None
+        self.password_entry: Optional[Any] = None
+        self.status_label:   Optional[Any] = None
+        self.sessions_entry: Optional[Any] = None
+        self.login_button:   Optional[Any] = None
+        self.quit_button:    Optional[Any] = None
+        self.reboot_button:  Optional[Any] = None
+        self.hostname_label: Optional[Any] = None
+        self.date_label:     Optional[Any] = None
+        self.time_label:     Optional[Any] = None
+        self.session_label:  Optional[Any] = None
+        self.identity_label: Optional[Any] = None
+        self.avatar_label:   Optional[Any] = None
+
+        self.sessions = desktop_sessions()
+        self.client = client if client is not None else new_ipc_client()
+
+        self.quit = False
+        self.auth_in_progress = False
+
+    def set_status(self, message: str) -> None:
+        if self.status_label is not None:
+            self.status_label.set_text(message)
+
+    def set_auth_state(self, busy: bool) -> None:
+        self.auth_in_progress = busy
+
+        widgets = [
+            getattr(self, "username_entry", None),
+            getattr(self, "password_entry", None),
+            getattr(self, "sessions_entry", None),
+            getattr(self, "login_button", None),
+        ]
+        for widget in widgets:
+            if widget is not None and hasattr(widget, "set_sensitive"):
+                widget.set_sensitive(not busy)
+
+        if busy:
+            self.set_status("Authenticating...")
+
+    def update_session_summary(self) -> None:
+        if self.session_label is None:
+            return
+
+        item = "Default shell"
+        command = self.get_session_command()
+        description = ""
+        if command:
+            item = command
+            entry = self.get_selected_session()
+            if entry and len(entry) > 2:
+                description = entry[2]
+
+        if description:
+            self.session_label.set_text(f"Session: {description}\nCommand: {item}")
+        else:
+            self.session_label.set_text(f"Session command: {item}")
+
+    def update_identity_preview(self) -> None:
+        username = ""
+        if self.username_entry is not None:
+            username = self.username_entry.get_text().strip()
+
+        profile = account_service_profile(username)
+        display_name = profile["display_name"] if username else "Type a username to preview the account"
+        avatar_text = username[:1].upper() if username else "?"
+
+        if self.identity_label is not None:
+            self.identity_label.set_text(display_name)
+        if self.avatar_label is not None:
+            self.avatar_label.set_text(avatar_text)
+
+    def update_clock(self) -> None:
+        if self.date_label is not None:
+            self.date_label.set_text(time.strftime("%A, %d %B"))
+        if self.time_label is not None:
+            self.time_label.set_text(time.strftime("%H:%M"))
+
+    def on_clock_tick(self) -> bool:
+        self.update_clock()
+        return not self.quit
+
+    def handle_event(self, event: Dict[str, Any]) -> None:
+        if not wldm.protocol.is_event(event):
+            return
+
+        payload = event["payload"]
+        event_name = event["event"]
+
+        logger.debug("protocol event: %s", event)
+
+        if event_name == wldm.protocol.EVENT_SESSION_STARTING:
+            self.set_auth_state(True)
+            self.set_status(f"Starting session for {payload.get('username', 'user')}...")
+            return
+
+        if event_name == wldm.protocol.EVENT_SESSION_FINISHED:
+            self.set_auth_state(False)
+            if self.password_entry is not None:
+                self.password_entry.set_text("")
+            self.set_status("Session finished.")
+            return
+
+    def run(self) -> None:
+        self.app.run()
+
+    def on_activate(self, app: Gtk.Application) -> None:
+        builder = Gtk.Builder.new_from_file(
+                os.path.join(resource_path, "greeter.ui"))
+
+        def get_object(name: str) -> Optional[Any]:
+            try:
+                return builder.get_object(name)
+            except Exception:
+                return None
+
+        window = get_object("main_window")
+        if window is None:
+            raise RuntimeError("greeter.ui is missing main_window")
+        window.set_application(app)
+
+        self.username_entry = get_object("username_entry")
+        self.password_entry = get_object("password_entry")
+        self.sessions_entry = get_object("sessions_entry")
+        self.status_label   = get_object("status_label")
+        self.login_button   = get_object("login_button")
+        self.quit_button    = get_object("quit_button")
+        self.reboot_button  = get_object("reboot_button")
+        self.hostname_label = get_object("hostname_label")
+        self.date_label     = get_object("date_label")
+        self.time_label     = get_object("time_label")
+        self.session_label  = get_object("session_label")
+        self.identity_label = get_object("identity_label")
+        self.avatar_label   = get_object("avatar_label")
+
+        if self.hostname_label is not None:
+            self.hostname_label.set_text(socket.gethostname())
+        self.update_clock()
+        GLib.timeout_add_seconds(1, self.on_clock_tick)
+
+        if self.sessions_entry:
+            name_store = Gtk.StringList()
+
+            for entry in self.sessions:
+                name_store.append(entry[0])
+
+            self.sessions_entry.set_model(name_store)
+
+            if len(self.sessions) > 0:
+                self.sessions_entry.set_selected(0)
+            self.sessions_entry.connect("notify::selected-item", self.on_session_changed)
+
+        if self.login_button:
+            self.login_button.connect("clicked", self.on_login_clicked)
+
+        if self.quit_button:
+            self.quit_button.connect("clicked", self.on_poweroff_clicked)
+        if self.reboot_button:
+            self.reboot_button.connect("clicked", self.on_reboot_clicked)
+
+        if self.password_entry is not None:
+            self.password_entry.connect("activate", self.on_login_clicked)
+        if self.sessions_entry is not None:
+            self.sessions_entry.connect("activate", self.on_login_clicked)
+        if self.username_entry is not None:
+            self.username_entry.connect("changed", self.on_username_changed)
+
+        self.update_session_summary()
+        self.update_identity_preview()
+        self.set_status("Ready.")
+
+        if self.username_entry is not None and hasattr(self.username_entry, "grab_focus"):
+            self.username_entry.grab_focus()
+
+        window.present()
+
+    def get_session_command(self) -> str:
+        command = ""
+
+        if self.sessions_entry is None:
+            return command
+
+        item = self.sessions_entry.get_selected_item()
+        if item is None:
+            return command
+        name = item.get_string()
+
+        for entry in self.sessions:
+            if entry[0] == name:
+                command = entry[1]
+                break
+
+        return command
+
+    def get_selected_session(self) -> Optional[List[str]]:
+        if self.sessions_entry is None:
+            return None
+
+        item = self.sessions_entry.get_selected_item()
+        if item is None:
+            return None
+        name = item.get_string()
+
+        for entry in self.sessions:
+            if entry[0] == name:
+                return entry
+
+        return None
+
+    # pylint: disable-next=unused-argument
+    def on_session_changed(self, *args: Any) -> None:
+        self.update_session_summary()
+
+    # pylint: disable-next=unused-argument
+    def on_username_changed(self, *args: Any) -> None:
+        self.update_identity_preview()
+
+    def send_recv_answer(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        answer = {}
+        connection_lost = False
+
+        try:
+            lock.acquire()
+            self.client.writeline(wldm.protocol.encode_message(data))
+
+            while True:
+                line = self.client.readline()
+                if len(line) == 0:
+                    connection_lost = True
+                    break
+
+                message = wldm.protocol.decode_message(line)
+
+                if wldm.protocol.is_event(message):
+                    self.handle_event(message)
+                    continue
+
+                if wldm.protocol.is_response(message, data):
+                    answer = message
+                    break
+
+        except (json.decoder.JSONDecodeError, ValueError):
+            logger.critical("bad json: %s", data)
+
+        except Exception as e:
+            logger.critical("unexpected error: %r", e)
+            connection_lost = True
+
+        finally:
+            lock.release()
+
+        if connection_lost:
+            self.set_status("Connection to daemon lost.")
+            self.on_quit()
+
+        return answer
+
+    # pylint: disable-next=unused-argument
+    def on_login_clicked(self, *args: Any) -> None:
+        if self.username_entry is None or self.password_entry is None:
+            return
+        if self.auth_in_progress:
+            return
+
+        data = {
+                "username": self.username_entry.get_text(),
+                "password": self.password_entry.get_text(),
+                "command":  self.get_session_command(),
+                }
+
+        logger.debug("client request: username=[%s] password=[%s] command=[%s]",
+                     data["username"], '*' * len(data["password"]),
+                     data["command"])
+
+        if len(data["username"]) == 0:
+            self.set_status("Enter a username.")
+            return
+
+        if len(data["password"]) == 0:
+            self.set_status("Enter a password.")
+            if hasattr(self.password_entry, "grab_focus"):
+                self.password_entry.grab_focus()
+            return
+
+        self.set_auth_state(True)
+        answer = self.send_recv_answer(wldm.protocol.new_request(wldm.protocol.ACTION_AUTH, data))
+        logger.debug("client answer: %s", answer)
+
+        if answer.get("ok") and answer.get("payload", {}).get("verified"):
+            status_message = "Authentication accepted. Waiting for session..."
+        else:
+            self.set_auth_state(False)
+            status_message = "Authentication failed."
+            self.password_entry.set_text("")
+            self.password_entry.grab_focus()
+
+        self.set_status(status_message)
+
+    # pylint: disable-next=unused-argument
+    def on_quit(self, *args: Any) -> None:
+        self.quit = True
+        self.client.close()
+        self.app.quit()
+
+    def request_system_action(self, action: str, status_message: str) -> None:
+        self.set_status(status_message)
+        answer = self.send_recv_answer(wldm.protocol.new_request(action, {}))
+        logger.debug("client %s answer: %s", action, answer)
+
+        if not answer.get("ok") or not answer.get("payload", {}).get("accepted"):
+            self.set_status(f"Unable to {action}.")
+
+    # pylint: disable-next=unused-argument
+    def on_poweroff_clicked(self, *args: Any) -> None:
+        self.request_system_action(wldm.protocol.ACTION_POWEROFF, "Powering off...")
+
+    # pylint: disable-next=unused-argument
+    def on_reboot_clicked(self, *args: Any) -> None:
+        self.request_system_action(wldm.protocol.ACTION_REBOOT, "Rebooting...")
+
+
+def cmd_main(_parser: argparse.Namespace) -> int:
+    global resource_path
+
+    setup_greeter_logging()
+    resource_path = default_resource_path()
+
+    if not os.path.isdir(resource_path):
+        logger.critical("resource directory does not exist: %s", resource_path)
+        return wldm.EX_FAILURE
+
+    if "WLDM_SOCKET" not in os.environ:
+        logger.critical("environ variable `WLDM_SOCKET' not specified")
+        return wldm.EX_FAILURE
+
+    logger.debug("Resource path: %s", resource_path)
+
+    css_file = os.path.join(resource_path, "style.css")
+
+    if os.path.isfile(css_file):
+        css_provider = Gtk.CssProvider()
+        css_provider.load_from_path(css_file)
+        Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(),
+                                                  css_provider,
+                                                  Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+
+    app = LoginApp()
+    app.run()
+
+    return wldm.EX_SUCCESS

@@ -1,0 +1,215 @@
+#!/usr/bin/env python
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026  Alexey Gladkov <legion@kernel.org>
+
+import argparse
+import grp
+import os
+import os.path
+import pwd
+
+from typing import Dict, List, Optional, Any
+
+import wldm
+import wldm.pam
+import wldm.tty
+
+logger = wldm.logger
+
+
+def base_greeter_environ() -> Dict[str, str]:
+    env: Dict[str, str] = {}
+
+    for name, value in os.environ.items():
+        if name in ["PATH", "LANG", "LANGUAGE"] or name.startswith("LC_") or name.startswith("WLDM_"):
+            env[name] = value
+
+    return env
+
+
+def new_greeter_environ(pamh: Optional[Any],
+                        pw: pwd.struct_passwd) -> Dict[str, str]:
+    env = base_greeter_environ()
+
+    if pamh is not None:
+        for name, value in wldm.pam.getenvlist(pamh).items():
+            logger.debug("[+] PAM env %s = %s", name, value)
+            env[name] = value
+
+    env["HOME"] = pw.pw_dir
+    env["USER"] = pw.pw_name
+    env["LOGNAME"] = pw.pw_name
+    env["TERM"] = "linux"
+    env.setdefault("XDG_RUNTIME_DIR", f"/run/user/{pw.pw_uid}")
+
+    return env
+
+
+def greeter_stderr_log_path() -> str:
+    return os.environ.get("WLDM_GREETER_STDERR_LOG", "/tmp/wldm/greeter.log")
+
+
+def greeter_seat() -> str:
+    return os.environ.get("WLDM_SEAT", "seat0")
+
+
+def redirect_greeter_stderr(log_path: Optional[str] = None) -> None:
+    if log_path is None:
+        log_path = greeter_stderr_log_path()
+    os.makedirs(os.path.dirname(log_path), mode=0o755, exist_ok=True)
+    logfd = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    os.dup2(logfd, 2)
+    if logfd > 2:
+        os.close(logfd)
+
+
+def log_greeter_diag(message: str, *args: Any) -> None:
+    text = message % args if args else message
+    print(f"[wldm] {text}", file=os.fdopen(os.dup(2), "w", encoding="utf-8", buffering=1))
+
+
+def log_pam_environment(pamh: Optional[Any]) -> None:
+    if pamh is None:
+        log_greeter_diag("PAM handle is not available")
+        return
+
+    pam_env = wldm.pam.getenvlist(pamh)
+    if not pam_env:
+        log_greeter_diag("PAM env is empty")
+        return
+
+    for name in sorted(pam_env):
+        log_greeter_diag("PAM env %s=%s", name, pam_env[name])
+
+
+def log_exec_environment(env: Dict[str, str], uid: int, gid: int) -> None:
+    log_greeter_diag("exec uid=%d euid=%d gid=%d egid=%d", os.getuid(), os.geteuid(), os.getgid(), os.getegid())
+    log_greeter_diag("target uid=%d gid=%d", uid, gid)
+    for name in ["XDG_SESSION_ID", "XDG_RUNTIME_DIR", "XDG_SEAT", "XDG_VTNR", "XDG_SESSION_TYPE", "XDG_SESSION_CLASS"]:
+        if name in env:
+            log_greeter_diag("exec env %s=%s", name, env[name])
+        else:
+            log_greeter_diag("exec env %s is unset", name)
+
+
+def exec_greeter_program(username: str,
+                         uid: int,
+                         gid: int,
+                         workdir: str,
+                         prog: str,
+                         prog_args: List[str],
+                         env: Dict[str, str]) -> None:
+    redirect_greeter_stderr()
+    log_exec_environment(env, uid, gid)
+
+    os.initgroups(username, gid)
+    os.setgid(gid)
+    os.setuid(uid)
+    os.chdir(workdir)
+
+    os.closerange(3, os.sysconf("SC_OPEN_MAX"))
+    os.execve(prog, prog_args, env)
+
+
+def prepare_greeter_terminal(ttydev: wldm.tty.TTYdevice) -> None:
+    ttydev.switch()
+    os.setsid()
+
+    if not wldm.tty.make_control_tty(ttydev.fd):
+        raise RuntimeError(f"unable to make {ttydev.filename} the controlling tty")
+
+
+def finish_greeter_session(pamh: Optional[Any]) -> None:
+    if pamh is None:
+        return
+    try:
+        logger.debug("[+] Closing greeter PAM session...")
+        wldm.pam.close_pam_session(pamh)
+        logger.debug("[+] Greeter PAM session closed")
+    except Exception as e:
+        logger.critical("[!] Error closing greeter PAM session: %s", e)
+    finally:
+        wldm.pam.end_pam(pamh)
+
+
+def run_greeter_session(pw: pwd.struct_passwd,
+                        gid: int,
+                        tty_number: int,
+                        pam_service: str,
+                        prog: str,
+                        prog_args: List[str]) -> int:
+    redirect_greeter_stderr()
+
+    console = wldm.tty.open_console()
+    if console is None:
+        logger.critical("[!] Unable to open console")
+        return wldm.EX_FAILURE
+
+    pamh: Optional[Any] = None
+
+    try:
+        ttydev = wldm.tty.TTYdevice(console, pw.pw_uid, number=tty_number)
+        prepare_greeter_terminal(ttydev)
+
+        pamh = wldm.pam.start_pam(pam_service, pw.pw_name)
+        wldm.pam.set_pam_item(pamh, wldm.pam.PAM_TTY, ttydev.filename)
+        wldm.pam.putenv(pamh, "XDG_SESSION_TYPE", "wayland")
+        wldm.pam.putenv(pamh, "XDG_SESSION_CLASS", "greeter")
+        wldm.pam.putenv(pamh, "XDG_SEAT", greeter_seat())
+        wldm.pam.putenv(pamh, "XDG_VTNR", str(ttydev.number))
+
+        logger.debug("[+] Greeter PAM session starting for %s (service=%s)",
+                     pw.pw_name, pam_service)
+
+        wldm.pam.open_pam_session_only(pamh)
+        log_greeter_diag("opened PAM session for user=%s service=%s tty=%s",
+                         pw.pw_name, pam_service, ttydev.filename)
+        log_pam_environment(pamh)
+        exec_greeter_program(
+            pw.pw_name, pw.pw_uid, gid, pw.pw_dir,
+            prog, prog_args,
+            new_greeter_environ(pamh, pw),
+        )
+        return wldm.EX_SUCCESS
+    except Exception as e:
+        logger.critical("Failed to exec `%s %s': %r", prog, prog_args, e)
+        return wldm.EX_FAILURE
+    finally:
+        finish_greeter_session(pamh)
+        os.close(console)
+
+
+def cmd_main(parser: argparse.Namespace) -> int:
+    try:
+        pw = pwd.getpwnam(parser.username)
+    except KeyError:
+        logger.critical("User '%s' not found.", parser.username)
+        return wldm.EX_FAILURE
+
+    try:
+        gid = grp.getgrnam(parser.group).gr_gid
+    except KeyError:
+        logger.critical("Group '%s' not found.", parser.group)
+        return wldm.EX_FAILURE
+
+    prog = parser.prog
+    args = parser.args
+
+    if not os.access(prog, os.X_OK):
+        for path in os.get_exec_path():
+            prog_exec = os.path.join(path, prog)
+            if os.access(prog_exec, os.X_OK):
+                prog = prog_exec
+                break
+        if not os.access(prog, os.X_OK):
+            logger.critical("[!] Could not find the executable file: %s", prog)
+            return wldm.EX_FAILURE
+
+    return run_greeter_session(
+        pw,
+        gid,
+        parser.tty,
+        parser.pam_service,
+        prog,
+        [prog] + args,
+    )
