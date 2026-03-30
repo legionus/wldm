@@ -68,6 +68,7 @@ class RequestOutcome:
     event: Optional[Dict[str, Any]] = None
     session_username: str = ""
     session_command: str = ""
+    session_desktop_names: list[str] | None = None
     control_action: str = ""
 
 
@@ -153,10 +154,15 @@ def process_request(req: Dict[str, Any]) -> RequestOutcome:
         if response["verified"]:
             outcome.event = wldm.protocol.new_event(
                 wldm.protocol.EVENT_SESSION_STARTING,
-                {"username": payload["username"], "command": payload["command"]},
+                {
+                    "username": payload["username"],
+                    "command": payload["command"],
+                    "desktop_names": payload.get("desktop_names", []),
+                },
             )
             outcome.session_username = payload["username"]
             outcome.session_command = payload["command"]
+            outcome.session_desktop_names = list(payload.get("desktop_names", []))
         return outcome
 
     if req["action"] in [wldm.protocol.ACTION_POWEROFF, wldm.protocol.ACTION_REBOOT]:
@@ -283,7 +289,11 @@ async def handle_request_async(state: DaemonState,
             "--",
             outcome.session_username,
             *shlex.split(outcome.session_command),
-            env=dict(os.environ, WLDM_SEAT=state.seat),
+            env=dict(
+                os.environ,
+                WLDM_SEAT=state.seat,
+                WLDM_SESSION_DESKTOP_NAMES=":".join(outcome.session_desktop_names or []),
+            ),
         )
         state.active_sessions[proc.pid] = proc
         logger.info("start user session (pid=%d)", proc.pid)

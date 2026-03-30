@@ -28,6 +28,19 @@ def test_new_user_environ_merges_pam_and_user_fields(monkeypatch):
     assert env["LANG"] == "C.UTF-8"
 
 
+def test_new_user_environ_exports_desktop_names(monkeypatch):
+    monkeypatch.setattr(wldm.session.wldm.pam, "getenvlist", lambda pamh: {})
+    monkeypatch.setattr(wldm.session, "session_seat", lambda: "seat0")
+    monkeypatch.setattr(wldm.session, "session_desktop_names", lambda: ["KDE", "Plasma"])
+    pw = pwd.struct_passwd(("alice", "x", 1001, 1001, "", "/home/alice", "/bin/bash"))
+
+    env = wldm.session.new_user_environ(object(), pw)
+
+    assert env["XDG_SESSION_DESKTOP"] == "KDE"
+    assert env["XDG_CURRENT_DESKTOP"] == "KDE:Plasma"
+    assert env["DESKTOP_SESSION"] == "KDE"
+
+
 def test_cmd_main_uses_user_shell_when_program_missing(monkeypatch):
     pw = pwd.struct_passwd(("alice", "x", 1001, 1001, "", "/home/alice", "/bin/bash"))
     calls = {}

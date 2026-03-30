@@ -24,6 +24,11 @@ def session_seat() -> str:
     return os.environ.get("WLDM_SEAT", "seat0")
 
 
+def session_desktop_names() -> List[str]:
+    value = os.environ.get("WLDM_SESSION_DESKTOP_NAMES", "")
+    return [item for item in value.split(":") if item]
+
+
 def session_pam_service() -> str:
     cfg = wldm.config.read_config()
     return str(cfg["session"].get("pam-service", "login"))
@@ -47,6 +52,11 @@ def new_user_environ(pamh: Optional[Any],
     env["XDG_SESSION_TYPE"] = "wayland"
     env["XDG_SESSION_CLASS"] = "user"
     env["XDG_SEAT"] = session_seat()
+    desktop_names = session_desktop_names()
+    if desktop_names:
+        env["XDG_SESSION_DESKTOP"] = desktop_names[0]
+        env["XDG_CURRENT_DESKTOP"] = ":".join(desktop_names)
+        env["DESKTOP_SESSION"] = desktop_names[0]
     if ttydev is not None:
         env["XDG_VTNR"] = str(ttydev.number)
 

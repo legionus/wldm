@@ -161,7 +161,7 @@ def test_process_request_replies_with_bad_request_for_unknown_payload():
 def test_process_request_does_not_start_session_for_failed_auth(monkeypatch):
     req = wldm.protocol.new_request(
         wldm.protocol.ACTION_AUTH,
-        {"username": "alice", "password": "bad", "command": "ignored"},
+        {"username": "alice", "password": "bad", "command": "ignored", "desktop_names": ["sway"]},
     )
 
     monkeypatch.setattr(wldm.daemon, "verify_creds", lambda req: False)
@@ -176,7 +176,12 @@ def test_process_request_does_not_start_session_for_failed_auth(monkeypatch):
 def test_process_request_starts_session_after_successful_auth(monkeypatch):
     req = wldm.protocol.new_request(
         wldm.protocol.ACTION_AUTH,
-        {"username": "alice", "password": "secret", "command": "startplasma-wayland --debug"},
+        {
+            "username": "alice",
+            "password": "secret",
+            "command": "startplasma-wayland --debug",
+            "desktop_names": ["plasma", "kde"],
+        },
     )
 
     monkeypatch.setattr(wldm.daemon, "verify_creds", lambda req: True)
@@ -188,10 +193,11 @@ def test_process_request_starts_session_after_successful_auth(monkeypatch):
         "v": 1,
         "type": "event",
         "event": wldm.protocol.EVENT_SESSION_STARTING,
-        "payload": {"username": "alice", "command": "startplasma-wayland --debug"},
+        "payload": {"username": "alice", "command": "startplasma-wayland --debug", "desktop_names": ["plasma", "kde"]},
     }
     assert outcome.session_username == "alice"
     assert outcome.session_command == "startplasma-wayland --debug"
+    assert outcome.session_desktop_names == ["plasma", "kde"]
 
 
 def test_process_request_replies_with_unknown_action_error():
@@ -307,7 +313,12 @@ def test_handle_request_async_starts_session_after_auth(monkeypatch):
     state.greeter_writer = DummyWriter()
     req = wldm.protocol.new_request(
         wldm.protocol.ACTION_AUTH,
-        {"username": "alice", "password": "secret", "command": "startplasma-wayland --debug"},
+        {
+            "username": "alice",
+            "password": "secret",
+            "command": "startplasma-wayland --debug",
+            "desktop_names": ["plasma", "kde"],
+        },
     )
     proc = DummyAsyncProc(pid=777, returncode=0)
     task_calls = []
@@ -324,6 +335,7 @@ def test_handle_request_async_starts_session_after_auth(monkeypatch):
             "--debug",
         )
         assert env["WLDM_SEAT"] == "seat0"
+        assert env["WLDM_SESSION_DESKTOP_NAMES"] == "plasma:kde"
         return proc
 
     async def fake_exec(*cmd, env=None, start_new_session=False):

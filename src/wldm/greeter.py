@@ -7,7 +7,6 @@ import configparser
 import json
 import os
 import os.path
-import pwd
 import select
 import socket
 import sys
@@ -15,7 +14,7 @@ import threading
 import time
 import traceback
 
-from typing import Optional, Dict, List, Any
+from typing import Optional, Dict, Any
 
 import gi  # type: ignore[import-untyped]
 gi.require_version("Gtk", "4.0")
@@ -27,6 +26,8 @@ from gi.repository import Gtk, Gdk, Gio, GLib  # type: ignore[import-untyped]
 import wldm
 # pylint: disable-next=wrong-import-position
 import wldm.protocol
+# pylint: disable-next=wrong-import-position
+import wldm.sessions
 
 logger = wldm.logger
 resource_path: str
@@ -58,62 +59,6 @@ def account_service_profile(username: str) -> Dict[str, str]:
         profile["avatar_path"] = avatar_path
 
     return profile
-
-
-def user_sessions_enabled() -> bool:
-    value = os.environ.get("WLDM_GREETER_USER_SESSIONS", "yes").strip().lower()
-    return value not in ["0", "false", "no", "off"]
-
-
-def session_data_dirs(username: str = "") -> List[str]:
-    datadirs = ["/usr/share/wayland-sessions"]
-
-    if not user_sessions_enabled() or not username:
-        return datadirs
-
-    try:
-        pw = pwd.getpwnam(username)
-    except KeyError:
-        return datadirs
-
-    datadirs.insert(0, os.path.join(pw.pw_dir, ".local", "share", "wayland-sessions"))
-    return datadirs
-
-
-def read_desktop_sessions(datadirs: List[str]) -> List[List[str]]:
-    sessions_by_name: Dict[str, List[str]] = {}
-
-    for datadir in datadirs:
-        try:
-            with os.scandir(datadir) as it:
-                for entry in it:
-                    if not entry.is_file() or not entry.name.endswith(".desktop"):
-                        continue
-
-                    desktop = configparser.ConfigParser()
-                    desktop.read(os.path.join(datadir, entry.name))
-
-                    entry_type = desktop.get('Desktop Entry', 'type',
-                                             fallback='').lower()
-                    entry_name = desktop.get('Desktop Entry', 'name', fallback='')
-                    entry_exec = desktop.get('Desktop Entry', 'exec', fallback='')
-                    entry_comment = desktop.get('Desktop Entry', 'comment', fallback='')
-
-                    if entry_type != 'application' or not entry_name or not entry_exec:
-                        continue
-
-                    sessions_by_name.setdefault(entry_name, [entry_name, entry_exec, entry_comment])
-        except OSError as e:
-            logger.warning("unable to read wayland sessions from %s: %s", datadir, e)
-
-    return sorted(sessions_by_name.values())
-
-
-def desktop_sessions(username: str = "") -> List[List[str]]:
-    res: List[List[str]] = []
-    res = read_desktop_sessions(session_data_dirs(username))
-    return res
-
 
 class SocketClient:
     def __init__(self, path: str) -> None:
@@ -185,7 +130,7 @@ class LoginApp:
         self.identity_label: Optional[Any] = None
         self.avatar_label:   Optional[Any] = None
 
-        self.sessions = desktop_sessions()
+        self.sessions = wldm.sessions.desktop_sessions()
         self.client = client if client is not None else new_ipc_client()
 
         self.quit = False
@@ -221,8 +166,8 @@ class LoginApp:
         if command:
             item = command
             entry = self.get_selected_session()
-            if entry and len(entry) > 2:
-                description = entry[2]
+            if entry:
+                description = str(entry.get("comment", ""))
 
         if description:
             self.session_label.set_text(f"Session: {description}\nCommand: {item}")
@@ -233,22 +178,22 @@ class LoginApp:
         current_name = ""
         entry = self.get_selected_session()
         if entry is not None:
-            current_name = entry[0]
+            current_name = str(entry["name"])
 
-        self.sessions = desktop_sessions(username)
+        self.sessions = wldm.sessions.desktop_sessions(username)
 
         if self.sessions_entry is not None and hasattr(self.sessions_entry, "set_model"):
             name_store = Gtk.StringList()
 
             for session in self.sessions:
-                name_store.append(session[0])
+                name_store.append(str(session["name"]))
 
             self.sessions_entry.set_model(name_store)
 
             if self.sessions:
                 selected = 0
                 for index, session in enumerate(self.sessions):
-                    if session[0] == current_name:
+                    if session["name"] == current_name:
                         selected = index
                         break
                 self.sessions_entry.set_selected(selected)
@@ -417,13 +362,13 @@ class LoginApp:
         name = item.get_string()
 
         for entry in self.sessions:
-            if entry[0] == name:
-                command = entry[1]
+            if entry["name"] == name:
+                command = str(entry["command"])
                 break
 
         return command
 
-    def get_selected_session(self) -> Optional[List[str]]:
+    def get_selected_session(self) -> Optional[Dict[str, Any]]:
         if self.sessions_entry is None:
             return None
 
@@ -433,7 +378,7 @@ class LoginApp:
         name = item.get_string()
 
         for entry in self.sessions:
-            if entry[0] == name:
+            if entry["name"] == name:
                 return entry
 
         return None
@@ -504,7 +449,11 @@ class LoginApp:
                 "username": username,
                 "password": password,
                 "command":  self.get_session_command(),
+                "desktop_names": [],
                 }
+        session_entry = self.get_selected_session()
+        if session_entry is not None:
+            data["desktop_names"] = list(session_entry.get("desktop_names", []))
 
         logger.debug("client request: username=[%s] password=[%s] command=[%s]",
                      data["username"], '*' * len(data["password"]),

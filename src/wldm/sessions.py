@@ -1,0 +1,81 @@
+#!/usr/bin/env python
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026  Alexey Gladkov <legion@kernel.org>
+
+import configparser
+import os
+import os.path
+import pwd
+
+from typing import Any, Dict, List
+
+import wldm
+
+logger = wldm.logger
+
+
+def parse_desktop_names(value: str) -> List[str]:
+    return [item for item in value.split(";") if item]
+
+
+def user_sessions_enabled() -> bool:
+    value = os.environ.get("WLDM_GREETER_USER_SESSIONS", "yes").strip().lower()
+    return value not in ["0", "false", "no", "off"]
+
+
+def session_data_dirs(username: str = "") -> List[str]:
+    datadirs = ["/usr/share/wayland-sessions"]
+
+    if not user_sessions_enabled() or not username:
+        return datadirs
+
+    try:
+        pw = pwd.getpwnam(username)
+    except KeyError:
+        return datadirs
+
+    datadirs.insert(0, os.path.join(pw.pw_dir, ".local", "share", "wayland-sessions"))
+    return datadirs
+
+
+def read_desktop_sessions(datadirs: List[str]) -> List[Dict[str, Any]]:
+    sessions_by_name: Dict[str, Dict[str, Any]] = {}
+
+    for datadir in datadirs:
+        try:
+            with os.scandir(datadir) as it:
+                for entry in it:
+                    if not entry.is_file() or not entry.name.endswith(".desktop"):
+                        continue
+
+                    desktop = configparser.ConfigParser()
+                    desktop.read(os.path.join(datadir, entry.name))
+
+                    entry_type = desktop.get('Desktop Entry', 'type', fallback='').lower()
+                    entry_name = desktop.get('Desktop Entry', 'name', fallback='')
+                    entry_exec = desktop.get('Desktop Entry', 'exec', fallback='')
+                    entry_comment = desktop.get('Desktop Entry', 'comment', fallback='')
+                    entry_desktop_names = parse_desktop_names(
+                        desktop.get('Desktop Entry', 'DesktopNames', fallback='')
+                    )
+
+                    if entry_type != 'application' or not entry_name or not entry_exec:
+                        continue
+
+                    if not entry_desktop_names:
+                        entry_desktop_names = [os.path.splitext(entry.name)[0]]
+
+                    sessions_by_name.setdefault(entry_name, {
+                        "name": entry_name,
+                        "command": entry_exec,
+                        "comment": entry_comment,
+                        "desktop_names": entry_desktop_names,
+                    })
+        except OSError as e:
+            logger.warning("unable to read wayland sessions from %s: %s", datadir, e)
+
+    return [sessions_by_name[name] for name in sorted(sessions_by_name)]
+
+
+def desktop_sessions(username: str = "") -> List[Dict[str, Any]]:
+    return read_desktop_sessions(session_data_dirs(username))
