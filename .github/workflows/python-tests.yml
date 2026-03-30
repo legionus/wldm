@@ -1,0 +1,29 @@
+name: Python tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    name: System Python checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@v6
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            python3-gi \
+            python3-pytest \
+            python3-pytest-cov \
+            pylint \
+            mypy \
+            gobject-introspection \
+            gir1.2-gtk-4.0
+
+      - name: Run checks
+        run: ./check.sh
