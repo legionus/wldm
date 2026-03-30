@@ -3,6 +3,9 @@
 This document describes the runtime split between the main `wldm` processes and
 the responsibilities of each one.
 
+For configuration options and examples, see
+[`configuration.md`](configuration.md).
+
 ## Overview
 
 `wldm` is intentionally split into multiple processes instead of running the

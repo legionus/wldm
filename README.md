@@ -6,7 +6,9 @@ UNIX socket, and starts the selected user session on a dedicated virtual
 terminal.
 
 For the runtime split and process model, see
-[`Documentation/architecture.md`](Documentation/architecture.md).
+[`Documentation/architecture.md`](Documentation/architecture.md). For config
+options and examples, see
+[`Documentation/configuration.md`](Documentation/configuration.md).
 
 ## Features
 
@@ -57,28 +59,8 @@ running it as a system-managed service and can confuse `logind`.
 
 ## Configuration
 
-The daemon reads configuration from:
-
-1. `WLDM_CONFIG`
-2. `config/wldm.ini` next to the launcher script
-3. `sys.prefix/share/wldm/config/wldm.ini`
-4. `/etc/wldm.ini`
-
-Useful defaults:
-
-- daemon log: `/tmp/wldm/daemon.log`
-- greeter log: `/tmp/wldm/greeter.log`
-- greeter socket: `/tmp/wldm/greeter.sock`
-
-By default the greeter shows system session entries from
-`/usr/share/wayland-sessions` and, after a username is entered, also looks for
-user-specific entries in `~/.local/share/wayland-sessions`. This can be
-disabled with:
-
-```ini
-[greeter]
-user-sessions = no
-```
+Configuration lookup order, option descriptions, and example files are
+documented in [`Documentation/configuration.md`](Documentation/configuration.md).
 
 ## Building And Installing
 
@@ -133,30 +115,6 @@ systemctl start wldm.service
 
 The packaged unit starts `/usr/bin/wldm`, so system installs should either
 place the entry point there or adjust `ExecStart=` accordingly.
-
-## Example Configuration
-
-A minimal `/etc/wldm.ini` can look like this:
-
-```ini
-[daemon]
-seat = seat0
-socket-path = /run/wldm/greeter.sock
-log-path = /var/log/wldm/daemon.log
-
-[greeter]
-user = gdm
-group = gdm
-tty = 7
-command = cage -s -m last --
-pam-service = system-login
-max-restarts = 3
-user-sessions = yes
-log-path = /var/log/wldm/greeter.log
-
-[session]
-pam-service = login
-```
 
 For local development, the defaults in [`config/wldm.ini`](config/wldm.ini)
 use `/tmp/wldm/` for logs and the greeter socket.

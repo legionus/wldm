@@ -53,6 +53,8 @@ def read_config() -> configparser.ConfigParser:
 
     cfg["session"] = {
             "pam-service": "login",
+            "pre-command": "",
+            "post-command": "",
             }
 
     for path in _config_candidates():

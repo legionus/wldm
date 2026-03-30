@@ -7,6 +7,8 @@ import contextlib
 import os
 import os.path
 import pwd
+import shlex
+import subprocess
 
 from typing import Dict, Iterator, List, Optional, Any
 
@@ -32,6 +34,11 @@ def session_desktop_names() -> List[str]:
 def session_pam_service() -> str:
     cfg = wldm.config.read_config()
     return str(cfg["session"].get("pam-service", "login"))
+
+
+def session_hook_command(name: str) -> str:
+    cfg = wldm.config.read_config()
+    return str(cfg["session"].get(f"{name}-command", "")).strip()
 
 
 def new_user_environ(pamh: Optional[Any],
@@ -61,6 +68,38 @@ def new_user_environ(pamh: Optional[Any],
         env["XDG_VTNR"] = str(ttydev.number)
 
     return env
+
+
+def run_session_hook(name: str,
+                     command: str,
+                     pw: pwd.struct_passwd,
+                     env: Dict[str, str],
+                     ttydev: wldm.tty.TTYdevice,
+                     session_prog: str) -> bool:
+    if not command:
+        return True
+
+    hook_env = dict(
+        env,
+        WLDM_TTY=ttydev.filename,
+        WLDM_SESSION_COMMAND=session_prog,
+    )
+    extra_groups = os.getgrouplist(pw.pw_name, pw.pw_gid)
+
+    result = subprocess.run(
+        shlex.split(command),
+        check=False,
+        cwd=pw.pw_dir,
+        env=hook_env,
+        user=pw.pw_uid,
+        group=pw.pw_gid,
+        extra_groups=extra_groups,
+    )
+    if result.returncode == 0:
+        return True
+
+    logger.critical("[!] %s hook failed with status %d: %s", name, result.returncode, command)
+    return False
 
 
 def exec_user_program(ttydev: wldm.tty.TTYdevice,
@@ -132,13 +171,16 @@ def run_user_session(pw: pwd.struct_passwd,
             try:
                 prepare_user_terminal(ttydev)
                 with open_user_pam_session(pam_service, pw, ttydev) as pamh:
+                    env = new_user_environ(pamh, pw, ttydev)
+                    if not run_session_hook("pre", session_hook_command("pre"), pw, env, ttydev, prog):
+                        return None
                     pid = os.fork()
                     if pid == 0:
                         try:
                             exec_user_program(ttydev,
                                               pw.pw_name, pw.pw_uid, pw.pw_gid, pw.pw_dir,
                                               prog, prog_args,
-                                              new_user_environ(pamh, pw, ttydev))
+                                              env)
                         except Exception as e:
                             logger.critical("[child] Failed to exec `%s %s': %r",
                                             prog, prog_args, e)
@@ -152,6 +194,7 @@ def run_user_session(pw: pwd.struct_passwd,
                         if exitcode and exitcode != 0:
                             logger.critical("[+] Child exited. status=%s, exitcode=%s",
                                             status, exitcode)
+                        run_session_hook("post", session_hook_command("post"), pw, env, ttydev, prog)
             finally:
                 if wtmp_line is not None:
                     wldm.wtmp.logout(wtmp_line)
