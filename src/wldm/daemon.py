@@ -55,6 +55,8 @@ class DaemonState:
         self.greeter_writer: Optional[asyncio.StreamWriter] = None
         self.greeter_failures = 0
         self.greeter_ready = False
+        self.console: int = -1
+        self.greeter_tty: int = 0
         self.active_sessions: dict[int, AsyncProcess] = {}
         self.session_tasks: set[asyncio.Task[None]] = set()
 
@@ -176,6 +178,8 @@ async def send_session_finished(state: DaemonState,
                                 proc: AsyncProcess) -> None:
     logger.info("user session (pid=%d) finished with return code %d", proc.pid, proc.returncode)
     state.active_sessions.pop(proc.pid, None)
+    if state.console >= 0 and state.greeter_tty > 0:
+        wldm.tty.change(state.console, state.greeter_tty)
     await send_message(
         state.greeter_writer,
         wldm.protocol.new_event(
@@ -420,6 +424,8 @@ async def run_daemon_async(parser: argparse.Namespace, cfg: Optional[Any] = None
         greeter_uid=greeter_uid,
         seat=cfg["daemon"].get("seat", "seat0"),
     )
+    state.console = console
+    state.greeter_tty = greeter_tty
     exit_code = wldm.EX_SUCCESS
     stop_event = asyncio.Event()
     loop = asyncio.get_running_loop()

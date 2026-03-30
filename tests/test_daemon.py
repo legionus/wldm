@@ -327,6 +327,27 @@ def test_handle_request_async_runs_control_command(monkeypatch):
     assert json.loads(state.greeter_writer.lines[0])["payload"] == {"accepted": True}
 
 
+def test_send_session_finished_switches_back_to_greeter_tty(monkeypatch):
+    state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
+    state.greeter_writer = DummyWriter()
+    state.console = 77
+    state.greeter_tty = 7
+    proc = DummyAsyncProc(pid=333, returncode=0)
+    state.active_sessions[333] = proc
+    changes = []
+
+    monkeypatch.setattr(wldm.daemon.wldm.tty, "change", lambda console, tty: changes.append((console, tty)) or True)
+
+    asyncio.run(wldm.daemon.send_session_finished(state, proc))
+
+    assert changes == [(77, 7)]
+    assert 333 not in state.active_sessions
+    assert any(
+        json.loads(line).get("event") == wldm.protocol.EVENT_SESSION_FINISHED
+        for line in state.greeter_writer.lines
+    )
+
+
 def test_handle_greeter_client_marks_greeter_ready(monkeypatch):
     state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3, greeter_uid=32)
     writer = DummyWriter()
