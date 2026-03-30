@@ -375,7 +375,8 @@ class LoginApp:
                 self.password_entry.set_text("")
                 if hasattr(self.password_entry, "grab_focus"):
                     self.password_entry.grab_focus()
-            self.set_status(_("Session finished."))
+            status_message = str(payload.get("message", _("Session finished.")))
+            self.set_status(status_message)
             return
 
     def run(self) -> None:
@@ -444,7 +445,7 @@ class LoginApp:
         self.refresh_sessions()
         self.update_identity_preview()
         self.update_action_buttons()
-        self.set_status(_("Ready."))
+        self.set_status("")
 
         if self.username_entry is not None and hasattr(self.username_entry, "grab_focus"):
             self.username_entry.grab_focus()

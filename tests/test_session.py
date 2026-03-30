@@ -199,7 +199,7 @@ def test_cmd_main_uses_user_shell_when_program_missing(monkeypatch):
 
     result = wldm.session.cmd_main(SimpleNamespace(username="alice", prog="", args=[]))
 
-    assert result == wldm.session.wldm.EX_SUCCESS
+    assert result is None
     assert calls["pw"] == pw
     assert calls["pam_service"] == "custom-login"
     assert calls["prog_args"] == ["/bin/bash", "-l"]
@@ -230,7 +230,7 @@ def test_cmd_main_resolves_program_from_exec_path(monkeypatch):
         SimpleNamespace(username="alice", prog="startplasma-wayland", args=["--foo"])
     )
 
-    assert result == wldm.session.wldm.EX_SUCCESS
+    assert result is None
     assert calls["pam_service"] == "custom-login"
     assert calls["prog_args"] == ["/usr/bin/startplasma-wayland", "--foo"]
 
@@ -299,7 +299,7 @@ def test_run_user_session_returns_early_when_console_is_unavailable(monkeypatch)
 
     pw = pwd.struct_passwd(("alice", "x", 1001, 1001, "", "/home/alice", "/bin/bash"))
 
-    assert wldm.session.run_user_session(pw, "login", ["/bin/bash", "-l"]) is None
+    assert wldm.session.run_user_session(pw, "login", ["/bin/bash", "-l"]) == wldm.session.wldm.EX_FAILURE
     assert closed == []
 
 
@@ -363,8 +363,9 @@ def test_run_user_session_parent_path_opens_and_closes_resources(monkeypatch):
     monkeypatch.setattr(wldm.session, "finish_user_session",
                         lambda pamh: calls.append(("finish_user_session", pamh)))
 
-    wldm.session.run_user_session(pw, "custom-login", ["/bin/bash", "-l"])
+    result = wldm.session.run_user_session(pw, "custom-login", ["/bin/bash", "-l"])
 
+    assert result == wldm.session.wldm.EX_SUCCESS
     assert ("tty_init", 77, 1001) in calls
     assert ("prepare_user_terminal", 55) in calls
     assert ("start_pam", "custom-login", "alice") in calls
@@ -422,8 +423,9 @@ def test_run_user_session_parent_path_logs_nonzero_exit(monkeypatch):
     monkeypatch.setattr(wldm.session.logger, "critical",
                         lambda msg, *args: criticals.append(msg % args if args else msg))
 
-    wldm.session.run_user_session(pw, "login", ["/bin/bash", "-l"])
+    result = wldm.session.run_user_session(pw, "login", ["/bin/bash", "-l"])
 
+    assert result == 7
     assert any("Child exited" in message for message in criticals)
 
 
@@ -452,10 +454,19 @@ def test_run_user_session_aborts_when_pre_hook_fails(monkeypatch):
     monkeypatch.setattr(wldm.session.os, "fork", lambda: (_ for _ in ()).throw(AssertionError("fork should not be called")))
     monkeypatch.setattr(wldm.session.os, "close", lambda fd: calls.append(("close_console", fd)))
 
-    wldm.session.run_user_session(pw, "login", ["/bin/bash", "-l"])
+    result = wldm.session.run_user_session(pw, "login", ["/bin/bash", "-l"])
 
+    assert result == wldm.session.wldm.EX_FAILURE
     assert ("tty_close",) in calls
     assert ("close_console", 77) in calls
+
+
+def test_process_exit_status_maps_signal_to_shell_style_code(monkeypatch):
+    monkeypatch.setattr(wldm.session.os, "WIFEXITED", lambda status: False)
+    monkeypatch.setattr(wldm.session.os, "WIFSIGNALED", lambda status: True)
+    monkeypatch.setattr(wldm.session.os, "WTERMSIG", lambda status: 15)
+
+    assert wldm.session.process_exit_status(9) == 143
 
 
 def test_prepare_user_terminal_switches_and_sets_controlling_tty(monkeypatch):

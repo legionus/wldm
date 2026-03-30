@@ -146,6 +146,14 @@ def run_session_hook(name: str,
     return False
 
 
+def process_exit_status(status: int) -> int:
+    if os.WIFEXITED(status):
+        return os.WEXITSTATUS(status)
+    if os.WIFSIGNALED(status):
+        return 128 + os.WTERMSIG(status)
+    return wldm.EX_FAILURE
+
+
 def exec_user_program(ttydev: wldm.tty.TTYdevice,
                       username: str, uid: int, gid: int, workdir: str,
                       prog: str, prog_args: List[str],
@@ -206,7 +214,7 @@ def open_user_pam_session(pam_service: str,
 
 def run_user_session(pw: pwd.struct_passwd,
                      pam_service: str,
-                     prog_args: List[str]) -> None:
+                     prog_args: List[str]) -> int:
     try:
         with open_console_fd() as console:
             logger.debug("[+] Opening free TTY device")
@@ -219,7 +227,7 @@ def run_user_session(pw: pwd.struct_passwd,
                     exec_argv = session_exec_command(prog_args)
                     session_command = shlex.join(prog_args)
                     if not run_session_hook("pre", session_hook_command("pre"), pw, env, ttydev, session_command):
-                        return None
+                        return wldm.EX_FAILURE
                     pid = os.fork()
                     if pid == 0:
                         try:
@@ -235,19 +243,22 @@ def run_user_session(pw: pwd.struct_passwd,
                         wtmp_line = ttydev.filename
                         wldm.wtmp.login(wtmp_line, pw.pw_name)
                         _, status = os.waitpid(pid, 0)
-                        exitcode = os.WEXITSTATUS(status) if os.WIFEXITED(status) else None
+                        exitcode = process_exit_status(status)
 
-                        if exitcode and exitcode != 0:
+                        if exitcode != 0:
                             logger.critical("[+] Child exited. status=%s, exitcode=%s",
                                             status, exitcode)
                         run_session_hook("post", session_hook_command("post"), pw, env, ttydev, session_command)
+                        return exitcode
             finally:
                 if wtmp_line is not None:
                     wldm.wtmp.logout(wtmp_line)
                 ttydev.close()
     except RuntimeError as exc:
         logger.critical("[!] %s", exc)
-        return None
+        return wldm.EX_FAILURE
+
+    return wldm.EX_FAILURE
 
 
 def finish_user_session(pamh: Optional[Any]) -> None:
@@ -285,6 +296,4 @@ def cmd_main(parser: argparse.Namespace) -> int:
         return wldm.EX_FAILURE
     prog = resolved_prog
 
-    run_user_session(pw, session_pam_service(), [prog] + args)
-
-    return wldm.EX_SUCCESS
+    return run_user_session(pw, session_pam_service(), [prog] + args)

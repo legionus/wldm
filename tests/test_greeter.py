@@ -417,6 +417,17 @@ def test_handle_event_updates_status_label(monkeypatch):
     )
     assert app.status_label.text == "Session finished."
 
+    greeter.LoginApp.handle_event(
+        app,
+        {
+            "v": 1,
+            "type": "event",
+            "event": greeter.wldm.protocol.EVENT_SESSION_FINISHED,
+            "payload": {"pid": 1, "returncode": 7, "failed": True, "message": "Session failed with exit status 7."},
+        },
+    )
+    assert app.status_label.text == "Session failed with exit status 7."
+
 
 def test_on_clock_tick_polls_session_finished_event_and_reenables_inputs(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
@@ -457,7 +468,7 @@ def test_on_clock_tick_polls_session_finished_event_and_reenables_inputs(monkeyp
             self.reads += 1
             return (
                 f'{{"v": 1, "type": "event", "event": "{greeter.wldm.protocol.EVENT_SESSION_FINISHED}", '
-                f'"payload": {{"pid": 1, "returncode": 0}}}}\n'
+                f'"payload": {{"pid": 1, "returncode": 0, "failed": false, "message": "Session finished."}}}}\n'
             )
 
         def close(self):

@@ -428,10 +428,26 @@ def test_send_session_finished_switches_back_to_greeter_tty(monkeypatch):
 
     assert changes == [(77, 7)]
     assert 333 not in state.active_sessions
-    assert any(
-        json.loads(line).get("event") == wldm.protocol.EVENT_SESSION_FINISHED
-        for line in state.greeter_writer.lines
-    )
+    events = [json.loads(line) for line in state.greeter_writer.lines]
+    assert any(event.get("event") == wldm.protocol.EVENT_SESSION_FINISHED for event in events)
+    finished = next(event for event in events if event.get("event") == wldm.protocol.EVENT_SESSION_FINISHED)
+    assert finished["payload"]["failed"] is False
+    assert finished["payload"]["message"] == "Session finished."
+
+
+def test_send_session_finished_reports_failed_session(monkeypatch):
+    state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
+    state.greeter_writer = DummyWriter()
+    proc = DummyAsyncProc(pid=444, returncode=7)
+    state.active_sessions[444] = proc
+
+    monkeypatch.setattr(wldm.daemon.wldm.tty, "change", lambda console, tty: True)
+
+    asyncio.run(wldm.daemon.send_session_finished(state, proc))
+
+    event = next(json.loads(line) for line in state.greeter_writer.lines)
+    assert event["payload"]["failed"] is True
+    assert event["payload"]["message"] == "Session failed with exit status 7."
 
 
 def test_handle_greeter_client_marks_greeter_ready(monkeypatch):

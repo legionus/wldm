@@ -222,11 +222,17 @@ async def send_session_finished(state: DaemonState,
     state.active_sessions.pop(proc.pid, None)
     if state.console >= 0 and state.greeter_tty > 0:
         wldm.tty.change(state.console, state.greeter_tty)
+    returncode = proc.returncode if proc.returncode is not None else wldm.EX_FAILURE
+    failed = returncode != 0
+    if failed:
+        message = f"Session failed with exit status {returncode}."
+    else:
+        message = "Session finished."
     await send_message(
         state.greeter_writer,
         wldm.protocol.new_event(
             wldm.protocol.EVENT_SESSION_FINISHED,
-            {"pid": proc.pid, "returncode": proc.returncode},
+            {"pid": proc.pid, "returncode": returncode, "failed": failed, "message": message},
         ),
     )
 
