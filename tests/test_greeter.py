@@ -3,6 +3,7 @@
 
 import importlib
 import json
+import pwd
 import sys
 import types
 
@@ -115,6 +116,83 @@ def test_desktop_sessions_filters_and_sorts_entries(monkeypatch):
     assert greeter.desktop_sessions() == [["Alpha", "alpha", "Alpha session"], ["Beta", "beta", "Beta session"]]
 
 
+def test_session_data_dirs_prepends_user_directory(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+    pw = pwd.struct_passwd(("alice", "x", 1000, 1000, "", "/home/alice", "/bin/sh"))
+
+    monkeypatch.setenv("WLDM_GREETER_USER_SESSIONS", "yes")
+    monkeypatch.setattr(greeter.pwd, "getpwnam", lambda username: pw)
+
+    assert greeter.session_data_dirs("alice") == [
+        "/home/alice/.local/share/wayland-sessions",
+        "/usr/share/wayland-sessions",
+    ]
+
+
+def test_session_data_dirs_can_disable_user_sessions(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+
+    monkeypatch.setenv("WLDM_GREETER_USER_SESSIONS", "no")
+
+    assert greeter.session_data_dirs("alice") == ["/usr/share/wayland-sessions"]
+
+
+def test_desktop_sessions_merge_user_entries_before_system(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+    scanned_paths = []
+
+    class FakeEntry:
+        def __init__(self, name):
+            self.name = name
+
+        def is_file(self):
+            return True
+
+    class FakeScandir:
+        def __init__(self, entries):
+            self.entries = entries
+
+        def __enter__(self):
+            return iter(self.entries)
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class FakeConfig:
+        def read(self, path):
+            self.path = path
+
+        def get(self, section, option, fallback=""):
+            base = self.path.split("/")[-1]
+            data = {
+                "user.desktop": {"type": "Application", "name": "Sway", "exec": "sway --debug", "comment": "User sway"},
+                "system.desktop": {"type": "Application", "name": "Sway", "exec": "sway", "comment": "System sway"},
+                "labwc.desktop": {"type": "Application", "name": "Labwc", "exec": "labwc", "comment": "Labwc"},
+            }
+            return data.get(base, {}).get(option, fallback)
+
+    monkeypatch.setattr(greeter, "session_data_dirs",
+                        lambda username="": ["/home/alice/.local/share/wayland-sessions", "/usr/share/wayland-sessions"])
+
+    def fake_scandir(path):
+        scanned_paths.append(path)
+        if path.startswith("/home/alice"):
+            return FakeScandir([FakeEntry("user.desktop")])
+        return FakeScandir([FakeEntry("system.desktop"), FakeEntry("labwc.desktop")])
+
+    monkeypatch.setattr(greeter.os, "scandir", fake_scandir)
+    monkeypatch.setattr(greeter.configparser, "ConfigParser", FakeConfig)
+
+    assert greeter.desktop_sessions("alice") == [
+        ["Labwc", "labwc", "Labwc"],
+        ["Sway", "sway --debug", "User sway"],
+    ]
+    assert scanned_paths == [
+        "/home/alice/.local/share/wayland-sessions",
+        "/usr/share/wayland-sessions",
+    ]
+
+
 def test_desktop_sessions_handles_oserror(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
 
@@ -170,7 +248,7 @@ def test_account_service_profile_reads_real_name(monkeypatch, tmp_path):
 def test_login_app_run_calls_application_run(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
 
-    monkeypatch.setattr(greeter, "desktop_sessions", lambda: [])
+    monkeypatch.setattr(greeter, "desktop_sessions", lambda username="": [])
 
     app = greeter.LoginApp(client=DummyClient())
     app.run()
@@ -203,7 +281,7 @@ def test_update_clock_sets_date_and_time(monkeypatch):
 def test_send_recv_answer_round_trips_json(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
 
-    monkeypatch.setattr(greeter, "desktop_sessions", lambda: [])
+    monkeypatch.setattr(greeter, "desktop_sessions", lambda username="": [])
 
     class FakeClient:
         def __init__(self, lines):
@@ -276,7 +354,7 @@ def test_handle_event_updates_status_label(monkeypatch):
 def test_send_recv_answer_returns_empty_dict_on_bad_json(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
 
-    monkeypatch.setattr(greeter, "desktop_sessions", lambda: [])
+    monkeypatch.setattr(greeter, "desktop_sessions", lambda username="": [])
 
     class FakeClient:
         def writeline(self, data):
@@ -312,7 +390,7 @@ def test_new_ipc_client_requires_socket_env(monkeypatch):
 def test_on_login_clicked_sets_failure_and_clears_password(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
 
-    monkeypatch.setattr(greeter, "desktop_sessions", lambda: [])
+    monkeypatch.setattr(greeter, "desktop_sessions", lambda username="": [])
 
     class FakeEntry:
         def __init__(self, text=""):
@@ -355,7 +433,7 @@ def test_on_login_clicked_sets_failure_and_clears_password(monkeypatch):
 def test_on_login_clicked_sets_success_message(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
 
-    monkeypatch.setattr(greeter, "desktop_sessions", lambda: [])
+    monkeypatch.setattr(greeter, "desktop_sessions", lambda username="": [])
 
     class FakeEntry:
         def __init__(self, text=""):
@@ -515,7 +593,8 @@ def test_on_activate_binds_widgets_and_populates_sessions(monkeypatch):
         def get_object(self, name):
             return objects[name]
 
-    monkeypatch.setattr(greeter, "desktop_sessions", lambda: [["Alpha", "alpha", "Alpha session"], ["Beta", "beta", "Beta session"]])
+    monkeypatch.setattr(greeter, "desktop_sessions",
+                        lambda username="": [["Alpha", "alpha", "Alpha session"], ["Beta", "beta", "Beta session"]])
     monkeypatch.setattr(greeter.Gtk.Builder, "new_from_file", lambda path: FakeBuilder())
 
     app = greeter.LoginApp(client=DummyClient())
@@ -582,7 +661,7 @@ def test_cmd_main_loads_css_when_present(monkeypatch, tmp_path):
 
 def test_system_action_buttons_send_requests(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
-    monkeypatch.setattr(greeter, "desktop_sessions", lambda: [])
+    monkeypatch.setattr(greeter, "desktop_sessions", lambda username="": [])
 
     class FakeLabel:
         def __init__(self):
@@ -611,8 +690,11 @@ def test_system_action_buttons_send_requests(monkeypatch):
 
 def test_username_change_updates_identity_preview(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
+    calls = []
     monkeypatch.setattr(greeter, "account_service_profile",
                         lambda username: {"display_name": "Alice Doe", "avatar_path": ""})
+    monkeypatch.setattr(greeter, "desktop_sessions",
+                        lambda username="": calls.append(username) or [["Sway", "sway --debug", "User sway"]])
 
     class FakeEntry:
         def get_text(self):
@@ -629,8 +711,12 @@ def test_username_change_updates_identity_preview(monkeypatch):
     app.username_entry = FakeEntry()
     app.identity_label = FakeLabel()
     app.avatar_label = FakeLabel()
+    app.sessions = []
+    app.session_label = None
+    app.sessions_entry = None
 
     greeter.LoginApp.on_username_changed(app)
 
     assert app.identity_label.text == "Alice Doe"
     assert app.avatar_label.text == "A"
+    assert calls == ["alice"]

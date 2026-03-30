@@ -90,6 +90,7 @@ def make_config(user="gdm",
                 command="cage -s -m last --",
                 pam_service="system-login",
                 max_restarts="3",
+                user_sessions="yes",
                 seat="seat0",
                 socket_path="/tmp/wldm/greeter.sock",
                 daemon_log="/tmp/wldm/daemon.log",
@@ -109,6 +110,7 @@ def make_config(user="gdm",
         "command": command,
         "pam-service": pam_service,
         "max-restarts": max_restarts,
+        "user-sessions": user_sessions,
         "log-path": greeter_log,
     }
     return cfg
@@ -364,7 +366,7 @@ def test_handle_greeter_client_rejects_unexpected_peer_uid(monkeypatch):
 
 def test_start_greeter_passes_socket_env(monkeypatch):
     state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3, seat="seat9")
-    cfg = make_config(command="labwc --", greeter_log="/tmp/custom-greeter.log")
+    cfg = make_config(command="labwc --", greeter_log="/tmp/custom-greeter.log", user_sessions="no")
     calls = {}
     proc = DummyAsyncProc(pid=4321, returncode=0)
 
@@ -397,6 +399,7 @@ def test_start_greeter_passes_socket_env(monkeypatch):
     assert calls["env"]["WLDM_SOCKET"] == "/tmp/wldm/greeter.sock"
     assert calls["env"]["WLDM_SEAT"] == "seat9"
     assert calls["env"]["WLDM_GREETER_STDERR_LOG"] == "/tmp/custom-greeter.log"
+    assert calls["env"]["WLDM_GREETER_USER_SESSIONS"] == "no"
 
 
 def test_terminate_process_tree_sends_signals_to_process_group(monkeypatch):

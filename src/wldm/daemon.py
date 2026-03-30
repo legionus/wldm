@@ -338,6 +338,7 @@ async def start_greeter(state: DaemonState,
         WLDM_SOCKET=socket_path,
         WLDM_SEAT=state.seat,
         WLDM_GREETER_STDERR_LOG=cfg["greeter"].get("log-path", "/tmp/wldm/greeter.log"),
+        WLDM_GREETER_USER_SESSIONS=cfg["greeter"].get("user-sessions", "yes"),
     )
     proc = await asyncio.create_subprocess_exec(
         state.progname,

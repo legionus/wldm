@@ -70,6 +70,16 @@ Useful defaults:
 - greeter log: `/tmp/wldm/greeter.log`
 - greeter socket: `/tmp/wldm/greeter.sock`
 
+By default the greeter shows system session entries from
+`/usr/share/wayland-sessions` and, after a username is entered, also looks for
+user-specific entries in `~/.local/share/wayland-sessions`. This can be
+disabled with:
+
+```ini
+[greeter]
+user-sessions = no
+```
+
 ## Building And Installing
 
 Install development dependencies:
@@ -141,6 +151,7 @@ tty = 7
 command = cage -s -m last --
 pam-service = system-login
 max-restarts = 3
+user-sessions = yes
 log-path = /var/log/wldm/greeter.log
 
 [session]

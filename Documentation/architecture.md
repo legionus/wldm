@@ -81,8 +81,14 @@ It is responsible for:
 
 - rendering the login UI
 - enumerating available Wayland sessions from `/usr/share/wayland-sessions`
+- optionally extending that list with `~/.local/share/wayland-sessions` for the
+  username currently typed into the greeter
 - sending structured requests to the daemon over a UNIX socket
 - reacting to daemon events such as `session-starting` and `session-finished`
+
+The greeter does not execute anything from these entries before login. It only
+uses them to populate the session picker and sends the chosen command back to
+the daemon after successful authentication.
 
 ### User Session Wrapper
 

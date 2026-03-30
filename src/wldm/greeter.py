@@ -7,6 +7,7 @@ import configparser
 import json
 import os
 import os.path
+import pwd
 import socket
 import sys
 import threading
@@ -58,15 +59,36 @@ def account_service_profile(username: str) -> Dict[str, str]:
     return profile
 
 
-def desktop_sessions() -> List[List[str]]:
-    res: List[List[str]] = []
+def user_sessions_enabled() -> bool:
+    value = os.environ.get("WLDM_GREETER_USER_SESSIONS", "yes").strip().lower()
+    return value not in ["0", "false", "no", "off"]
 
-    datadir = "/usr/share/wayland-sessions"
+
+def session_data_dirs(username: str = "") -> List[str]:
+    datadirs = ["/usr/share/wayland-sessions"]
+
+    if not user_sessions_enabled() or not username:
+        return datadirs
 
     try:
-        with os.scandir(datadir) as it:
-            for entry in it:
-                if entry.is_file() and entry.name.endswith(".desktop"):
+        pw = pwd.getpwnam(username)
+    except KeyError:
+        return datadirs
+
+    datadirs.insert(0, os.path.join(pw.pw_dir, ".local", "share", "wayland-sessions"))
+    return datadirs
+
+
+def read_desktop_sessions(datadirs: List[str]) -> List[List[str]]:
+    sessions_by_name: Dict[str, List[str]] = {}
+
+    for datadir in datadirs:
+        try:
+            with os.scandir(datadir) as it:
+                for entry in it:
+                    if not entry.is_file() or not entry.name.endswith(".desktop"):
+                        continue
+
                     desktop = configparser.ConfigParser()
                     desktop.read(os.path.join(datadir, entry.name))
 
@@ -79,11 +101,17 @@ def desktop_sessions() -> List[List[str]]:
                     if entry_type != 'application' or not entry_name or not entry_exec:
                         continue
 
-                    res.append([entry_name, entry_exec, entry_comment])
-    except OSError as e:
-        logger.warning("unable to read wayland sessions from %s: %s", datadir, e)
+                    sessions_by_name.setdefault(entry_name, [entry_name, entry_exec, entry_comment])
+        except OSError as e:
+            logger.warning("unable to read wayland sessions from %s: %s", datadir, e)
 
-    return sorted(res)
+    return sorted(sessions_by_name.values())
+
+
+def desktop_sessions(username: str = "") -> List[List[str]]:
+    res: List[List[str]] = []
+    res = read_desktop_sessions(session_data_dirs(username))
+    return res
 
 
 class SocketClient:
@@ -196,6 +224,32 @@ class LoginApp:
         else:
             self.session_label.set_text(f"Session command: {item}")
 
+    def refresh_sessions(self, username: str = "") -> None:
+        current_name = ""
+        entry = self.get_selected_session()
+        if entry is not None:
+            current_name = entry[0]
+
+        self.sessions = desktop_sessions(username)
+
+        if self.sessions_entry is not None and hasattr(self.sessions_entry, "set_model"):
+            name_store = Gtk.StringList()
+
+            for session in self.sessions:
+                name_store.append(session[0])
+
+            self.sessions_entry.set_model(name_store)
+
+            if self.sessions:
+                selected = 0
+                for index, session in enumerate(self.sessions):
+                    if session[0] == current_name:
+                        selected = index
+                        break
+                self.sessions_entry.set_selected(selected)
+
+        self.update_session_summary()
+
     def update_identity_preview(self) -> None:
         username = ""
         if self.username_entry is not None:
@@ -279,15 +333,6 @@ class LoginApp:
         GLib.timeout_add_seconds(1, self.on_clock_tick)
 
         if self.sessions_entry:
-            name_store = Gtk.StringList()
-
-            for entry in self.sessions:
-                name_store.append(entry[0])
-
-            self.sessions_entry.set_model(name_store)
-
-            if len(self.sessions) > 0:
-                self.sessions_entry.set_selected(0)
             self.sessions_entry.connect("notify::selected-item", self.on_session_changed)
 
         if self.login_button:
@@ -305,7 +350,7 @@ class LoginApp:
         if self.username_entry is not None:
             self.username_entry.connect("changed", self.on_username_changed)
 
-        self.update_session_summary()
+        self.refresh_sessions()
         self.update_identity_preview()
         self.set_status("Ready.")
 
@@ -353,6 +398,10 @@ class LoginApp:
 
     # pylint: disable-next=unused-argument
     def on_username_changed(self, *args: Any) -> None:
+        username = ""
+        if self.username_entry is not None:
+            username = self.username_entry.get_text().strip()
+        self.refresh_sessions(username)
         self.update_identity_preview()
 
     def send_recv_answer(self, data: Dict[str, Any]) -> Dict[str, Any]:

@@ -28,6 +28,7 @@ def test_read_config_uses_repo_default_when_progname_is_set(monkeypatch):
     assert cfg["greeter"]["tty"] == "7"
     assert cfg["greeter"]["command"] == "cage -s -m last --"
     assert cfg["greeter"]["max-restarts"] == "3"
+    assert cfg["greeter"]["user-sessions"] == "yes"
     assert cfg["greeter"]["log-path"] == "/tmp/wldm/greeter.log"
     assert cfg["session"]["pam-service"] == "login"
 
@@ -60,6 +61,7 @@ def test_read_config_sets_default_runtime_greeter_values(monkeypatch):
     assert cfg["daemon"]["seat"] == "seat0"
     assert cfg["daemon"]["socket-path"] == "/tmp/wldm/greeter.sock"
     assert cfg["daemon"]["log-path"] == "/tmp/wldm/daemon.log"
+    assert cfg["greeter"]["user-sessions"] == "yes"
     assert cfg["greeter"]["log-path"] == "/tmp/wldm/greeter.log"
     assert cfg["session"]["pam-service"] == "login"
 

@@ -47,6 +47,7 @@ def read_config() -> configparser.ConfigParser:
             "command": "cage -s -m last --",
             "pam-service": "system-login",
             "max-restarts": "3",
+            "user-sessions": "yes",
             "log-path": "/tmp/wldm/greeter.log",
             }
 
