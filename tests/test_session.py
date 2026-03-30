@@ -10,15 +10,21 @@ import wldm.session
 def test_new_user_environ_merges_pam_and_user_fields(monkeypatch):
     monkeypatch.setattr(wldm.session.wldm.pam, "getenvlist",
                         lambda pamh: {"LANG": "C.UTF-8", "XDG_SESSION_TYPE": "wayland"})
+    monkeypatch.setattr(wldm.session, "session_seat", lambda: "seat9")
     pw = pwd.struct_passwd(("alice", "x", 1001, 1001, "", "/home/alice", "/bin/bash"))
+    ttydev = SimpleNamespace(number=12)
 
-    env = wldm.session.new_user_environ(object(), pw)
+    env = wldm.session.new_user_environ(object(), pw, ttydev)
 
     assert env["HOME"] == "/home/alice"
     assert env["USER"] == "alice"
     assert env["LOGNAME"] == "alice"
     assert env["TERM"] == "linux"
     assert env["XDG_RUNTIME_DIR"] == "/run/user/1001"
+    assert env["XDG_SESSION_TYPE"] == "wayland"
+    assert env["XDG_SESSION_CLASS"] == "user"
+    assert env["XDG_SEAT"] == "seat9"
+    assert env["XDG_VTNR"] == "12"
     assert env["LANG"] == "C.UTF-8"
 
 

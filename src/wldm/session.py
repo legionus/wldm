@@ -30,7 +30,8 @@ def session_pam_service() -> str:
 
 
 def new_user_environ(pamh: Optional[Any],
-                     pw: pwd.struct_passwd) -> Dict[str, str]:
+                     pw: pwd.struct_passwd,
+                     ttydev: Optional[wldm.tty.TTYdevice] = None) -> Dict[str, str]:
     env = {}
 
     if pamh is not None:
@@ -43,6 +44,11 @@ def new_user_environ(pamh: Optional[Any],
     env["LOGNAME"] = pw.pw_name
     env["TERM"] = "linux"
     env["XDG_RUNTIME_DIR"] = f"/run/user/{pw.pw_uid}"
+    env["XDG_SESSION_TYPE"] = "wayland"
+    env["XDG_SESSION_CLASS"] = "user"
+    env["XDG_SEAT"] = session_seat()
+    if ttydev is not None:
+        env["XDG_VTNR"] = str(ttydev.number)
 
     return env
 
@@ -122,7 +128,7 @@ def run_user_session(pw: pwd.struct_passwd,
                             exec_user_program(ttydev,
                                               pw.pw_name, pw.pw_uid, pw.pw_gid, pw.pw_dir,
                                               prog, prog_args,
-                                              new_user_environ(pamh, pw))
+                                              new_user_environ(pamh, pw, ttydev))
                         except Exception as e:
                             logger.critical("[child] Failed to exec `%s %s': %r",
                                             prog, prog_args, e)
