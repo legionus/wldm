@@ -3,12 +3,13 @@
 # Copyright (C) 2026  Alexey Gladkov <legion@kernel.org>
 
 import argparse
+import contextlib
 import grp
 import os
 import os.path
 import pwd
 
-from typing import Dict, List, Optional, Any
+from typing import Dict, Iterator, List, Optional, Any
 
 import wldm
 import wldm.pam
@@ -118,6 +119,39 @@ def prepare_greeter_terminal(ttydev: wldm.tty.TTYdevice) -> None:
         raise RuntimeError(f"unable to make {ttydev.filename} the controlling tty")
 
 
+@contextlib.contextmanager
+def open_console_fd() -> Iterator[int]:
+    console = wldm.tty.open_console()
+    if console is None:
+        raise RuntimeError("Unable to open console")
+    try:
+        yield console
+    finally:
+        os.close(console)
+
+
+@contextlib.contextmanager
+def open_greeter_pam_session(pam_service: str,
+                             pw: pwd.struct_passwd,
+                             ttydev: wldm.tty.TTYdevice) -> Iterator[Any]:
+    pamh = wldm.pam.start_pam(pam_service, pw.pw_name)
+    try:
+        wldm.pam.set_pam_item(pamh, wldm.pam.PAM_TTY, ttydev.filename)
+        wldm.pam.putenv(pamh, "XDG_SESSION_TYPE", "wayland")
+        wldm.pam.putenv(pamh, "XDG_SESSION_CLASS", "greeter")
+        wldm.pam.putenv(pamh, "XDG_SEAT", greeter_seat())
+        wldm.pam.putenv(pamh, "XDG_VTNR", str(ttydev.number))
+        logger.debug("[+] Greeter PAM session starting for %s (service=%s)",
+                     pw.pw_name, pam_service)
+        wldm.pam.open_pam_session_only(pamh)
+        log_greeter_diag("opened PAM session for user=%s service=%s tty=%s",
+                         pw.pw_name, pam_service, ttydev.filename)
+        log_pam_environment(pamh)
+        yield pamh
+    finally:
+        finish_greeter_session(pamh)
+
+
 def finish_greeter_session(pamh: Optional[Any]) -> None:
     if pamh is None:
         return
@@ -139,43 +173,25 @@ def run_greeter_session(pw: pwd.struct_passwd,
                         prog_args: List[str]) -> int:
     redirect_greeter_stderr()
 
-    console = wldm.tty.open_console()
-    if console is None:
+    try:
+        with open_console_fd() as console:
+            try:
+                ttydev = wldm.tty.TTYdevice(console, pw.pw_uid, number=tty_number)
+                prepare_greeter_terminal(ttydev)
+
+                with open_greeter_pam_session(pam_service, pw, ttydev) as pamh:
+                    exec_greeter_program(
+                        pw.pw_name, pw.pw_uid, gid, pw.pw_dir,
+                        prog, prog_args,
+                        new_greeter_environ(pamh, pw),
+                    )
+                return wldm.EX_SUCCESS
+            except Exception as e:
+                logger.critical("Failed to exec `%s %s': %r", prog, prog_args, e)
+                return wldm.EX_FAILURE
+    except RuntimeError:
         logger.critical("[!] Unable to open console")
         return wldm.EX_FAILURE
-
-    pamh: Optional[Any] = None
-
-    try:
-        ttydev = wldm.tty.TTYdevice(console, pw.pw_uid, number=tty_number)
-        prepare_greeter_terminal(ttydev)
-
-        pamh = wldm.pam.start_pam(pam_service, pw.pw_name)
-        wldm.pam.set_pam_item(pamh, wldm.pam.PAM_TTY, ttydev.filename)
-        wldm.pam.putenv(pamh, "XDG_SESSION_TYPE", "wayland")
-        wldm.pam.putenv(pamh, "XDG_SESSION_CLASS", "greeter")
-        wldm.pam.putenv(pamh, "XDG_SEAT", greeter_seat())
-        wldm.pam.putenv(pamh, "XDG_VTNR", str(ttydev.number))
-
-        logger.debug("[+] Greeter PAM session starting for %s (service=%s)",
-                     pw.pw_name, pam_service)
-
-        wldm.pam.open_pam_session_only(pamh)
-        log_greeter_diag("opened PAM session for user=%s service=%s tty=%s",
-                         pw.pw_name, pam_service, ttydev.filename)
-        log_pam_environment(pamh)
-        exec_greeter_program(
-            pw.pw_name, pw.pw_uid, gid, pw.pw_dir,
-            prog, prog_args,
-            new_greeter_environ(pamh, pw),
-        )
-        return wldm.EX_SUCCESS
-    except Exception as e:
-        logger.critical("Failed to exec `%s %s': %r", prog, prog_args, e)
-        return wldm.EX_FAILURE
-    finally:
-        finish_greeter_session(pamh)
-        os.close(console)
 
 
 def cmd_main(parser: argparse.Namespace) -> int:

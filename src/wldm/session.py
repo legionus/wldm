@@ -3,11 +3,12 @@
 # Copyright (C) 2026  Alexey Gladkov <legion@kernel.org>
 
 import argparse
+import contextlib
 import os
 import os.path
 import pwd
 
-from typing import Dict, List, Optional, Any
+from typing import Dict, Iterator, List, Optional, Any
 
 import wldm
 import wldm.config
@@ -73,62 +74,75 @@ def prepare_user_terminal(ttydev: wldm.tty.TTYdevice) -> None:
         raise RuntimeError(f"unable to make {ttydev.filename} the controlling tty")
 
 
-def run_user_session(pw: pwd.struct_passwd,
-                     pam_service: str,
-                     prog: str, prog_args: List[str]) -> None:
+@contextlib.contextmanager
+def open_console_fd() -> Iterator[int]:
     console = wldm.tty.open_console()
     if console is None:
-        logger.critical("[!] Unable to open console")
-        return None
-
-    pamh: Optional[Any] = None
-    wtmp_line: Optional[str] = None
-
+        raise RuntimeError("Unable to open console")
     try:
-        logger.debug("[+] Opening free TTY device")
-        ttydev = wldm.tty.TTYdevice(console, pw.pw_uid)
-        prepare_user_terminal(ttydev)
+        yield console
+    finally:
+        os.close(console)
 
-        pamh = wldm.pam.start_pam(pam_service, pw.pw_name)
+
+@contextlib.contextmanager
+def open_user_pam_session(pam_service: str,
+                          pw: pwd.struct_passwd,
+                          ttydev: wldm.tty.TTYdevice) -> Iterator[Any]:
+    pamh = wldm.pam.start_pam(pam_service, pw.pw_name)
+    try:
         wldm.pam.set_pam_item(pamh, wldm.pam.PAM_TTY, ttydev.filename)
         wldm.pam.putenv(pamh, "XDG_SESSION_TYPE", "wayland")
         wldm.pam.putenv(pamh, "XDG_SESSION_CLASS", "user")
         wldm.pam.putenv(pamh, "XDG_SEAT", session_seat())
         wldm.pam.putenv(pamh, "XDG_VTNR", str(ttydev.number))
-
         logger.debug("[+] PAM session starting for %s (service=%s)",
                      pw.pw_name, pam_service)
-
         wldm.pam.open_pam_session(pamh)
-
         logger.debug("[+] PAM session opened")
-
-        pid = os.fork()
-        if pid == 0:
-            try:
-                exec_user_program(ttydev,
-                                  pw.pw_name, pw.pw_uid, pw.pw_gid, pw.pw_dir,
-                                  prog, prog_args,
-                                  new_user_environ(pamh, pw))
-            except Exception as e:
-                logger.critical("[child] Failed to exec `%s %s': %r",
-                                prog, prog_args, e)
-                os._exit(1)
-        else:
-            wtmp_line = ttydev.filename
-            wldm.wtmp.login(wtmp_line, pw.pw_name)
-            _, status = os.waitpid(pid, 0)
-            exitcode = os.WEXITSTATUS(status) if os.WIFEXITED(status) else None
-
-            if exitcode and exitcode != 0:
-                logger.critical("[+] Child exited. status=%s, exitcode=%s",
-                                status, exitcode)
-            ttydev.close()
+        yield pamh
     finally:
-        if wtmp_line is not None:
-            wldm.wtmp.logout(wtmp_line)
         finish_user_session(pamh)
-        os.close(console)
+
+
+def run_user_session(pw: pwd.struct_passwd,
+                     pam_service: str,
+                     prog: str, prog_args: List[str]) -> None:
+    try:
+        with open_console_fd() as console:
+            logger.debug("[+] Opening free TTY device")
+            ttydev = wldm.tty.TTYdevice(console, pw.pw_uid)
+            wtmp_line: Optional[str] = None
+            try:
+                prepare_user_terminal(ttydev)
+                with open_user_pam_session(pam_service, pw, ttydev) as pamh:
+                    pid = os.fork()
+                    if pid == 0:
+                        try:
+                            exec_user_program(ttydev,
+                                              pw.pw_name, pw.pw_uid, pw.pw_gid, pw.pw_dir,
+                                              prog, prog_args,
+                                              new_user_environ(pamh, pw))
+                        except Exception as e:
+                            logger.critical("[child] Failed to exec `%s %s': %r",
+                                            prog, prog_args, e)
+                            os._exit(1)
+                    else:
+                        wtmp_line = ttydev.filename
+                        wldm.wtmp.login(wtmp_line, pw.pw_name)
+                        _, status = os.waitpid(pid, 0)
+                        exitcode = os.WEXITSTATUS(status) if os.WIFEXITED(status) else None
+
+                        if exitcode and exitcode != 0:
+                            logger.critical("[+] Child exited. status=%s, exitcode=%s",
+                                            status, exitcode)
+            finally:
+                if wtmp_line is not None:
+                    wldm.wtmp.logout(wtmp_line)
+                ttydev.close()
+    except RuntimeError:
+        logger.critical("[!] Unable to open console")
+        return None
 
 
 def finish_user_session(pamh: Optional[Any]) -> None:
