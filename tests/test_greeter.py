@@ -418,6 +418,7 @@ def test_on_clock_tick_polls_session_finished_event_and_reenables_inputs(monkeyp
 
     assert greeter.LoginApp.on_clock_tick(app) is True
     assert app.auth_in_progress is False
+    assert app.username_entry.text == ""
     assert app.password_entry.text == ""
     assert app.password_entry.focused is True
     assert app.username_entry.sensitive is True
@@ -503,11 +504,12 @@ def test_on_login_clicked_sets_failure_and_clears_password(monkeypatch):
     app.on_login_clicked()
 
     assert app.status_label.text == "Authentication failed."
+    assert app.username_entry.text == "alice"
     assert app.password_entry.text == ""
     assert app.password_entry.focused is True
 
 
-def test_on_login_clicked_sets_success_message(monkeypatch):
+def test_on_login_clicked_sets_success_message_and_clears_username(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
 
     monkeypatch.setattr(greeter, "desktop_sessions", lambda username="": [])
@@ -518,6 +520,9 @@ def test_on_login_clicked_sets_success_message(monkeypatch):
 
         def get_text(self):
             return self.text
+
+        def set_text(self, text):
+            self.text = text
 
     class FakeLabel:
         def __init__(self):
@@ -538,6 +543,8 @@ def test_on_login_clicked_sets_success_message(monkeypatch):
     app.on_login_clicked()
 
     assert app.status_label.text == "Authentication accepted. Waiting for session..."
+    assert app.username_entry.text == ""
+    assert app.password_entry.text == ""
 
 
 def test_cmd_main_validates_resources_path(monkeypatch, tmp_path):

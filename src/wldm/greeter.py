@@ -332,6 +332,8 @@ class LoginApp:
 
         if event_name == wldm.protocol.EVENT_SESSION_FINISHED:
             self.set_auth_state(False)
+            if self.username_entry is not None:
+                self.username_entry.set_text("")
             if self.password_entry is not None:
                 self.password_entry.set_text("")
                 if hasattr(self.password_entry, "grab_focus"):
@@ -495,9 +497,12 @@ class LoginApp:
         if self.auth_in_progress:
             return
 
+        username = self.username_entry.get_text()
+        password = self.password_entry.get_text()
+
         data = {
-                "username": self.username_entry.get_text(),
-                "password": self.password_entry.get_text(),
+                "username": username,
+                "password": password,
                 "command":  self.get_session_command(),
                 }
 
@@ -515,16 +520,17 @@ class LoginApp:
                 self.password_entry.grab_focus()
             return
 
+        self.password_entry.set_text("")
         self.set_auth_state(True)
         answer = self.send_recv_answer(wldm.protocol.new_request(wldm.protocol.ACTION_AUTH, data))
         logger.debug("client answer: %s", answer)
 
         if answer.get("ok") and answer.get("payload", {}).get("verified"):
+            self.username_entry.set_text("")
             status_message = "Authentication accepted. Waiting for session..."
         else:
             self.set_auth_state(False)
             status_message = "Authentication failed."
-            self.password_entry.set_text("")
             self.password_entry.grab_focus()
 
         self.set_status(status_message)
