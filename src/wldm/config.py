@@ -38,6 +38,8 @@ def read_config() -> configparser.ConfigParser:
             "log-path": "/tmp/wldm/daemon.log",
             "poweroff-command": "systemctl poweroff",
             "reboot-command": "systemctl reboot",
+            "suspend-command": "",
+            "hibernate-command": "",
             }
 
     cfg["greeter"] = {

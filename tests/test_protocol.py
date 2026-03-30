@@ -79,6 +79,10 @@ def test_new_event_and_validators():
 def test_new_request_supports_control_actions():
     poweroff = wldm.protocol.new_request(wldm.protocol.ACTION_POWEROFF, {})
     reboot = wldm.protocol.new_request(wldm.protocol.ACTION_REBOOT, {})
+    suspend = wldm.protocol.new_request(wldm.protocol.ACTION_SUSPEND, {})
+    hibernate = wldm.protocol.new_request(wldm.protocol.ACTION_HIBERNATE, {})
 
     assert poweroff["action"] == wldm.protocol.ACTION_POWEROFF
     assert reboot["action"] == wldm.protocol.ACTION_REBOOT
+    assert suspend["action"] == wldm.protocol.ACTION_SUSPEND
+    assert hibernate["action"] == wldm.protocol.ACTION_HIBERNATE

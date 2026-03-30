@@ -13,6 +13,8 @@ PROTOCOL_VERSION = 1
 ACTION_AUTH = "auth"
 ACTION_POWEROFF = "poweroff"
 ACTION_REBOOT = "reboot"
+ACTION_SUSPEND = "suspend"
+ACTION_HIBERNATE = "hibernate"
 
 EVENT_SESSION_STARTING = "session-starting"
 EVENT_SESSION_FINISHED = "session-finished"

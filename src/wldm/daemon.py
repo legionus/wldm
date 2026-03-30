@@ -72,6 +72,14 @@ class RequestOutcome:
     control_action: str = ""
 
 
+POWER_ACTION_COMMANDS = {
+    wldm.protocol.ACTION_POWEROFF: "poweroff-command",
+    wldm.protocol.ACTION_REBOOT: "reboot-command",
+    wldm.protocol.ACTION_SUSPEND: "suspend-command",
+    wldm.protocol.ACTION_HIBERNATE: "hibernate-command",
+}
+
+
 def greeter_socket_path(cfg: Optional[Any] = None) -> str:
     if "WLDM_SOCKET" in os.environ:
         return os.environ["WLDM_SOCKET"]
@@ -118,12 +126,22 @@ def greeter_command(cfg: Any, progname: str) -> list[str]:
     return shlex.split(command) + [progname, "greeter"]
 
 
+def configured_power_actions(cfg: Any) -> list[str]:
+    actions = []
+    for action, option in POWER_ACTION_COMMANDS.items():
+        if str(cfg["daemon"].get(option, "")).strip():
+            actions.append(action)
+    return actions
+
+
 def control_command(cfg: Any, action: str) -> list[str]:
-    if action == wldm.protocol.ACTION_POWEROFF:
-        return shlex.split(str(cfg["daemon"].get("poweroff-command", "systemctl poweroff")))
-    if action == wldm.protocol.ACTION_REBOOT:
-        return shlex.split(str(cfg["daemon"].get("reboot-command", "systemctl reboot")))
-    raise ValueError(f"unsupported control action: {action}")
+    option = POWER_ACTION_COMMANDS.get(action)
+    if option is None:
+        raise ValueError(f"unsupported control action: {action}")
+    command = str(cfg["daemon"].get(option, "")).strip()
+    if not command:
+        raise ValueError(f"control action is disabled: {action}")
+    return shlex.split(command)
 
 
 def verify_creds(data: Dict[str, str]) -> bool:
@@ -139,7 +157,7 @@ def verify_creds(data: Dict[str, str]) -> bool:
     return False
 
 
-def process_request(req: Dict[str, Any]) -> RequestOutcome:
+def process_request(req: Dict[str, Any], cfg: Optional[Any] = None) -> RequestOutcome:
     if not wldm.protocol.is_request(req):
         return RequestOutcome(
             response=wldm.protocol.new_error(req, "bad_request", "Malformed request"),
@@ -165,7 +183,13 @@ def process_request(req: Dict[str, Any]) -> RequestOutcome:
             outcome.session_desktop_names = list(payload.get("desktop_names", []))
         return outcome
 
-    if req["action"] in [wldm.protocol.ACTION_POWEROFF, wldm.protocol.ACTION_REBOOT]:
+    if req["action"] in POWER_ACTION_COMMANDS:
+        if cfg is not None and req["action"] not in configured_power_actions(cfg):
+            return RequestOutcome(
+                response=wldm.protocol.new_error(
+                    req, "action_disabled", f"Action disabled: {req['action']}"
+                ),
+            )
         return RequestOutcome(
             response=wldm.protocol.new_response(
                 req, ok=True, payload={"accepted": True},
@@ -278,7 +302,7 @@ async def wait_for_stop_or_process(proc: AsyncProcess,
 async def handle_request_async(state: DaemonState,
                                req: Dict[str, Any],
                                cfg: Optional[Any] = None) -> None:
-    outcome = process_request(req)
+    outcome = process_request(req, cfg)
     await send_message(state.greeter_writer, outcome.response)
 
     if outcome.event is not None:
@@ -362,6 +386,7 @@ async def start_greeter(state: DaemonState,
         os.environ,
         WLDM_SOCKET=socket_path,
         WLDM_SEAT=state.seat,
+        WLDM_ACTIONS=":".join(configured_power_actions(cfg)),
         WLDM_GREETER_STDERR_LOG=cfg["greeter"].get("log-path", "/tmp/wldm/greeter.log"),
         WLDM_GREETER_USER_SESSIONS=cfg["greeter"].get("user-sessions", "yes"),
     )

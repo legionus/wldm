@@ -103,6 +103,8 @@ def make_config(user="gdm",
         "log-path": daemon_log,
         "poweroff-command": "systemctl poweroff",
         "reboot-command": "systemctl reboot",
+        "suspend-command": "",
+        "hibernate-command": "",
     }
     cfg["greeter"] = {
         "user": user,
@@ -137,11 +139,25 @@ def test_verify_creds_returns_false_on_auth_exception(monkeypatch):
 def test_process_request_accepts_poweroff_and_reboot():
     poweroff = wldm.daemon.process_request(wldm.protocol.new_request(wldm.protocol.ACTION_POWEROFF, {}))
     reboot = wldm.daemon.process_request(wldm.protocol.new_request(wldm.protocol.ACTION_REBOOT, {}))
+    suspend = wldm.daemon.process_request(wldm.protocol.new_request(wldm.protocol.ACTION_SUSPEND, {}))
+    hibernate = wldm.daemon.process_request(wldm.protocol.new_request(wldm.protocol.ACTION_HIBERNATE, {}))
 
     assert poweroff.response["payload"] == {"accepted": True}
     assert poweroff.control_action == wldm.protocol.ACTION_POWEROFF
     assert reboot.response["payload"] == {"accepted": True}
     assert reboot.control_action == wldm.protocol.ACTION_REBOOT
+    assert suspend.response["payload"] == {"accepted": True}
+    assert suspend.control_action == wldm.protocol.ACTION_SUSPEND
+    assert hibernate.response["payload"] == {"accepted": True}
+    assert hibernate.control_action == wldm.protocol.ACTION_HIBERNATE
+
+
+def test_process_request_rejects_disabled_control_actions():
+    cfg = make_config()
+
+    outcome = wldm.daemon.process_request(wldm.protocol.new_request(wldm.protocol.ACTION_SUSPEND, {}), cfg)
+
+    assert outcome.response["error"]["code"] == "action_disabled"
 
 
 def test_process_request_replies_with_bad_request_for_unknown_payload():
@@ -294,9 +310,24 @@ def test_control_command_uses_configured_system_commands():
     cfg = make_config()
     cfg["daemon"]["poweroff-command"] = "do-poweroff --now"
     cfg["daemon"]["reboot-command"] = "do-reboot --cold"
+    cfg["daemon"]["suspend-command"] = "do-suspend"
+    cfg["daemon"]["hibernate-command"] = "do-hibernate --deep"
 
     assert wldm.daemon.control_command(cfg, wldm.protocol.ACTION_POWEROFF) == ["do-poweroff", "--now"]
     assert wldm.daemon.control_command(cfg, wldm.protocol.ACTION_REBOOT) == ["do-reboot", "--cold"]
+    assert wldm.daemon.control_command(cfg, wldm.protocol.ACTION_SUSPEND) == ["do-suspend"]
+    assert wldm.daemon.control_command(cfg, wldm.protocol.ACTION_HIBERNATE) == ["do-hibernate", "--deep"]
+
+
+def test_configured_power_actions_only_includes_enabled_actions():
+    cfg = make_config()
+    cfg["daemon"]["suspend-command"] = "do-suspend"
+
+    assert wldm.daemon.configured_power_actions(cfg) == [
+        wldm.protocol.ACTION_POWEROFF,
+        wldm.protocol.ACTION_REBOOT,
+        wldm.protocol.ACTION_SUSPEND,
+    ]
 
 
 def test_send_message_writes_encoded_line():
@@ -437,6 +468,7 @@ def test_handle_greeter_client_rejects_unexpected_peer_uid(monkeypatch):
 def test_start_greeter_passes_socket_env(monkeypatch):
     state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3, seat="seat9")
     cfg = make_config(command="labwc --", greeter_log="/tmp/custom-greeter.log", user_sessions="no")
+    cfg["daemon"]["suspend-command"] = "do-suspend"
     calls = {}
     proc = DummyAsyncProc(pid=4321, returncode=0)
 
@@ -468,6 +500,7 @@ def test_start_greeter_passes_socket_env(monkeypatch):
     )
     assert calls["env"]["WLDM_SOCKET"] == "/tmp/wldm/greeter.sock"
     assert calls["env"]["WLDM_SEAT"] == "seat9"
+    assert calls["env"]["WLDM_ACTIONS"] == "poweroff:reboot:suspend"
     assert calls["env"]["WLDM_GREETER_STDERR_LOG"] == "/tmp/custom-greeter.log"
     assert calls["env"]["WLDM_GREETER_USER_SESSIONS"] == "no"
 

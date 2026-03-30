@@ -25,6 +25,12 @@ The repository default file is [`config/wldm.ini`](../config/wldm.ini).
   Command executed for greeter poweroff requests. Default: `systemctl poweroff`.
 - `reboot-command`
   Command executed for greeter reboot requests. Default: `systemctl reboot`.
+- `suspend-command`
+  Command executed for greeter suspend requests. Default: empty, which disables
+  the action and hides the button in the greeter.
+- `hibernate-command`
+  Command executed for greeter hibernate requests. Default: empty, which
+  disables the action and hides the button in the greeter.
 
 ## `[greeter]`
 
@@ -90,6 +96,10 @@ the configured command explicitly invokes one.
 seat = seat0
 socket-path = /run/wldm/greeter.sock
 log-path = /var/log/wldm/daemon.log
+poweroff-command = systemctl poweroff
+reboot-command = systemctl reboot
+suspend-command = systemctl suspend
+hibernate-command = systemctl hibernate
 
 [greeter]
 user = gdm

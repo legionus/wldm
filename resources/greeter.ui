@@ -209,6 +209,24 @@
 										</child>
 
 										<child>
+											<object class="GtkButton" id="suspend_button">
+												<property name="label">Suspend</property>
+												<style>
+													<class name="secondary-button"/>
+												</style>
+											</object>
+										</child>
+
+										<child>
+											<object class="GtkButton" id="hibernate_button">
+												<property name="label">Hibernate</property>
+												<style>
+													<class name="secondary-button"/>
+												</style>
+											</object>
+										</child>
+
+										<child>
 											<object class="GtkButton" id="reboot_button">
 												<property name="label">Reboot</property>
 												<style>

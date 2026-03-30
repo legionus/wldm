@@ -146,6 +146,14 @@ def test_session_data_dirs_can_disable_user_sessions(monkeypatch):
     assert greeter.wldm.sessions.session_data_dirs("alice") == ["/usr/share/wayland-sessions"]
 
 
+def test_available_actions_reads_environment(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+
+    monkeypatch.setenv("WLDM_ACTIONS", "poweroff:reboot:suspend")
+
+    assert greeter.available_actions() == {"poweroff", "reboot", "suspend"}
+
+
 def test_parse_desktop_names_splits_semicolon_list(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
 
@@ -673,9 +681,13 @@ def test_on_activate_binds_widgets_and_populates_sessions(monkeypatch):
     class FakeButton:
         def __init__(self):
             self.connections = []
+            self.visible = None
 
         def connect(self, signal, callback):
             self.connections.append((signal, callback))
+
+        def set_visible(self, visible):
+            self.visible = visible
 
     class FakeSessionsEntry(FakeEntry):
         def __init__(self):
@@ -702,6 +714,8 @@ def test_on_activate_binds_widgets_and_populates_sessions(monkeypatch):
     login_button = FakeButton()
     quit_button = FakeButton()
     reboot_button = FakeButton()
+    suspend_button = FakeButton()
+    hibernate_button = FakeButton()
     hostname_label = types.SimpleNamespace(set_text=lambda text: None)
     date_label = types.SimpleNamespace(set_text=lambda text: None)
     time_label = types.SimpleNamespace(set_text=lambda text: None)
@@ -717,6 +731,8 @@ def test_on_activate_binds_widgets_and_populates_sessions(monkeypatch):
         "login_button": login_button,
         "quit_button": quit_button,
         "reboot_button": reboot_button,
+        "suspend_button": suspend_button,
+        "hibernate_button": hibernate_button,
         "hostname_label": hostname_label,
         "date_label": date_label,
         "time_label": time_label,
@@ -734,6 +750,7 @@ def test_on_activate_binds_widgets_and_populates_sessions(monkeypatch):
                             {"name": "Alpha", "command": "alpha", "comment": "Alpha session", "desktop_names": ["alpha"]},
                             {"name": "Beta", "command": "beta", "comment": "Beta session", "desktop_names": ["beta"]},
                         ])
+    monkeypatch.setenv("WLDM_ACTIONS", "poweroff:reboot")
     monkeypatch.setattr(greeter.Gtk.Builder, "new_from_file", lambda path: FakeBuilder())
 
     app = greeter.LoginApp(client=DummyClient())
@@ -746,6 +763,12 @@ def test_on_activate_binds_widgets_and_populates_sessions(monkeypatch):
     assert login_button.connections == [("clicked", app.on_login_clicked)]
     assert quit_button.connections == [("clicked", app.on_poweroff_clicked)]
     assert reboot_button.connections == [("clicked", app.on_reboot_clicked)]
+    assert suspend_button.connections == [("clicked", app.on_suspend_clicked)]
+    assert hibernate_button.connections == [("clicked", app.on_hibernate_clicked)]
+    assert quit_button.visible is True
+    assert reboot_button.visible is True
+    assert suspend_button.visible is False
+    assert hibernate_button.visible is False
     assert password_entry.connections == [("activate", app.on_login_clicked)]
     assert sessions_entry.connections == [
         ("notify::selected-item", app.on_session_changed),
@@ -824,7 +847,17 @@ def test_system_action_buttons_send_requests(monkeypatch):
 
     app.on_poweroff_clicked()
     assert app.status_label.text == "Powering off..."
-    assert calls == [greeter.wldm.protocol.ACTION_REBOOT, greeter.wldm.protocol.ACTION_POWEROFF]
+    app.on_suspend_clicked()
+    assert app.status_label.text == "Suspending..."
+
+    app.on_hibernate_clicked()
+    assert app.status_label.text == "Hibernating..."
+    assert calls == [
+        greeter.wldm.protocol.ACTION_REBOOT,
+        greeter.wldm.protocol.ACTION_POWEROFF,
+        greeter.wldm.protocol.ACTION_SUSPEND,
+        greeter.wldm.protocol.ACTION_HIBERNATE,
+    ]
 
 
 def test_username_change_updates_identity_preview(monkeypatch):

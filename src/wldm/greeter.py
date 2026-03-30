@@ -91,6 +91,11 @@ def new_ipc_client() -> Any:
     return SocketClient(socket_path)
 
 
+def available_actions() -> set[str]:
+    value = os.environ.get("WLDM_ACTIONS", "")
+    return {item for item in value.split(":") if item}
+
+
 def setup_greeter_logging() -> None:
     def log_uncaught_exception(exc_type: type[BaseException],
                                exc_value: BaseException,
@@ -123,6 +128,8 @@ class LoginApp:
         self.login_button:   Optional[Any] = None
         self.quit_button:    Optional[Any] = None
         self.reboot_button:  Optional[Any] = None
+        self.suspend_button: Optional[Any] = None
+        self.hibernate_button: Optional[Any] = None
         self.hostname_label: Optional[Any] = None
         self.date_label:     Optional[Any] = None
         self.time_label:     Optional[Any] = None
@@ -135,6 +142,7 @@ class LoginApp:
 
         self.quit = False
         self.auth_in_progress = False
+        self.actions = available_actions()
 
     def set_status(self, message: str) -> None:
         if self.status_label is not None:
@@ -213,6 +221,18 @@ class LoginApp:
             self.identity_label.set_text(display_name)
         if self.avatar_label is not None:
             self.avatar_label.set_text(avatar_text)
+
+    def update_action_buttons(self) -> None:
+        button_actions = [
+            (getattr(self, "quit_button", None), wldm.protocol.ACTION_POWEROFF),
+            (getattr(self, "reboot_button", None), wldm.protocol.ACTION_REBOOT),
+            (getattr(self, "suspend_button", None), wldm.protocol.ACTION_SUSPEND),
+            (getattr(self, "hibernate_button", None), wldm.protocol.ACTION_HIBERNATE),
+        ]
+
+        for button, action in button_actions:
+            if button is not None and hasattr(button, "set_visible"):
+                button.set_visible(action in self.actions)
 
     def update_clock(self) -> None:
         if self.date_label is not None:
@@ -311,6 +331,8 @@ class LoginApp:
         self.login_button   = get_object("login_button")
         self.quit_button    = get_object("quit_button")
         self.reboot_button  = get_object("reboot_button")
+        self.suspend_button = get_object("suspend_button")
+        self.hibernate_button = get_object("hibernate_button")
         self.hostname_label = get_object("hostname_label")
         self.date_label     = get_object("date_label")
         self.time_label     = get_object("time_label")
@@ -333,6 +355,10 @@ class LoginApp:
             self.quit_button.connect("clicked", self.on_poweroff_clicked)
         if self.reboot_button:
             self.reboot_button.connect("clicked", self.on_reboot_clicked)
+        if self.suspend_button:
+            self.suspend_button.connect("clicked", self.on_suspend_clicked)
+        if self.hibernate_button:
+            self.hibernate_button.connect("clicked", self.on_hibernate_clicked)
 
         if self.password_entry is not None:
             self.password_entry.connect("activate", self.on_login_clicked)
@@ -343,6 +369,7 @@ class LoginApp:
 
         self.refresh_sessions()
         self.update_identity_preview()
+        self.update_action_buttons()
         self.set_status("Ready.")
 
         if self.username_entry is not None and hasattr(self.username_entry, "grab_focus"):
@@ -505,6 +532,14 @@ class LoginApp:
     # pylint: disable-next=unused-argument
     def on_reboot_clicked(self, *args: Any) -> None:
         self.request_system_action(wldm.protocol.ACTION_REBOOT, "Rebooting...")
+
+    # pylint: disable-next=unused-argument
+    def on_suspend_clicked(self, *args: Any) -> None:
+        self.request_system_action(wldm.protocol.ACTION_SUSPEND, "Suspending...")
+
+    # pylint: disable-next=unused-argument
+    def on_hibernate_clicked(self, *args: Any) -> None:
+        self.request_system_action(wldm.protocol.ACTION_HIBERNATE, "Hibernating...")
 
 
 def cmd_main(_parser: argparse.Namespace) -> int:
