@@ -4,10 +4,22 @@
 import ctypes
 
 import wldm.pam
+import wldm._pam_ffi
 
 
 def test_simple_conv_returns_success():
     assert wldm.pam._simple_conv(0, [], None, None) == wldm.pam.PAM_SUCCESS
+
+
+def test_pam_ffi_require_library_raises_when_missing(monkeypatch):
+    monkeypatch.setattr(wldm._pam_ffi, "find_library", lambda name: None)
+
+    try:
+        wldm._pam_ffi._require_library("pam")
+    except RuntimeError as exc:
+        assert "required library: pam" in str(exc)
+    else:
+        raise AssertionError("_require_library() should fail when libpam is missing")
 
 
 def test_password_conv_rejects_missing_inputs():
@@ -19,7 +31,7 @@ def test_password_conv_rejects_missing_inputs():
 def test_password_conv_rejects_failed_alloc(monkeypatch):
     response = [None]
 
-    monkeypatch.setattr(wldm.pam.libc, "calloc", lambda count, size: 0)
+    monkeypatch.setattr(wldm.pam, "calloc", lambda count, size: 0)
 
     assert wldm.pam._password_conv(1, [], response, ctypes.c_void_p(1)) == wldm.pam.PAM_CONV_ERR
 
@@ -28,8 +40,8 @@ def test_password_conv_frees_response_array_when_password_is_missing(monkeypatch
     response = [None]
     calls = []
 
-    monkeypatch.setattr(wldm.pam.libc, "calloc", lambda count, size: 1234)
-    monkeypatch.setattr(wldm.pam.libc, "free", lambda ptr: calls.append(ptr))
+    monkeypatch.setattr(wldm.pam, "calloc", lambda count, size: 1234)
+    monkeypatch.setattr(wldm.pam, "free", lambda ptr: calls.append(ptr))
     real_cast = wldm.pam.ctypes.cast
     monkeypatch.setattr(
         wldm.pam.ctypes,
@@ -55,7 +67,7 @@ def test_password_conv_populates_response_for_password_prompt(monkeypatch):
     def fake_calloc(count, size):
         return ctypes.addressof(allocations.pop(0))
 
-    monkeypatch.setattr(wldm.pam.libc, "calloc", fake_calloc)
+    monkeypatch.setattr(wldm.pam, "calloc", fake_calloc)
 
     response = [None]
     password = ctypes.c_char_p(b"secret")
@@ -85,8 +97,8 @@ def test_password_conv_frees_partial_allocations_when_message_buffer_alloc_fails
             return ctypes.addressof(password_buffer)
         return 0
 
-    monkeypatch.setattr(wldm.pam.libc, "calloc", fake_calloc)
-    monkeypatch.setattr(wldm.pam.libc, "free", lambda ptr: calls.append(("free", ptr)))
+    monkeypatch.setattr(wldm.pam, "calloc", fake_calloc)
+    monkeypatch.setattr(wldm.pam, "free", lambda ptr: calls.append(("free", ptr)))
 
     response = [None]
     password = ctypes.c_char_p(b"secret")
