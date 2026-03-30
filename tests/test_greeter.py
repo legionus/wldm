@@ -77,6 +77,9 @@ class DummyClient:
     def readline(self):
         return ""
 
+    def can_read(self):
+        return False
+
     def close(self):
         return None
 
@@ -287,12 +290,16 @@ def test_send_recv_answer_round_trips_json(monkeypatch):
         def __init__(self, lines):
             self.lines = iter(lines)
             self.sent = []
+            self.readable = False
 
         def writeline(self, data):
             self.sent.append(data)
 
         def readline(self):
             return next(self.lines, "")
+
+        def can_read(self):
+            return self.readable
 
         def close(self):
             return None
@@ -332,6 +339,7 @@ def test_handle_event_updates_status_label(monkeypatch):
             self.text = text
 
     app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app.auth_in_progress = False
     app.username_entry = None
     app.password_entry = None
     app.sessions_entry = None
@@ -351,6 +359,72 @@ def test_handle_event_updates_status_label(monkeypatch):
     assert app.status_label.text == "Session finished."
 
 
+def test_on_clock_tick_polls_session_finished_event_and_reenables_inputs(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+
+    class FakeEntry:
+        def __init__(self, text=""):
+            self.text = text
+            self.sensitive = True
+            self.focused = False
+
+        def set_text(self, text):
+            self.text = text
+
+        def get_text(self):
+            return self.text
+
+        def set_sensitive(self, value):
+            self.sensitive = value
+
+        def grab_focus(self):
+            self.focused = True
+
+    class FakeLabel:
+        def __init__(self):
+            self.text = None
+
+        def set_text(self, text):
+            self.text = text
+
+    class FakeClient:
+        def __init__(self):
+            self.reads = 0
+
+        def can_read(self):
+            return self.reads == 0
+
+        def readline(self):
+            self.reads += 1
+            return (
+                f'{{"v": 1, "type": "event", "event": "{greeter.wldm.protocol.EVENT_SESSION_FINISHED}", '
+                f'"payload": {{"pid": 1, "returncode": 0}}}}\n'
+            )
+
+        def close(self):
+            return None
+
+    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app.client = FakeClient()
+    app.quit = False
+    app.auth_in_progress = True
+    app.username_entry = FakeEntry("alice")
+    app.password_entry = FakeEntry("secret")
+    app.sessions_entry = FakeEntry()
+    app.login_button = FakeEntry()
+    app.status_label = FakeLabel()
+    app.date_label = None
+    app.time_label = None
+
+    assert greeter.LoginApp.on_clock_tick(app) is True
+    assert app.auth_in_progress is False
+    assert app.password_entry.text == ""
+    assert app.password_entry.focused is True
+    assert app.username_entry.sensitive is True
+    assert app.password_entry.sensitive is True
+    assert app.status_label.text == "Session finished."
+
+
 def test_send_recv_answer_returns_empty_dict_on_bad_json(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
 
@@ -362,6 +436,9 @@ def test_send_recv_answer_returns_empty_dict_on_bad_json(monkeypatch):
 
         def readline(self):
             return "{bad json}\n"
+
+        def can_read(self):
+            return False
 
         def close(self):
             return None

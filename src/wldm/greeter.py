@@ -8,6 +8,7 @@ import json
 import os
 import os.path
 import pwd
+import select
 import socket
 import sys
 import threading
@@ -125,6 +126,10 @@ class SocketClient:
 
     def readline(self) -> str:
         return self.reader.readline()
+
+    def can_read(self) -> bool:
+        readable, _, _ = select.select([self.sock], [], [], 0.0)
+        return self.sock in readable
 
     def close(self) -> None:
         try:
@@ -271,8 +276,45 @@ class LoginApp:
             self.time_label.set_text(time.strftime("%H:%M"))
 
     def on_clock_tick(self) -> bool:
+        self.poll_events()
         self.update_clock()
         return not self.quit
+
+    def poll_events(self) -> None:
+        connection_lost = False
+        acquired = False
+
+        try:
+            acquired = lock.acquire(blocking=False)
+            if not acquired:
+                return
+
+            while hasattr(self.client, "can_read") and self.client.can_read():
+                line = self.client.readline()
+                if len(line) == 0:
+                    connection_lost = True
+                    break
+
+                message = wldm.protocol.decode_message(line)
+
+                if wldm.protocol.is_event(message):
+                    self.handle_event(message)
+                    continue
+
+                logger.debug("unexpected protocol message while idle: %s", message)
+
+        except (json.decoder.JSONDecodeError, ValueError):
+            logger.critical("bad json while polling greeter events")
+        except Exception as e:
+            logger.critical("unexpected polling error: %r", e)
+            connection_lost = True
+        finally:
+            if acquired:
+                lock.release()
+
+        if connection_lost:
+            self.set_status("Connection to daemon lost.")
+            self.on_quit()
 
     def handle_event(self, event: Dict[str, Any]) -> None:
         if not wldm.protocol.is_event(event):
@@ -292,6 +334,8 @@ class LoginApp:
             self.set_auth_state(False)
             if self.password_entry is not None:
                 self.password_entry.set_text("")
+                if hasattr(self.password_entry, "grab_focus"):
+                    self.password_entry.grab_focus()
             self.set_status("Session finished.")
             return
 
