@@ -11,6 +11,25 @@ import types
 def load_greeter_module(monkeypatch):
     timeout_calls = []
 
+    class FakeBuilderInstance:
+        def __init__(self):
+            self.translation_domain = None
+            self.loaded_path = None
+
+        def set_translation_domain(self, domain):
+            self.translation_domain = domain
+
+        def add_from_file(self, path):
+            self.loaded_path = path
+
+        def get_object(self, name):
+            return None
+
+    class FakeBuilderClass:
+        @staticmethod
+        def new():
+            return FakeBuilderInstance()
+
     class FakeApplication:
         def __init__(self, application_id=None, flags=None):
             self.application_id = application_id
@@ -44,7 +63,7 @@ def load_greeter_module(monkeypatch):
 
     fake_gtk = types.SimpleNamespace(
         Application=FakeApplication,
-        Builder=types.SimpleNamespace(new_from_file=lambda path: None),
+        Builder=FakeBuilderClass,
         StringList=FakeStringList,
         CssProvider=FakeCssProvider,
         StyleContext=types.SimpleNamespace(add_provider_for_display=lambda *args, **kwargs: None),
@@ -697,12 +716,52 @@ def test_themed_resource_path_falls_back_to_default_when_theme_is_missing(monkey
     assert any("falling back to default" in message for message in warnings)
 
 
+def test_greeter_locale_path_prefers_theme_locale(monkeypatch, tmp_path):
+    greeter = load_greeter_module(monkeypatch)
+    theme_dir = tmp_path / "themes" / "retro"
+    locale_dir = theme_dir / "locale"
+    locale_dir.mkdir(parents=True)
+    greeter.resource_path = str(theme_dir)
+    monkeypatch.delenv("WLDM_LOCALE_PATH", raising=False)
+
+    assert greeter.greeter_locale_path() == str(locale_dir)
+
+
+def test_greeter_locale_path_prefers_explicit_env(monkeypatch, tmp_path):
+    greeter = load_greeter_module(monkeypatch)
+    greeter.resource_path = str(tmp_path / "resources")
+    monkeypatch.setenv("WLDM_LOCALE_PATH", str(tmp_path / "locale"))
+
+    assert greeter.greeter_locale_path() == str(tmp_path / "locale")
+
+
 def test_setup_greeter_logging_installs_file_logger_and_excepthook(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
 
     greeter.setup_greeter_logging()
 
     assert greeter.sys.excepthook is not greeter.sys.__excepthook__
+
+
+def test_setup_greeter_i18n_binds_theme_locale(monkeypatch, tmp_path):
+    greeter = load_greeter_module(monkeypatch)
+    theme_dir = tmp_path / "themes" / "retro"
+    locale_dir = theme_dir / "locale"
+    locale_dir.mkdir(parents=True)
+    greeter.resource_path = str(theme_dir)
+    bind_calls = []
+    textdomain_calls = []
+
+    monkeypatch.setattr(greeter.locale, "setlocale", lambda category, value: None)
+    monkeypatch.setattr(greeter.gettext, "bindtextdomain",
+                        lambda domain, path: bind_calls.append((domain, path)))
+    monkeypatch.setattr(greeter.gettext, "textdomain",
+                        lambda domain: textdomain_calls.append(domain))
+
+    greeter.setup_greeter_i18n()
+
+    assert bind_calls == [("wldm", str(locale_dir))]
+    assert textdomain_calls == ["wldm"]
 
 
 def test_validate_theme_widgets_rejects_missing_required_widgets(monkeypatch):
@@ -812,6 +871,16 @@ def test_on_activate_binds_widgets_and_populates_sessions(monkeypatch):
     }
 
     class FakeBuilder:
+        def __init__(self):
+            self.translation_domain = None
+            self.loaded_path = None
+
+        def set_translation_domain(self, domain):
+            self.translation_domain = domain
+
+        def add_from_file(self, path):
+            self.loaded_path = path
+
         def get_object(self, name):
             return objects[name]
 
@@ -821,7 +890,7 @@ def test_on_activate_binds_widgets_and_populates_sessions(monkeypatch):
                             {"name": "Beta", "command": "beta", "comment": "Beta session", "desktop_names": ["beta"]},
                         ])
     monkeypatch.setenv("WLDM_ACTIONS", "poweroff:reboot")
-    monkeypatch.setattr(greeter.Gtk.Builder, "new_from_file", lambda path: FakeBuilder())
+    monkeypatch.setattr(greeter.Gtk.Builder, "new", lambda: FakeBuilder())
 
     app = greeter.LoginApp(client=DummyClient())
     app.on_activate(app.app)

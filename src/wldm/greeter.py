@@ -4,7 +4,9 @@
 
 import argparse
 import configparser
+import gettext
 import json
+import locale
 import os
 import os.path
 import select
@@ -34,6 +36,8 @@ import wldm.sessions
 logger = wldm.logger
 resource_path: str
 lock = threading.Lock()
+GETTEXT_DOMAIN = "wldm"
+_ = gettext.gettext
 
 REQUIRED_THEME_WIDGETS = [
     "main_window",
@@ -115,6 +119,27 @@ def setup_greeter_logging() -> None:
         )
 
     sys.excepthook = log_uncaught_exception
+
+
+def greeter_locale_path() -> str:
+    if "WLDM_LOCALE_PATH" in os.environ:
+        return os.path.abspath(os.environ["WLDM_LOCALE_PATH"])
+
+    theme_locale = os.path.join(resource_path, "locale")
+    if os.path.isdir(theme_locale):
+        return theme_locale
+
+    return os.path.join(sys.prefix, "share", "locale")
+
+
+def setup_greeter_i18n() -> None:
+    try:
+        locale.setlocale(locale.LC_ALL, "")
+    except locale.Error:
+        pass
+
+    gettext.bindtextdomain(GETTEXT_DOMAIN, greeter_locale_path())
+    gettext.textdomain(GETTEXT_DOMAIN)
 
 
 def default_resource_path() -> str:
@@ -207,7 +232,7 @@ class LoginApp:
                 widget.set_sensitive(not busy)
 
         if busy:
-            self.set_status("Authenticating...")
+            self.set_status(_("Authenticating..."))
 
     def update_session_summary(self) -> None:
         if self.session_label is None:
@@ -223,9 +248,10 @@ class LoginApp:
                 description = str(entry.get("comment", ""))
 
         if description:
-            self.session_label.set_text(f"Session: {description}\nCommand: {item}")
+            self.session_label.set_text(_("Session: %(description)s\nCommand: %(command)s")
+                                        % {"description": description, "command": item})
         else:
-            self.session_label.set_text(f"Session command: {item}")
+            self.session_label.set_text(_("Session command: %(command)s") % {"command": item})
 
     def refresh_sessions(self, username: str = "") -> None:
         current_name = ""
@@ -259,7 +285,7 @@ class LoginApp:
             username = self.username_entry.get_text().strip()
 
         profile = account_service_profile(username)
-        display_name = profile["display_name"] if username else "Type a username to preview the account"
+        display_name = profile["display_name"] if username else _("Type a username to preview the account")
         avatar_text = username[:1].upper() if username else "?"
 
         if self.identity_label is not None:
@@ -323,7 +349,7 @@ class LoginApp:
                 lock.release()
 
         if connection_lost:
-            self.set_status("Connection to daemon lost.")
+            self.set_status(_("Connection to daemon lost."))
             self.on_quit()
 
     def handle_event(self, event: Dict[str, Any]) -> None:
@@ -337,7 +363,8 @@ class LoginApp:
 
         if event_name == wldm.protocol.EVENT_SESSION_STARTING:
             self.set_auth_state(True)
-            self.set_status(f"Starting session for {payload.get('username', 'user')}...")
+            self.set_status(_("Starting session for %(username)s...") %
+                            {"username": payload.get("username", "user")})
             return
 
         if event_name == wldm.protocol.EVENT_SESSION_FINISHED:
@@ -348,15 +375,16 @@ class LoginApp:
                 self.password_entry.set_text("")
                 if hasattr(self.password_entry, "grab_focus"):
                     self.password_entry.grab_focus()
-            self.set_status("Session finished.")
+            self.set_status(_("Session finished."))
             return
 
     def run(self) -> None:
         self.app.run()
 
     def on_activate(self, app: Gtk.Application) -> None:
-        builder = Gtk.Builder.new_from_file(
-                os.path.join(resource_path, "greeter.ui"))
+        builder = Gtk.Builder.new()
+        builder.set_translation_domain(GETTEXT_DOMAIN)
+        builder.add_from_file(os.path.join(resource_path, "greeter.ui"))
         validate_theme_widgets(builder)
 
         def get_object(name: str) -> Optional[Any]:
@@ -416,7 +444,7 @@ class LoginApp:
         self.refresh_sessions()
         self.update_identity_preview()
         self.update_action_buttons()
-        self.set_status("Ready.")
+        self.set_status(_("Ready."))
 
         if self.username_entry is not None and hasattr(self.username_entry, "grab_focus"):
             self.username_entry.grab_focus()
@@ -503,7 +531,7 @@ class LoginApp:
             lock.release()
 
         if connection_lost:
-            self.set_status("Connection to daemon lost.")
+            self.set_status(_("Connection to daemon lost."))
             self.on_quit()
 
         return answer
@@ -533,11 +561,11 @@ class LoginApp:
                      data["command"])
 
         if len(data["username"]) == 0:
-            self.set_status("Enter a username.")
+            self.set_status(_("Enter a username."))
             return
 
         if len(data["password"]) == 0:
-            self.set_status("Enter a password.")
+            self.set_status(_("Enter a password."))
             if hasattr(self.password_entry, "grab_focus"):
                 self.password_entry.grab_focus()
             return
@@ -549,10 +577,10 @@ class LoginApp:
 
         if answer.get("ok") and answer.get("payload", {}).get("verified"):
             self.username_entry.set_text("")
-            status_message = "Authentication accepted. Waiting for session..."
+            status_message = _("Authentication accepted. Waiting for session...")
         else:
             self.set_auth_state(False)
-            status_message = "Authentication failed."
+            status_message = _("Authentication failed.")
             self.password_entry.grab_focus()
 
         self.set_status(status_message)
@@ -569,23 +597,23 @@ class LoginApp:
         logger.debug("client %s answer: %s", action, answer)
 
         if not answer.get("ok") or not answer.get("payload", {}).get("accepted"):
-            self.set_status(f"Unable to {action}.")
+            self.set_status(_("Unable to %(action)s.") % {"action": action})
 
     # pylint: disable-next=unused-argument
     def on_poweroff_clicked(self, *args: Any) -> None:
-        self.request_system_action(wldm.protocol.ACTION_POWEROFF, "Powering off...")
+        self.request_system_action(wldm.protocol.ACTION_POWEROFF, _("Powering off..."))
 
     # pylint: disable-next=unused-argument
     def on_reboot_clicked(self, *args: Any) -> None:
-        self.request_system_action(wldm.protocol.ACTION_REBOOT, "Rebooting...")
+        self.request_system_action(wldm.protocol.ACTION_REBOOT, _("Rebooting..."))
 
     # pylint: disable-next=unused-argument
     def on_suspend_clicked(self, *args: Any) -> None:
-        self.request_system_action(wldm.protocol.ACTION_SUSPEND, "Suspending...")
+        self.request_system_action(wldm.protocol.ACTION_SUSPEND, _("Suspending..."))
 
     # pylint: disable-next=unused-argument
     def on_hibernate_clicked(self, *args: Any) -> None:
-        self.request_system_action(wldm.protocol.ACTION_HIBERNATE, "Hibernating...")
+        self.request_system_action(wldm.protocol.ACTION_HIBERNATE, _("Hibernating..."))
 
 
 def cmd_main(_parser: argparse.Namespace) -> int:
@@ -597,6 +625,8 @@ def cmd_main(_parser: argparse.Namespace) -> int:
     if not os.path.isdir(resource_path):
         logger.critical("resource directory does not exist: %s", resource_path)
         return wldm.EX_FAILURE
+
+    setup_greeter_i18n()
 
     if "WLDM_SOCKET" not in os.environ:
         logger.critical("environ variable `WLDM_SOCKET' not specified")

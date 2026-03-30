@@ -49,6 +49,10 @@ artifacts under `/tmp/wldm/` without baking those paths into the main config.
   Greeter theme name. `default` uses the built-in `resources/` directory.
   Any other value makes the greeter look for `themes/<name>/` next to the
   resource base path and fall back to `default` if it does not exist.
+  Themes may also ship `locale/<lang>/LC_MESSAGES/wldm.mo` under their theme
+  directory. When present, the greeter uses that locale tree for GtkBuilder
+  labels, tooltips, and other gettext-backed greeter strings while the theme
+  is active.
 - `session-dirs`
   Colon-separated list of system directories scanned for session `.desktop`
   files. Default: `/usr/share/wayland-sessions`.
