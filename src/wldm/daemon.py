@@ -22,6 +22,7 @@ from asyncio.subprocess import Process as AsyncProcess
 import wldm
 import wldm.config
 import wldm.pam
+import wldm.policy
 import wldm.protocol
 import wldm.tty
 
@@ -47,7 +48,7 @@ class DaemonState:
                  progname: str,
                  greeter_max_restarts: int,
                  greeter_uid: int = -1,
-                 seat: str = "seat0") -> None:
+                 seat: str = wldm.policy.DEFAULT_SEAT) -> None:
         self.progname = progname
         self.greeter_max_restarts = greeter_max_restarts
         self.greeter_uid = greeter_uid
@@ -387,6 +388,8 @@ async def start_greeter(state: DaemonState,
         WLDM_SOCKET=socket_path,
         WLDM_SEAT=state.seat,
         WLDM_THEME=cfg["greeter"].get("theme", "default"),
+        WLDM_GREETER_SESSION_DIRS=cfg["greeter"].get("session-dirs", ":".join(wldm.policy.SYSTEM_WAYLAND_SESSION_DIRS)),
+        WLDM_GREETER_USER_SESSION_DIR=cfg["greeter"].get("user-session-dir", wldm.policy.USER_WAYLAND_SESSION_DIR),
         WLDM_ACTIONS=":".join(configured_power_actions(cfg)),
         WLDM_GREETER_STDERR_LOG=cfg["greeter"].get("log-path", "/tmp/wldm/greeter.log"),
         WLDM_GREETER_USER_SESSIONS=cfg["greeter"].get("user-sessions", "yes"),
@@ -469,7 +472,7 @@ async def run_daemon_async(parser: argparse.Namespace, cfg: Optional[Any] = None
         progname,
         greeter_max_restarts,
         greeter_uid=greeter_uid,
-        seat=cfg["daemon"].get("seat", "seat0"),
+        seat=cfg["daemon"].get("seat", wldm.policy.DEFAULT_SEAT),
     )
     state.console = console
     state.greeter_tty = greeter_tty

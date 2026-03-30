@@ -44,6 +44,12 @@ The repository default file is [`config/wldm.ini`](../config/wldm.ini).
   Greeter theme name. `default` uses the built-in `resources/` directory.
   Any other value makes the greeter look for `themes/<name>/` next to the
   resource base path and fall back to `default` if it does not exist.
+- `session-dirs`
+  Colon-separated list of system directories scanned for session `.desktop`
+  files. Default: `/usr/share/wayland-sessions`.
+- `user-session-dir`
+  Per-user session directory relative to the user's home directory. Default:
+  `.local/share/wayland-sessions`.
 - `command`
   Greeter compositor launcher prefix. Default: `cage -s -m last --`.
   `wldm greeter` is appended automatically.
@@ -110,6 +116,8 @@ user = gdm
 group = gdm
 tty = 7
 theme = default
+session-dirs = /usr/share/wayland-sessions
+user-session-dir = .local/share/wayland-sessions
 command = cage -s -m last --
 pam-service = system-login
 max-restarts = 3

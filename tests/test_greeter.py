@@ -130,11 +130,14 @@ def test_session_data_dirs_prepends_user_directory(monkeypatch):
     pw = pwd.struct_passwd(("alice", "x", 1000, 1000, "", "/home/alice", "/bin/sh"))
 
     monkeypatch.setenv("WLDM_GREETER_USER_SESSIONS", "yes")
+    monkeypatch.setenv("WLDM_GREETER_SESSION_DIRS", "/usr/share/wayland-sessions:/opt/wayland-sessions")
+    monkeypatch.setenv("WLDM_GREETER_USER_SESSION_DIR", ".config/wldm/sessions")
     monkeypatch.setattr(greeter.wldm.sessions.pwd, "getpwnam", lambda username: pw)
 
     assert greeter.wldm.sessions.session_data_dirs("alice") == [
-        "/home/alice/.local/share/wayland-sessions",
+        "/home/alice/.config/wldm/sessions",
         "/usr/share/wayland-sessions",
+        "/opt/wayland-sessions",
     ]
 
 
@@ -142,8 +145,12 @@ def test_session_data_dirs_can_disable_user_sessions(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
 
     monkeypatch.setenv("WLDM_GREETER_USER_SESSIONS", "no")
+    monkeypatch.setenv("WLDM_GREETER_SESSION_DIRS", "/usr/share/wayland-sessions:/opt/wayland-sessions")
 
-    assert greeter.wldm.sessions.session_data_dirs("alice") == ["/usr/share/wayland-sessions"]
+    assert greeter.wldm.sessions.session_data_dirs("alice") == [
+        "/usr/share/wayland-sessions",
+        "/opt/wayland-sessions",
+    ]
 
 
 def test_available_actions_reads_environment(monkeypatch):
@@ -152,6 +159,16 @@ def test_available_actions_reads_environment(monkeypatch):
     monkeypatch.setenv("WLDM_ACTIONS", "poweroff:reboot:suspend")
 
     assert greeter.available_actions() == {"poweroff", "reboot", "suspend"}
+
+
+def test_login_app_uses_project_application_id(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+
+    monkeypatch.setattr(greeter.wldm.sessions, "desktop_sessions", lambda username="": [])
+
+    app = greeter.LoginApp(client=DummyClient())
+
+    assert app.app.application_id == "org.wldm.greeter"
 
 
 def test_parse_desktop_names_splits_semicolon_list(monkeypatch):

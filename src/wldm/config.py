@@ -9,6 +9,8 @@ import sys
 import pwd
 import grp
 
+import wldm.policy
+
 
 def _config_candidates() -> list[str]:
     candidates: list[str] = []
@@ -33,7 +35,7 @@ def read_config() -> configparser.ConfigParser:
     ent_gr = grp.getgrgid(ent_pw.pw_gid)
 
     cfg["daemon"] = {
-            "seat": "seat0",
+            "seat": wldm.policy.DEFAULT_SEAT,
             "socket-path": "/tmp/wldm/greeter.sock",
             "log-path": "/tmp/wldm/daemon.log",
             "poweroff-command": "systemctl poweroff",
@@ -47,6 +49,8 @@ def read_config() -> configparser.ConfigParser:
             "group": ent_gr.gr_name,
             "tty": "7",
             "theme": "default",
+            "session-dirs": ":".join(wldm.policy.SYSTEM_WAYLAND_SESSION_DIRS),
+            "user-session-dir": wldm.policy.USER_WAYLAND_SESSION_DIR,
             "command": "cage -s -m last --",
             "pam-service": "system-login",
             "max-restarts": "3",

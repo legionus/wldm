@@ -89,6 +89,8 @@ def make_config(user="gdm",
                 group="gdm",
                 tty="7",
                 theme="default",
+                session_dirs="/usr/share/wayland-sessions",
+                user_session_dir=".local/share/wayland-sessions",
                 command="cage -s -m last --",
                 pam_service="system-login",
                 max_restarts="3",
@@ -112,6 +114,8 @@ def make_config(user="gdm",
         "group": group,
         "tty": tty,
         "theme": theme,
+        "session-dirs": session_dirs,
+        "user-session-dir": user_session_dir,
         "command": command,
         "pam-service": pam_service,
         "max-restarts": max_restarts,
@@ -503,6 +507,8 @@ def test_start_greeter_passes_socket_env(monkeypatch):
     assert calls["env"]["WLDM_SOCKET"] == "/tmp/wldm/greeter.sock"
     assert calls["env"]["WLDM_SEAT"] == "seat9"
     assert calls["env"]["WLDM_THEME"] == "retro"
+    assert calls["env"]["WLDM_GREETER_SESSION_DIRS"] == "/usr/share/wayland-sessions"
+    assert calls["env"]["WLDM_GREETER_USER_SESSION_DIR"] == ".local/share/wayland-sessions"
     assert calls["env"]["WLDM_ACTIONS"] == "poweroff:reboot:suspend"
     assert calls["env"]["WLDM_GREETER_STDERR_LOG"] == "/tmp/custom-greeter.log"
     assert calls["env"]["WLDM_GREETER_USER_SESSIONS"] == "no"

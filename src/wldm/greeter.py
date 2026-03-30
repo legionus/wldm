@@ -25,6 +25,8 @@ from gi.repository import Gtk, Gdk, Gio, GLib  # type: ignore[import-untyped]
 # pylint: disable-next=wrong-import-position
 import wldm
 # pylint: disable-next=wrong-import-position
+import wldm.policy
+# pylint: disable-next=wrong-import-position
 import wldm.protocol
 # pylint: disable-next=wrong-import-position
 import wldm.sessions
@@ -50,7 +52,7 @@ def account_service_profile(username: str) -> Dict[str, str]:
     if not username:
         return profile
 
-    path = os.path.join("/var/lib/AccountsService/users", username)
+    path = os.path.join(wldm.policy.ACCOUNTS_SERVICE_USERS_DIR, username)
     if not os.path.isfile(path):
         return profile
 
@@ -159,7 +161,7 @@ def validate_theme_widgets(builder: Any) -> None:
 
 class LoginApp:
     def __init__(self, client: Optional[Any]=None) -> None:
-        self.app = Gtk.Application(application_id="com.example.LoginApp",
+        self.app = Gtk.Application(application_id=wldm.policy.GREETER_APP_ID,
                                    flags=Gio.ApplicationFlags.FLAGS_NONE)
 
         self.app.connect('activate', self.on_activate)

@@ -10,6 +10,7 @@ import pwd
 from typing import Any, Dict, List
 
 import wldm
+import wldm.policy
 
 logger = wldm.logger
 
@@ -23,8 +24,19 @@ def user_sessions_enabled() -> bool:
     return value not in ["0", "false", "no", "off"]
 
 
+def configured_system_session_dirs() -> List[str]:
+    value = os.environ.get("WLDM_GREETER_SESSION_DIRS", "")
+    if value:
+        return [item for item in value.split(":") if item]
+    return list(wldm.policy.SYSTEM_WAYLAND_SESSION_DIRS)
+
+
+def configured_user_session_dir() -> str:
+    return os.environ.get("WLDM_GREETER_USER_SESSION_DIR", wldm.policy.USER_WAYLAND_SESSION_DIR)
+
+
 def session_data_dirs(username: str = "") -> List[str]:
-    datadirs = ["/usr/share/wayland-sessions"]
+    datadirs = configured_system_session_dirs()
 
     if not user_sessions_enabled() or not username:
         return datadirs
@@ -34,7 +46,7 @@ def session_data_dirs(username: str = "") -> List[str]:
     except KeyError:
         return datadirs
 
-    datadirs.insert(0, os.path.join(pw.pw_dir, ".local", "share", "wayland-sessions"))
+    datadirs.insert(0, os.path.join(pw.pw_dir, configured_user_session_dir()))
     return datadirs
 
 

@@ -13,6 +13,7 @@ from typing import Dict, Iterator, List, Optional, Any
 
 import wldm
 import wldm.pam
+import wldm.policy
 import wldm.tty
 
 logger = wldm.logger
@@ -40,7 +41,7 @@ def new_greeter_environ(pamh: Optional[Any],
     env["HOME"] = pw.pw_dir
     env["USER"] = pw.pw_name
     env["LOGNAME"] = pw.pw_name
-    env["TERM"] = "linux"
+    env["TERM"] = wldm.policy.DEFAULT_TERM
     env.setdefault("XDG_RUNTIME_DIR", f"/run/user/{pw.pw_uid}")
 
     return env
@@ -51,7 +52,7 @@ def greeter_stderr_log_path() -> str:
 
 
 def greeter_seat() -> str:
-    return os.environ.get("WLDM_SEAT", "seat0")
+    return os.environ.get("WLDM_SEAT", wldm.policy.DEFAULT_SEAT)
 
 
 def redirect_greeter_stderr(log_path: Optional[str] = None) -> None:
@@ -137,8 +138,8 @@ def open_greeter_pam_session(pam_service: str,
     pamh = wldm.pam.start_pam(pam_service, pw.pw_name)
     try:
         wldm.pam.set_pam_item(pamh, wldm.pam.PAM_TTY, ttydev.filename)
-        wldm.pam.putenv(pamh, "XDG_SESSION_TYPE", "wayland")
-        wldm.pam.putenv(pamh, "XDG_SESSION_CLASS", "greeter")
+        wldm.pam.putenv(pamh, "XDG_SESSION_TYPE", wldm.policy.SESSION_TYPE_WAYLAND)
+        wldm.pam.putenv(pamh, "XDG_SESSION_CLASS", wldm.policy.SESSION_CLASS_GREETER)
         wldm.pam.putenv(pamh, "XDG_SEAT", greeter_seat())
         wldm.pam.putenv(pamh, "XDG_VTNR", str(ttydev.number))
         logger.debug("[+] Greeter PAM session starting for %s (service=%s)",

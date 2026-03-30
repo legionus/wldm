@@ -16,6 +16,7 @@ from typing import Dict, Iterator, List, Optional, Any
 import wldm
 import wldm.config
 import wldm.pam
+import wldm.policy
 import wldm.tty
 import wldm.logindefs
 import wldm.wtmp
@@ -24,7 +25,7 @@ logger = wldm.logger
 
 
 def session_seat() -> str:
-    return os.environ.get("WLDM_SEAT", "seat0")
+    return os.environ.get("WLDM_SEAT", wldm.policy.DEFAULT_SEAT)
 
 
 def session_desktop_names() -> List[str]:
@@ -97,10 +98,10 @@ def new_user_environ(pamh: Optional[Any],
     env["USER"] = pw.pw_name
     env["LOGNAME"] = pw.pw_name
     env["SHELL"] = pw.pw_shell or "/bin/sh"
-    env["TERM"] = "linux"
+    env["TERM"] = wldm.policy.DEFAULT_TERM
     env["XDG_RUNTIME_DIR"] = f"/run/user/{pw.pw_uid}"
-    env["XDG_SESSION_TYPE"] = "wayland"
-    env["XDG_SESSION_CLASS"] = "user"
+    env["XDG_SESSION_TYPE"] = wldm.policy.SESSION_TYPE_WAYLAND
+    env["XDG_SESSION_CLASS"] = wldm.policy.SESSION_CLASS_USER
     env["XDG_SEAT"] = session_seat()
     desktop_names = session_desktop_names()
     if desktop_names:
@@ -190,8 +191,8 @@ def open_user_pam_session(pam_service: str,
     pamh = wldm.pam.start_pam(pam_service, pw.pw_name)
     try:
         wldm.pam.set_pam_item(pamh, wldm.pam.PAM_TTY, ttydev.filename)
-        wldm.pam.putenv(pamh, "XDG_SESSION_TYPE", "wayland")
-        wldm.pam.putenv(pamh, "XDG_SESSION_CLASS", "user")
+        wldm.pam.putenv(pamh, "XDG_SESSION_TYPE", wldm.policy.SESSION_TYPE_WAYLAND)
+        wldm.pam.putenv(pamh, "XDG_SESSION_CLASS", wldm.policy.SESSION_CLASS_USER)
         wldm.pam.putenv(pamh, "XDG_SEAT", session_seat())
         wldm.pam.putenv(pamh, "XDG_VTNR", str(ttydev.number))
         logger.debug("[+] PAM session starting for %s (service=%s)",
