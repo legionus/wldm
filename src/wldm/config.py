@@ -36,8 +36,8 @@ def read_config() -> configparser.ConfigParser:
 
     cfg["daemon"] = {
             "seat": wldm.policy.DEFAULT_SEAT,
-            "socket-path": "/tmp/wldm/greeter.sock",
-            "log-path": "/tmp/wldm/daemon.log",
+            "socket-path": "/run/wldm/greeter.sock",
+            "log-path": "",
             "poweroff-command": "systemctl poweroff",
             "reboot-command": "systemctl reboot",
             "suspend-command": "",
@@ -55,7 +55,7 @@ def read_config() -> configparser.ConfigParser:
             "pam-service": "system-login",
             "max-restarts": "3",
             "user-sessions": "yes",
-            "log-path": "/tmp/wldm/greeter.log",
+            "log-path": "",
             }
 
     cfg["session"] = {

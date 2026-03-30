@@ -62,6 +62,10 @@ For realistic runtime testing, prefer `systemd`:
 Running the daemon directly from an existing shell session is not equivalent to
 running it as a system-managed service and can confuse `logind`.
 
+`wldm.sh` uses [`config/wldm-devel.ini`](config/wldm-devel.ini) so in-tree
+testing can keep the socket and logs under `/tmp/wldm/` without changing the
+main production defaults.
+
 ## Configuration
 
 Configuration lookup order, option descriptions, and example files are
@@ -121,8 +125,9 @@ systemctl start wldm.service
 The packaged unit starts `/usr/bin/wldm`, so system installs should either
 place the entry point there or adjust `ExecStart=` accordingly.
 
-For local development, the defaults in [`config/wldm.ini`](config/wldm.ini)
-use `/tmp/wldm/` for logs and the greeter socket.
+For packaged or production-oriented defaults, see
+[`config/wldm.ini`](config/wldm.ini). For in-tree development overrides, see
+[`config/wldm-devel.ini`](config/wldm-devel.ini).
 
 ## Contributing
 

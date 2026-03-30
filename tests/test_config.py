@@ -21,8 +21,8 @@ def test_read_config_uses_repo_default_when_progname_is_set(monkeypatch):
     cfg = wldm.config.read_config()
 
     assert cfg["daemon"]["seat"] == "seat0"
-    assert cfg["daemon"]["socket-path"] == "/tmp/wldm/greeter.sock"
-    assert cfg["daemon"]["log-path"] == "/tmp/wldm/daemon.log"
+    assert cfg["daemon"]["socket-path"] == "/run/wldm/greeter.sock"
+    assert cfg["daemon"]["log-path"] == ""
     assert cfg["daemon"]["suspend-command"] == ""
     assert cfg["daemon"]["hibernate-command"] == ""
     assert cfg["greeter"]["user"] == "gdm"
@@ -34,7 +34,7 @@ def test_read_config_uses_repo_default_when_progname_is_set(monkeypatch):
     assert cfg["greeter"]["command"] == "cage -d -s -m last --"
     assert cfg["greeter"]["max-restarts"] == "3"
     assert cfg["greeter"]["user-sessions"] == "yes"
-    assert cfg["greeter"]["log-path"] == "/tmp/wldm/greeter.log"
+    assert cfg["greeter"]["log-path"] == ""
     assert cfg["session"]["pam-service"] == "login"
     assert cfg["session"]["command"] == "default"
     assert cfg["session"]["pre-command"] == ""
@@ -67,15 +67,15 @@ def test_read_config_sets_default_runtime_greeter_values(monkeypatch):
     cfg = wldm.config.read_config()
 
     assert cfg["daemon"]["seat"] == "seat0"
-    assert cfg["daemon"]["socket-path"] == "/tmp/wldm/greeter.sock"
-    assert cfg["daemon"]["log-path"] == "/tmp/wldm/daemon.log"
+    assert cfg["daemon"]["socket-path"] == "/run/wldm/greeter.sock"
+    assert cfg["daemon"]["log-path"] == ""
     assert cfg["daemon"]["suspend-command"] == ""
     assert cfg["daemon"]["hibernate-command"] == ""
     assert cfg["greeter"]["theme"] == "default"
     assert cfg["greeter"]["session-dirs"] == "/usr/share/wayland-sessions"
     assert cfg["greeter"]["user-session-dir"] == ".local/share/wayland-sessions"
     assert cfg["greeter"]["user-sessions"] == "yes"
-    assert cfg["greeter"]["log-path"] == "/tmp/wldm/greeter.log"
+    assert cfg["greeter"]["log-path"] == ""
     assert cfg["session"]["pam-service"] == "login"
     assert cfg["session"]["command"] == "default"
     assert cfg["session"]["pre-command"] == ""
@@ -93,6 +93,23 @@ def test_read_config_sets_default_greeter_restart_limit(monkeypatch):
     cfg = wldm.config.read_config()
 
     assert cfg["greeter"]["max-restarts"] == "3"
+
+
+def test_read_config_loads_devel_overrides_when_selected_explicitly(monkeypatch):
+    repo_root = Path(__file__).resolve().parents[1]
+
+    monkeypatch.setenv("WLDM_CONFIG", str(repo_root / "config" / "wldm-devel.ini"))
+    monkeypatch.delenv("WLDM_PROGNAME", raising=False)
+    monkeypatch.setattr(pwd, "getpwuid", lambda uid: pwd.struct_passwd(
+        ("fallback-user", "x", 1000, 1000, "", "/home/fallback-user", "/bin/sh")))
+    monkeypatch.setattr(grp, "getgrgid", lambda gid: grp.struct_group(
+        ("fallback-group", "x", 1000, [])))
+
+    cfg = wldm.config.read_config()
+
+    assert cfg["daemon"]["socket-path"] == "/tmp/wldm/greeter.sock"
+    assert cfg["daemon"]["log-path"] == "/tmp/wldm/daemon.log"
+    assert cfg["greeter"]["log-path"] == "/tmp/wldm/greeter.log"
 
 
 def test_read_config_uses_installed_share_default(monkeypatch, tmp_path):

@@ -11,16 +11,21 @@ This document describes the runtime configuration options understood by `wldm`.
 3. `sys.prefix/share/wldm/config/wldm.ini`
 4. `/etc/wldm.ini`
 
-The repository default file is [`config/wldm.ini`](../config/wldm.ini).
+The production-oriented repository default file is
+[`config/wldm.ini`](../config/wldm.ini).
+
+For source-tree development, [`wldm.sh`](../wldm.sh) sets `WLDM_CONFIG` to
+[`config/wldm-devel.ini`](../config/wldm-devel.ini), which keeps runtime
+artifacts under `/tmp/wldm/` without baking those paths into the main config.
 
 ## `[daemon]`
 
 - `seat`
   Seat identifier passed into session metadata. Default: `seat0`.
 - `socket-path`
-  UNIX socket used for daemon/greeter IPC. Default: `/tmp/wldm/greeter.sock`.
+  UNIX socket used for daemon/greeter IPC. Default: `/run/wldm/greeter.sock`.
 - `log-path`
-  Daemon log file. Set this to an empty value to keep logging on stderr/journal.
+  Daemon log file. Default: empty, which keeps logging on stderr/journal.
 - `poweroff-command`
   Command executed for greeter poweroff requests. Default: `systemctl poweroff`.
 - `reboot-command`
@@ -61,7 +66,7 @@ The repository default file is [`config/wldm.ini`](../config/wldm.ini).
   If enabled, the greeter also reads `~/.local/share/wayland-sessions` after a
   username is entered.
 - `log-path`
-  Greeter stderr log file.
+  Greeter stderr log file. Default: empty.
 
 ## `[session]`
 
@@ -105,7 +110,7 @@ the configured command explicitly invokes one.
 [daemon]
 seat = seat0
 socket-path = /run/wldm/greeter.sock
-log-path = /var/log/wldm/daemon.log
+log-path =
 poweroff-command = systemctl poweroff
 reboot-command = systemctl reboot
 suspend-command = systemctl suspend
@@ -122,7 +127,7 @@ command = cage -s -m last --
 pam-service = system-login
 max-restarts = 3
 user-sessions = yes
-log-path = /var/log/wldm/greeter.log
+log-path =
 
 [session]
 pam-service = login
