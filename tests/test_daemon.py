@@ -88,6 +88,7 @@ class DummyListener:
 def make_config(user="gdm",
                 group="gdm",
                 tty="7",
+                theme="default",
                 command="cage -s -m last --",
                 pam_service="system-login",
                 max_restarts="3",
@@ -110,6 +111,7 @@ def make_config(user="gdm",
         "user": user,
         "group": group,
         "tty": tty,
+        "theme": theme,
         "command": command,
         "pam-service": pam_service,
         "max-restarts": max_restarts,
@@ -467,7 +469,7 @@ def test_handle_greeter_client_rejects_unexpected_peer_uid(monkeypatch):
 
 def test_start_greeter_passes_socket_env(monkeypatch):
     state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3, seat="seat9")
-    cfg = make_config(command="labwc --", greeter_log="/tmp/custom-greeter.log", user_sessions="no")
+    cfg = make_config(command="labwc --", greeter_log="/tmp/custom-greeter.log", user_sessions="no", theme="retro")
     cfg["daemon"]["suspend-command"] = "do-suspend"
     calls = {}
     proc = DummyAsyncProc(pid=4321, returncode=0)
@@ -500,6 +502,7 @@ def test_start_greeter_passes_socket_env(monkeypatch):
     )
     assert calls["env"]["WLDM_SOCKET"] == "/tmp/wldm/greeter.sock"
     assert calls["env"]["WLDM_SEAT"] == "seat9"
+    assert calls["env"]["WLDM_THEME"] == "retro"
     assert calls["env"]["WLDM_ACTIONS"] == "poweroff:reboot:suspend"
     assert calls["env"]["WLDM_GREETER_STDERR_LOG"] == "/tmp/custom-greeter.log"
     assert calls["env"]["WLDM_GREETER_USER_SESSIONS"] == "no"

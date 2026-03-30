@@ -644,12 +644,65 @@ def test_default_resource_path_uses_installed_share_when_env_is_missing(monkeypa
     assert greeter.default_resource_path() == str(tmp_path / "share" / "wldm" / "resources")
 
 
+def test_themed_resource_path_uses_default_theme(monkeypatch, tmp_path):
+    greeter = load_greeter_module(monkeypatch)
+
+    monkeypatch.setenv("WLDM_RESOURCES_PATH", str(tmp_path / "resources"))
+    monkeypatch.setenv("WLDM_THEME", "default")
+
+    assert greeter.themed_resource_path() == str(tmp_path / "resources")
+
+
+def test_themed_resource_path_uses_named_theme_when_present(monkeypatch, tmp_path):
+    greeter = load_greeter_module(monkeypatch)
+    base = tmp_path / "resources"
+    theme_dir = tmp_path / "themes" / "retro"
+    base.mkdir()
+    theme_dir.mkdir(parents=True)
+
+    monkeypatch.setenv("WLDM_RESOURCES_PATH", str(base))
+    monkeypatch.setenv("WLDM_THEME", "retro")
+
+    assert greeter.themed_resource_path() == str(theme_dir)
+
+
+def test_themed_resource_path_falls_back_to_default_when_theme_is_missing(monkeypatch, tmp_path):
+    greeter = load_greeter_module(monkeypatch)
+    base = tmp_path / "resources"
+    base.mkdir()
+    warnings = []
+
+    monkeypatch.setenv("WLDM_RESOURCES_PATH", str(base))
+    monkeypatch.setenv("WLDM_THEME", "missing")
+    monkeypatch.setattr(greeter.logger, "warning", lambda msg, *args: warnings.append(msg % args if args else msg))
+
+    assert greeter.themed_resource_path() == str(base)
+    assert any("falling back to default" in message for message in warnings)
+
+
 def test_setup_greeter_logging_installs_file_logger_and_excepthook(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
 
     greeter.setup_greeter_logging()
 
     assert greeter.sys.excepthook is not greeter.sys.__excepthook__
+
+
+def test_validate_theme_widgets_rejects_missing_required_widgets(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+    monkeypatch.setenv("WLDM_THEME", "retro")
+
+    class FakeBuilder:
+        def get_object(self, name):
+            return None if name == "password_entry" else object()
+
+    try:
+        greeter.validate_theme_widgets(FakeBuilder())
+    except RuntimeError as exc:
+        assert "retro" in str(exc)
+        assert "password_entry" in str(exc)
+    else:
+        raise AssertionError("validate_theme_widgets() should have failed")
 
 
 def test_on_activate_binds_widgets_and_populates_sessions(monkeypatch):

@@ -13,6 +13,7 @@ options and examples, see
 ## Features
 
 - GTK 4 greeter with session selection
+- configurable greeter themes
 - PAM-backed greeter and user sessions
 - `systemd-logind` friendly runtime model
 - separate daemon and greeter logs

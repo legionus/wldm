@@ -33,6 +33,13 @@ logger = wldm.logger
 resource_path: str
 lock = threading.Lock()
 
+REQUIRED_THEME_WIDGETS = [
+    "main_window",
+    "username_entry",
+    "password_entry",
+    "login_button",
+]
+
 
 def account_service_profile(username: str) -> Dict[str, str]:
     profile = {
@@ -112,6 +119,42 @@ def default_resource_path() -> str:
     if "WLDM_RESOURCES_PATH" in os.environ:
         return os.path.abspath(os.environ["WLDM_RESOURCES_PATH"])
     return os.path.join(sys.prefix, "share", "wldm", "resources")
+
+
+def greeter_theme() -> str:
+    return os.environ.get("WLDM_THEME", "default").strip() or "default"
+
+
+def themed_resource_path() -> str:
+    base = default_resource_path()
+    theme = greeter_theme()
+
+    if theme == "default":
+        return base
+
+    themed = os.path.join(os.path.dirname(base), "themes", theme)
+    if os.path.isdir(themed):
+        return themed
+
+    logger.warning("theme '%s' not found, falling back to default", theme)
+    return base
+
+
+def validate_theme_widgets(builder: Any) -> None:
+    missing = []
+
+    for name in REQUIRED_THEME_WIDGETS:
+        try:
+            widget = builder.get_object(name)
+        except Exception:
+            widget = None
+        if widget is None:
+            missing.append(name)
+
+    if missing:
+        raise RuntimeError(
+            f"theme '{greeter_theme()}' is missing required widget(s): {', '.join(missing)}"
+        )
 
 
 class LoginApp:
@@ -312,6 +355,7 @@ class LoginApp:
     def on_activate(self, app: Gtk.Application) -> None:
         builder = Gtk.Builder.new_from_file(
                 os.path.join(resource_path, "greeter.ui"))
+        validate_theme_widgets(builder)
 
         def get_object(name: str) -> Optional[Any]:
             try:
@@ -546,7 +590,7 @@ def cmd_main(_parser: argparse.Namespace) -> int:
     global resource_path
 
     setup_greeter_logging()
-    resource_path = default_resource_path()
+    resource_path = themed_resource_path()
 
     if not os.path.isdir(resource_path):
         logger.critical("resource directory does not exist: %s", resource_path)

@@ -46,6 +46,7 @@ def read_config() -> configparser.ConfigParser:
             "user": ent_pw.pw_name,
             "group": ent_gr.gr_name,
             "tty": "7",
+            "theme": "default",
             "command": "cage -s -m last --",
             "pam-service": "system-login",
             "max-restarts": "3",

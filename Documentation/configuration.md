@@ -40,6 +40,10 @@ The repository default file is [`config/wldm.ini`](../config/wldm.ini).
   Primary group for the greeter account.
 - `tty`
   Virtual terminal reserved for the greeter. Default: `7`.
+- `theme`
+  Greeter theme name. `default` uses the built-in `resources/` directory.
+  Any other value makes the greeter look for `themes/<name>/` next to the
+  resource base path and fall back to `default` if it does not exist.
 - `command`
   Greeter compositor launcher prefix. Default: `cage -s -m last --`.
   `wldm greeter` is appended automatically.
@@ -105,6 +109,7 @@ hibernate-command = systemctl hibernate
 user = gdm
 group = gdm
 tty = 7
+theme = default
 command = cage -s -m last --
 pam-service = system-login
 max-restarts = 3
