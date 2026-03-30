@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026  Alexey Gladkov <legion@kernel.org>
+
 import grp
 import pwd
 from pathlib import Path

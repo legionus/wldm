@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026  Alexey Gladkov <legion@kernel.org>
+
 from types import SimpleNamespace
 import pwd
 
@@ -186,6 +189,10 @@ def test_run_user_session_parent_path_opens_and_closes_resources(monkeypatch):
     monkeypatch.setattr(wldm.session.os, "WIFEXITED", lambda status: True)
     monkeypatch.setattr(wldm.session.os, "WEXITSTATUS", lambda status: 0)
     monkeypatch.setattr(wldm.session.os, "close", lambda fd: calls.append(("close_console", fd)))
+    monkeypatch.setattr(wldm.session.wldm.wtmp, "login",
+                        lambda tty_path, username, host="": calls.append(("wtmp_login", tty_path, username, host)))
+    monkeypatch.setattr(wldm.session.wldm.wtmp, "logout",
+                        lambda tty_path, host="": calls.append(("wtmp_logout", tty_path, host)))
     monkeypatch.setattr(wldm.session, "finish_user_session",
                         lambda pamh: calls.append(("finish_user_session", pamh)))
 
@@ -200,6 +207,8 @@ def test_run_user_session_parent_path_opens_and_closes_resources(monkeypatch):
     assert ("putenv", "pamh", "XDG_SEAT", "seat0") in calls
     assert ("putenv", "pamh", "XDG_VTNR", "12") in calls
     assert ("open_pam_session", "pamh") in calls
+    assert ("wtmp_login", "/dev/tty12", "alice", "") in calls
+    assert ("wtmp_logout", "/dev/tty12", "") in calls
     assert ("tty_close",) in calls
     assert ("finish_user_session", "pamh") in calls
     assert ("close_console", 77) in calls

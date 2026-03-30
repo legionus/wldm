@@ -14,6 +14,7 @@ import wldm.config
 import wldm.pam
 import wldm.tty
 import wldm.logindefs
+import wldm.wtmp
 
 logger = wldm.logger
 
@@ -81,6 +82,7 @@ def run_user_session(pw: pwd.struct_passwd,
         return None
 
     pamh: Optional[Any] = None
+    wtmp_line: Optional[str] = None
 
     try:
         logger.debug("[+] Opening free TTY device")
@@ -113,6 +115,8 @@ def run_user_session(pw: pwd.struct_passwd,
                                 prog, prog_args, e)
                 os._exit(1)
         else:
+            wtmp_line = ttydev.filename
+            wldm.wtmp.login(wtmp_line, pw.pw_name)
             _, status = os.waitpid(pid, 0)
             exitcode = os.WEXITSTATUS(status) if os.WIFEXITED(status) else None
 
@@ -121,6 +125,8 @@ def run_user_session(pw: pwd.struct_passwd,
                                 status, exitcode)
             ttydev.close()
     finally:
+        if wtmp_line is not None:
+            wldm.wtmp.logout(wtmp_line)
         finish_user_session(pamh)
         os.close(console)
 
