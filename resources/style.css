@@ -80,8 +80,7 @@
 	font-size: 15px;
 }
 
-.greeter-entry,
-.session-picker {
+.greeter-entry {
 	background: rgba(255, 255, 255, 0.05);
 	border: 1px solid rgba(255, 255, 255, 0.08);
 	border-radius: 12px;
@@ -90,10 +89,53 @@
 	padding: 0 12px;
 }
 
-.greeter-entry:focus,
-.session-picker:focus {
+.session-picker > button {
+	background: rgba(255, 255, 255, 0.05);
+	border: 1px solid rgba(255, 255, 255, 0.08);
+	border-radius: 12px;
+	color: #f8fafc;
+	min-height: 46px;
+	padding: 0 12px;
+}
+
+.session-picker > button > box {
+	border-spacing: 0;
+}
+
+.session-picker > button label,
+.session-picker popover label {
+	color: #f8fafc;
+}
+
+.greeter-entry:focus {
 	border-color: rgba(214, 175, 69, 0.88);
 	box-shadow: 0 0 0 3px rgba(214, 175, 69, 0.18);
+}
+
+.session-picker:focus-within > button,
+.session-picker > button:focus,
+.session-picker > button:hover {
+	border-color: rgba(214, 175, 69, 0.88);
+	box-shadow: 0 0 0 3px rgba(214, 175, 69, 0.18);
+}
+
+.session-picker popover contents,
+.session-picker popover box,
+.session-picker popover scrolledwindow,
+.session-picker popover listview,
+.session-picker popover row {
+	background: rgba(15, 21, 28, 0.96);
+	color: #f8fafc;
+}
+
+.session-picker popover row:hover,
+.session-picker popover row:selected {
+	background: rgba(214, 175, 69, 0.18);
+	color: #f8fafc;
+}
+
+.session-picker popover row:focus-within {
+	outline-color: rgba(214, 175, 69, 0.88);
 }
 
 .primary-button,
