@@ -5,6 +5,7 @@ import asyncio
 import configparser
 import json
 import signal
+import stat
 from types import SimpleNamespace
 
 import wldm.daemon
@@ -221,19 +222,55 @@ def test_create_greeter_listener_applies_permissions(monkeypatch):
             self.path = path
             self.sock = object()
 
+    class DummyContext:
+        def __enter__(self):
+            calls.append(("open_dir", "/tmp/wldm"))
+            return 11
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
     monkeypatch.setattr(wldm.daemon, "SocketListener", FakeSocketListener)
-    monkeypatch.setattr(wldm.daemon.os, "makedirs", lambda path, mode=0o755, exist_ok=True: calls.append(("makedirs", path)))
+    monkeypatch.setattr(wldm.daemon.wldm, "open_secure_directory", lambda path, mode=0o755: DummyContext())
     monkeypatch.setattr(wldm.daemon.os, "chown", lambda path, uid, gid: calls.append(("chown", path, uid, gid)))
     monkeypatch.setattr(wldm.daemon.os, "chmod", lambda path, mode: calls.append(("chmod", path, mode)))
+    monkeypatch.setattr(
+        wldm.daemon.os,
+        "stat",
+        lambda path, dir_fd=None, follow_symlinks=False: (_ for _ in ()).throw(FileNotFoundError()),
+    )
     monkeypatch.setattr(wldm.daemon.pwd, "getpwnam", lambda user: SimpleNamespace(pw_uid=32))
     monkeypatch.setattr(wldm.daemon.grp, "getgrnam", lambda group: SimpleNamespace(gr_gid=32))
 
     listener = wldm.daemon.create_greeter_listener("gdm", "gdm", "/tmp/wldm/greeter.sock")
 
     assert listener.path == "/tmp/wldm/greeter.sock"
-    assert ("makedirs", "/tmp/wldm") in calls
+    assert ("open_dir", "/tmp/wldm") in calls
     assert ("chown", "/tmp/wldm/greeter.sock", 32, 32) in calls
     assert ("chmod", "/tmp/wldm/greeter.sock", 0o600) in calls
+
+
+def test_create_greeter_listener_rejects_symlink(monkeypatch):
+    class DummyContext:
+        def __enter__(self):
+            return 11
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(wldm.daemon.wldm, "open_secure_directory", lambda path, mode=0o755: DummyContext())
+    monkeypatch.setattr(
+        wldm.daemon.os,
+        "stat",
+        lambda path, dir_fd=None, follow_symlinks=False: SimpleNamespace(st_mode=stat.S_IFLNK),
+    )
+
+    try:
+        wldm.daemon.create_greeter_listener("gdm", "gdm", "/tmp/wldm/greeter.sock")
+    except RuntimeError as exc:
+        assert "non-socket" in str(exc)
+    else:
+        raise AssertionError("create_greeter_listener() should reject symlinks")
 
 
 def test_greeter_command_uses_configured_launcher():

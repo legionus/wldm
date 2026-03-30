@@ -134,36 +134,32 @@ def test_prepare_greeter_terminal_fails_when_tty_cannot_become_controlling(monke
 def test_redirect_greeter_stderr_replaces_fd_2(monkeypatch):
     calls = []
 
+    class DummyLogFile:
+        def fileno(self):
+            calls.append(("fileno",))
+            return 9
+
+        def close(self):
+            calls.append(("close_file",))
+
     monkeypatch.setattr(
-        wldm.greeter_session.os,
-        "makedirs",
-        lambda path, mode=0o755, exist_ok=True: calls.append(("makedirs", path, mode, exist_ok)),
-    )
-    monkeypatch.setattr(
-        wldm.greeter_session.os,
-        "open",
-        lambda path, flags, mode: calls.append(("open", path, flags, mode)) or 9,
+        wldm.greeter_session.wldm,
+        "open_secure_append_file",
+        lambda path, mode=0o600: calls.append(("open_secure", path, mode)) or DummyLogFile(),
     )
     monkeypatch.setattr(
         wldm.greeter_session.os,
         "dup2",
         lambda src, dst: calls.append(("dup2", src, dst)),
     )
-    monkeypatch.setattr(
-        wldm.greeter_session.os,
-        "close",
-        lambda fd: calls.append(("close", fd)),
-    )
 
     wldm.greeter_session.redirect_greeter_stderr()
 
     assert calls == [
-        ("makedirs", "/tmp/wldm", 0o755, True),
-        ("open", "/tmp/wldm/greeter.log", wldm.greeter_session.os.O_WRONLY
-         | wldm.greeter_session.os.O_CREAT
-         | wldm.greeter_session.os.O_APPEND, 0o600),
+        ("open_secure", "/tmp/wldm/greeter.log", 0o600),
+        ("fileno",),
         ("dup2", 9, 2),
-        ("close", 9),
+        ("close_file",),
     ]
 
 

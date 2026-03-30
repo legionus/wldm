@@ -3,6 +3,8 @@
 
 import argparse
 import logging
+import os
+import stat
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -63,6 +65,35 @@ def test_setup_file_logger_creates_parent_dir_and_adds_handler(tmp_path):
     assert Path(log_path).parent.is_dir()
     assert len(logger.handlers) == 1
     assert logger.handlers[0].level == logging.INFO
+    assert stat.S_IMODE(os.stat(log_path).st_mode) == 0o600
+
+
+def test_ensure_secure_directory_rejects_symlink(tmp_path):
+    target = tmp_path / "real"
+    target.mkdir()
+    link = tmp_path / "link"
+    link.symlink_to(target)
+
+    try:
+        wldm.ensure_secure_directory(str(link))
+    except RuntimeError as exc:
+        assert "symlink" in str(exc)
+    else:
+        raise AssertionError("ensure_secure_directory() should reject symlinks")
+
+
+def test_open_secure_append_file_rejects_symlink(tmp_path):
+    target = tmp_path / "real.log"
+    target.write_text("")
+    link = tmp_path / "daemon.log"
+    link.symlink_to(target)
+
+    try:
+        wldm.open_secure_append_file(str(link))
+    except OSError:
+        pass
+    else:
+        raise AssertionError("open_secure_append_file() should reject symlinks")
 
 
 def test_add_common_arguments_parses_standard_flags():

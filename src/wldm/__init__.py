@@ -2,8 +2,11 @@
 # Copyright (C) 2026  Alexey Gladkov <legion@kernel.org>
 
 import argparse
+import contextlib
 import logging
 import os
+import stat
+from typing import Iterator, TextIO
 
 
 __VERSION__ = '1-dev'
@@ -28,15 +31,93 @@ def setup_logger(logger: logging.Logger, level: int,
     return logger
 
 
+@contextlib.contextmanager
+def open_secure_directory(path: str, mode: int = 0o755) -> Iterator[int]:
+    if not path:
+        raise RuntimeError("runtime directory path must not be empty")
+
+    abspath = os.path.abspath(path)
+    components = [part for part in abspath.split(os.path.sep) if part]
+    flags = os.O_RDONLY
+    if hasattr(os, "O_DIRECTORY"):
+        flags |= os.O_DIRECTORY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+
+    parent_fd = os.open(os.path.sep, flags)
+    try:
+        if not components:
+            final_fd = os.dup(parent_fd)
+        else:
+            for component in components:
+                try:
+                    next_fd = os.open(component, flags, dir_fd=parent_fd)
+                except FileNotFoundError:
+                    os.mkdir(component, mode=mode if component == components[-1] else 0o755, dir_fd=parent_fd)
+                    next_fd = os.open(component, flags, dir_fd=parent_fd)
+                except OSError as exc:
+                    raise RuntimeError(
+                        f"refusing to use symlink or non-directory runtime path component: {component}"
+                    ) from exc
+
+                os.close(parent_fd)
+                parent_fd = next_fd
+
+            final_fd = os.dup(parent_fd)
+
+        st = os.fstat(final_fd)
+        if not stat.S_ISDIR(st.st_mode):
+            raise RuntimeError(f"runtime path is not a directory: {abspath}")
+        if st.st_uid != os.geteuid():
+            raise RuntimeError(f"runtime directory has unexpected owner: {abspath}")
+        if st.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+            raise RuntimeError(f"runtime directory is writable by non-owner: {abspath}")
+
+        os.fchmod(final_fd, mode)
+        try:
+            yield final_fd
+        finally:
+            os.close(final_fd)
+    finally:
+        os.close(parent_fd)
+
+
+def ensure_secure_directory(path: str, mode: int = 0o755) -> None:
+    with open_secure_directory(path, mode=mode):
+        return None
+
+
+def open_secure_append_file(path: str, mode: int = 0o600) -> TextIO:
+    logdir = os.path.dirname(path)
+    basename = os.path.basename(path)
+    if not basename:
+        raise RuntimeError(f"invalid log file path: {path}")
+
+    with open_secure_directory(logdir or ".", mode=0o755) as dir_fd:
+        flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        if hasattr(os, "O_CLOEXEC"):
+            flags |= os.O_CLOEXEC
+
+        fd = os.open(basename, flags, mode, dir_fd=dir_fd)
+
+    st = os.fstat(fd)
+    if not stat.S_ISREG(st.st_mode):
+        os.close(fd)
+        raise RuntimeError(f"refusing to use non-regular file for logging: {path}")
+
+    os.fchmod(fd, mode)
+    return os.fdopen(fd, "a", encoding="utf-8", buffering=1)
+
+
 def setup_file_logger(logger: logging.Logger, level: int,
                       fmt: str, path: str) -> logging.Logger:
-    logdir = os.path.dirname(path)
-    if logdir:
-        os.makedirs(logdir, mode=0o755, exist_ok=True)
-
     formatter = logging.Formatter(fmt=fmt, datefmt="%H:%M:%S")
 
-    handler = logging.FileHandler(path)
+    handler = logging.StreamHandler(open_secure_append_file(path, mode=0o600))
     handler.setLevel(level)
     handler.setFormatter(formatter)
 

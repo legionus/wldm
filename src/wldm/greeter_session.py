@@ -56,11 +56,10 @@ def greeter_seat() -> str:
 def redirect_greeter_stderr(log_path: Optional[str] = None) -> None:
     if log_path is None:
         log_path = greeter_stderr_log_path()
-    os.makedirs(os.path.dirname(log_path), mode=0o755, exist_ok=True)
-    logfd = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    logfile = wldm.open_secure_append_file(log_path, mode=0o600)
+    logfd = logfile.fileno()
     os.dup2(logfd, 2)
-    if logfd > 2:
-        os.close(logfd)
+    logfile.close()
 
 
 def log_greeter_diag(message: str, *args: Any) -> None:

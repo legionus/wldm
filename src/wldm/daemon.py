@@ -11,6 +11,7 @@ import pwd
 import shlex
 import signal
 import socket
+import stat
 import struct
 import sys
 from contextlib import suppress
@@ -80,9 +81,19 @@ def greeter_socket_path(cfg: Optional[Any] = None) -> str:
 
 def create_greeter_listener(user: str, group: str, path: str) -> SocketListener:
     sockdir = os.path.dirname(path)
-    os.makedirs(sockdir, mode=0o755, exist_ok=True)
-    with suppress(FileNotFoundError):
-        os.unlink(path)
+    basename = os.path.basename(path)
+    if not basename:
+        raise RuntimeError(f"invalid socket path: {path}")
+
+    with wldm.open_secure_directory(sockdir or ".", mode=0o755) as dir_fd:
+        try:
+            st = os.stat(basename, dir_fd=dir_fd, follow_symlinks=False)
+        except FileNotFoundError:
+            pass
+        else:
+            if not stat.S_ISSOCK(st.st_mode):
+                raise RuntimeError(f"refusing to replace non-socket path: {path}")
+            os.unlink(basename, dir_fd=dir_fd)
 
     listener = SocketListener(path)
     uid = pwd.getpwnam(user).pw_uid
