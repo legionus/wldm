@@ -48,6 +48,7 @@
 	border: 1px solid rgba(255, 255, 255, 0.08);
 	border-radius: 22px;
 	box-shadow: 0 18px 48px rgba(0, 0, 0, 0.32);
+	padding: 28px;
 }
 
 .card-title {
@@ -102,13 +103,32 @@
 	font-weight: 700;
 }
 
+.power-strip {
+	margin-bottom: 8px;
+}
+
+.power-button {
+	min-width: 44px;
+	padding: 0 10px;
+	font-size: 18px;
+}
+
 .primary-button {
 	background: linear-gradient(180deg, #d6af45 0%, #bb952f 100%);
 	color: #16120a;
+}
+
+.primary-button:hover {
+	background: linear-gradient(180deg, #e4bc52 0%, #c9a238 100%);
 }
 
 .secondary-button {
 	background: rgba(255, 255, 255, 0.06);
 	color: #f1f5f9;
 	border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.secondary-button:hover {
+	background: rgba(255, 255, 255, 0.12);
+	border-color: rgba(255, 255, 255, 0.16);
 }

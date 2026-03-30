@@ -94,164 +94,203 @@
 				<child>
 					<object class="GtkBox">
 						<property name="orientation">vertical</property>
-						<property name="halign">center</property>
-						<property name="valign">center</property>
+						<property name="halign">fill</property>
+						<property name="valign">fill</property>
 						<property name="hexpand">true</property>
 						<property name="vexpand">true</property>
 						<property name="margin-top">48</property>
 						<property name="margin-bottom">48</property>
 						<property name="margin-start">36</property>
 						<property name="margin-end">72</property>
+						<property name="spacing">24</property>
 
 						<child>
 							<object class="GtkBox">
 								<property name="orientation">vertical</property>
-								<property name="spacing">16</property>
-								<property name="width-request">420</property>
-								<property name="margin-top">28</property>
-								<property name="margin-bottom">28</property>
-								<property name="margin-start">28</property>
-								<property name="margin-end">28</property>
-								<style>
-									<class name="login-card"/>
-								</style>
+								<property name="halign">center</property>
+								<property name="valign">center</property>
+								<property name="hexpand">true</property>
+								<property name="vexpand">true</property>
 
 								<child>
-									<object class="GtkLabel">
-										<property name="label">Welcome back</property>
-										<property name="xalign">0</property>
+									<object class="GtkBox">
+										<property name="orientation">vertical</property>
+										<property name="spacing">16</property>
+										<property name="width-request">420</property>
+										<property name="margin-top">28</property>
+										<property name="margin-bottom">28</property>
+										<property name="margin-start">28</property>
+										<property name="margin-end">28</property>
 										<style>
-											<class name="card-title"/>
+											<class name="login-card"/>
 										</style>
-									</object>
-								</child>
+
+										<child>
+											<object class="GtkLabel">
+												<property name="label">Welcome back</property>
+												<property name="xalign">0</property>
+												<style>
+													<class name="card-title"/>
+												</style>
+											</object>
+										</child>
 
 								<child>
 									<object class="GtkBox">
 										<property name="orientation">horizontal</property>
 										<property name="spacing">12</property>
+										<property name="margin-top">5</property>
+										<property name="margin-bottom">5</property>
+										<property name="margin-start">5</property>
+										<property name="margin-end">5</property>
 
 										<child>
 											<object class="GtkLabel" id="avatar_label">
-												<property name="label">?</property>
-												<property name="justify">center</property>
-												<style>
-													<class name="avatar-label"/>
-												</style>
-											</object>
-										</child>
+														<property name="label">?</property>
+														<property name="justify">center</property>
+														<style>
+															<class name="avatar-label"/>
+														</style>
+													</object>
+												</child>
 
 										<child>
 											<object class="GtkLabel" id="identity_label">
 												<property name="wrap">true</property>
+												<property name="hexpand">true</property>
+												<property name="max-width-chars">28</property>
+												<property name="width-chars">28</property>
 												<property name="xalign">0</property>
 												<style>
 													<class name="identity-label"/>
 												</style>
 											</object>
+												</child>
+											</object>
 										</child>
-									</object>
-								</child>
-
-								<child>
-									<object class="GtkLabel" id="session_label">
-										<property name="wrap">true</property>
-										<property name="xalign">0</property>
-										<style>
-											<class name="session-label"/>
-										</style>
-									</object>
-								</child>
-
-								<child>
-									<object class="GtkEntry" id="username_entry">
-										<property name="placeholder-text">Username</property>
-										<property name="hexpand">true</property>
-										<style>
-											<class name="greeter-entry"/>
-										</style>
-									</object>
-								</child>
-
-								<child>
-									<object class="GtkPasswordEntry" id="password_entry">
-										<property name="placeholder-text">Password</property>
-										<property name="show-peek-icon">true</property>
-										<property name="hexpand">true</property>
-										<style>
-											<class name="greeter-entry"/>
-										</style>
-									</object>
-								</child>
-
-								<child>
-									<object class="GtkDropDown" id="sessions_entry">
-										<property name="hexpand">true</property>
-										<style>
-											<class name="session-picker"/>
-										</style>
-									</object>
-								</child>
-
-								<child>
-									<object class="GtkBox">
-										<property name="orientation">horizontal</property>
-										<property name="spacing">10</property>
 
 										<child>
-											<object class="GtkButton" id="login_button">
-												<property name="label">Sign in</property>
+											<object class="GtkLabel" id="session_label">
+												<property name="wrap">true</property>
+												<property name="xalign">0</property>
+												<style>
+													<class name="session-label"/>
+												</style>
+											</object>
+										</child>
+
+										<child>
+											<object class="GtkEntry" id="username_entry">
+												<property name="placeholder-text">Username</property>
 												<property name="hexpand">true</property>
 												<style>
-													<class name="primary-button"/>
+													<class name="greeter-entry"/>
 												</style>
 											</object>
 										</child>
 
 										<child>
-											<object class="GtkButton" id="suspend_button">
-												<property name="label">Suspend</property>
+											<object class="GtkPasswordEntry" id="password_entry">
+												<property name="placeholder-text">Password</property>
+												<property name="show-peek-icon">true</property>
+												<property name="hexpand">true</property>
 												<style>
-													<class name="secondary-button"/>
+													<class name="greeter-entry"/>
 												</style>
 											</object>
 										</child>
 
 										<child>
-											<object class="GtkButton" id="hibernate_button">
-												<property name="label">Hibernate</property>
+											<object class="GtkDropDown" id="sessions_entry">
+												<property name="hexpand">true</property>
 												<style>
-													<class name="secondary-button"/>
+													<class name="session-picker"/>
 												</style>
 											</object>
 										</child>
 
 										<child>
-											<object class="GtkButton" id="reboot_button">
-												<property name="label">Reboot</property>
-												<style>
-													<class name="secondary-button"/>
-												</style>
+											<object class="GtkBox">
+												<property name="orientation">horizontal</property>
+												<property name="spacing">10</property>
+
+												<child>
+													<object class="GtkButton" id="login_button">
+														<property name="label">Sign in</property>
+														<property name="hexpand">true</property>
+														<style>
+															<class name="primary-button"/>
+														</style>
+													</object>
+												</child>
 											</object>
 										</child>
 
 										<child>
-											<object class="GtkButton" id="quit_button">
-												<property name="label">Power off</property>
+											<object class="GtkLabel" id="status_label">
+												<property name="xalign">0</property>
+												<property name="wrap">true</property>
 												<style>
-													<class name="secondary-button"/>
+													<class name="status-label"/>
 												</style>
 											</object>
 										</child>
 									</object>
 								</child>
+							</object>
+						</child>
+
+						<child>
+							<object class="GtkBox">
+								<property name="orientation">horizontal</property>
+								<property name="halign">end</property>
+								<property name="valign">end</property>
+								<property name="hexpand">true</property>
+								<property name="spacing">10</property>
+								<style>
+									<class name="power-strip"/>
+								</style>
 
 								<child>
-									<object class="GtkLabel" id="status_label">
-										<property name="xalign">0</property>
-										<property name="wrap">true</property>
+									<object class="GtkButton" id="suspend_button">
+										<property name="label">⏾</property>
+										<property name="tooltip-text">Suspend</property>
 										<style>
-											<class name="status-label"/>
+											<class name="secondary-button"/>
+											<class name="power-button"/>
+										</style>
+									</object>
+								</child>
+
+								<child>
+									<object class="GtkButton" id="hibernate_button">
+										<property name="label">❄</property>
+										<property name="tooltip-text">Hibernate</property>
+										<style>
+											<class name="secondary-button"/>
+											<class name="power-button"/>
+										</style>
+									</object>
+								</child>
+
+								<child>
+									<object class="GtkButton" id="reboot_button">
+										<property name="label">↻</property>
+										<property name="tooltip-text">Reboot</property>
+										<style>
+											<class name="secondary-button"/>
+											<class name="power-button"/>
+										</style>
+									</object>
+								</child>
+
+								<child>
+									<object class="GtkButton" id="quit_button">
+										<property name="label">⏻</property>
+										<property name="tooltip-text">Power off</property>
+										<style>
+											<class name="secondary-button"/>
+											<class name="power-button"/>
 										</style>
 									</object>
 								</child>
