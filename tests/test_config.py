@@ -31,6 +31,7 @@ def test_read_config_uses_repo_default_when_progname_is_set(monkeypatch):
     assert cfg["greeter"]["user-sessions"] == "yes"
     assert cfg["greeter"]["log-path"] == "/tmp/wldm/greeter.log"
     assert cfg["session"]["pam-service"] == "login"
+    assert cfg["session"]["command"] == "default"
     assert cfg["session"]["pre-command"] == ""
     assert cfg["session"]["post-command"] == ""
 
@@ -66,6 +67,7 @@ def test_read_config_sets_default_runtime_greeter_values(monkeypatch):
     assert cfg["greeter"]["user-sessions"] == "yes"
     assert cfg["greeter"]["log-path"] == "/tmp/wldm/greeter.log"
     assert cfg["session"]["pam-service"] == "login"
+    assert cfg["session"]["command"] == "default"
     assert cfg["session"]["pre-command"] == ""
     assert cfg["session"]["post-command"] == ""
 

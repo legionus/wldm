@@ -53,6 +53,7 @@ def read_config() -> configparser.ConfigParser:
 
     cfg["session"] = {
             "pam-service": "login",
+            "command": "default",
             "pre-command": "",
             "post-command": "",
             }

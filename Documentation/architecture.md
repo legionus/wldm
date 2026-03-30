@@ -105,6 +105,7 @@ It is responsible for:
 - calling `setsid()` and acquiring the controlling TTY
 - opening the user's PAM session
 - applying PAM environment variables
+- optionally running the configured session startup wrapper
 - dropping privileges to the target user
 - starting the selected shell, compositor, or session command
 

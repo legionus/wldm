@@ -30,6 +30,10 @@ At minimum you need:
 
 The default configuration is in [`config/wldm.ini`](config/wldm.ini).
 
+By default the selected Wayland session is started through the bundled
+`wayland-session` wrapper so the user's login shell and profile scripts can
+prepare the environment before the compositor starts.
+
 On Gentoo, that usually means system packages around:
 
 - `dev-python/pygobject`

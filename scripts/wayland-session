@@ -1,0 +1,34 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026  Alexey Gladkov <legion@kernel.org>
+
+# Run a Wayland session through the user's login shell so normal profile files
+# are loaded before the compositor starts.
+
+if [ $# -eq 0 ]; then
+    echo "usage: $0 session-command [args...]" >&2
+    exit 1
+fi
+
+: "${SHELL:=/bin/sh}"
+
+case "$SHELL" in
+    */bash|*/zsh)
+        exec "$SHELL" --login -c 'exec "$@"' - "$@"
+        ;;
+    */csh|*/tcsh)
+        exec "$SHELL" -c 'if (-f /etc/csh.login) source /etc/csh.login; if (-f ~/.login) source ~/.login; exec $argv' "$@"
+        ;;
+    */fish)
+        [ -f /etc/profile ] && . /etc/profile
+        [ -f "$HOME/.profile" ] && . "$HOME/.profile"
+        exec "$SHELL" --login -c 'exec $argv' "$@"
+        ;;
+    *)
+        [ -f /etc/profile ] && . /etc/profile
+        [ -f "$HOME/.profile" ] && . "$HOME/.profile"
+        exec "$@"
+        ;;
+esac
+
+exit 1

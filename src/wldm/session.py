@@ -9,6 +9,7 @@ import os.path
 import pwd
 import shlex
 import subprocess
+import sys
 
 from typing import Dict, Iterator, List, Optional, Any
 
@@ -41,6 +42,47 @@ def session_hook_command(name: str) -> str:
     return str(cfg["session"].get(f"{name}-command", "")).strip()
 
 
+def resolve_executable(prog: str) -> str:
+    if os.access(prog, os.X_OK):
+        return prog
+
+    for path in os.get_exec_path():
+        prog_exec = os.path.join(path, prog)
+        if os.access(prog_exec, os.X_OK):
+            return prog_exec
+
+    return ""
+
+
+def default_session_wrapper() -> str:
+    if "WLDM_PROGNAME" in os.environ:
+        script_top = os.path.dirname(os.path.abspath(os.environ["WLDM_PROGNAME"]))
+        return os.path.join(script_top, "scripts", "wayland-session")
+    return os.path.join(sys.prefix, "share", "wldm", "scripts", "wayland-session")
+
+
+def session_wrapper_command() -> List[str]:
+    cfg = wldm.config.read_config()
+    command = str(cfg["session"].get("command", "default")).strip()
+
+    if command.lower() in ("", "none", "direct"):
+        return []
+    if command.lower() == "default":
+        return [default_session_wrapper()]
+    return shlex.split(command)
+
+
+def session_exec_command(prog_args: List[str]) -> List[str]:
+    wrapper = session_wrapper_command()
+    if not wrapper:
+        return prog_args
+    wrapper_prog = resolve_executable(wrapper[0])
+    if not wrapper_prog:
+        raise RuntimeError(f"Could not find the session wrapper executable: {wrapper[0]}")
+    wrapper[0] = wrapper_prog
+    return wrapper + prog_args
+
+
 def new_user_environ(pamh: Optional[Any],
                      pw: pwd.struct_passwd,
                      ttydev: Optional[wldm.tty.TTYdevice] = None) -> Dict[str, str]:
@@ -54,6 +96,7 @@ def new_user_environ(pamh: Optional[Any],
     env["HOME"] = pw.pw_dir
     env["USER"] = pw.pw_name
     env["LOGNAME"] = pw.pw_name
+    env["SHELL"] = pw.pw_shell or "/bin/sh"
     env["TERM"] = "linux"
     env["XDG_RUNTIME_DIR"] = f"/run/user/{pw.pw_uid}"
     env["XDG_SESSION_TYPE"] = "wayland"
@@ -162,7 +205,7 @@ def open_user_pam_session(pam_service: str,
 
 def run_user_session(pw: pwd.struct_passwd,
                      pam_service: str,
-                     prog: str, prog_args: List[str]) -> None:
+                     prog_args: List[str]) -> None:
     try:
         with open_console_fd() as console:
             logger.debug("[+] Opening free TTY device")
@@ -172,18 +215,20 @@ def run_user_session(pw: pwd.struct_passwd,
                 prepare_user_terminal(ttydev)
                 with open_user_pam_session(pam_service, pw, ttydev) as pamh:
                     env = new_user_environ(pamh, pw, ttydev)
-                    if not run_session_hook("pre", session_hook_command("pre"), pw, env, ttydev, prog):
+                    exec_argv = session_exec_command(prog_args)
+                    session_command = shlex.join(prog_args)
+                    if not run_session_hook("pre", session_hook_command("pre"), pw, env, ttydev, session_command):
                         return None
                     pid = os.fork()
                     if pid == 0:
                         try:
                             exec_user_program(ttydev,
                                               pw.pw_name, pw.pw_uid, pw.pw_gid, pw.pw_dir,
-                                              prog, prog_args,
+                                              exec_argv[0], exec_argv,
                                               env)
                         except Exception as e:
                             logger.critical("[child] Failed to exec `%s %s': %r",
-                                            prog, prog_args, e)
+                                            exec_argv[0], exec_argv, e)
                             os._exit(1)
                     else:
                         wtmp_line = ttydev.filename
@@ -194,13 +239,13 @@ def run_user_session(pw: pwd.struct_passwd,
                         if exitcode and exitcode != 0:
                             logger.critical("[+] Child exited. status=%s, exitcode=%s",
                                             status, exitcode)
-                        run_session_hook("post", session_hook_command("post"), pw, env, ttydev, prog)
+                        run_session_hook("post", session_hook_command("post"), pw, env, ttydev, session_command)
             finally:
                 if wtmp_line is not None:
                     wldm.wtmp.logout(wtmp_line)
                 ttydev.close()
-    except RuntimeError:
-        logger.critical("[!] Unable to open console")
+    except RuntimeError as exc:
+        logger.critical("[!] %s", exc)
         return None
 
 
@@ -233,16 +278,12 @@ def cmd_main(parser: argparse.Namespace) -> int:
         prog = pw.pw_shell or "/bin/sh"
         args = ["-l"]
 
-    if not os.access(prog, os.X_OK):
-        for path in os.get_exec_path():
-            prog_exec = os.path.join(path, prog)
-            if os.access(prog_exec, os.X_OK):
-                prog = prog_exec
-                break
-        if not os.access(prog, os.X_OK):
-            logger.critical("[!] Could not find the executable file: %s", prog)
-            return wldm.EX_FAILURE
+    resolved_prog = resolve_executable(prog)
+    if not resolved_prog:
+        logger.critical("[!] Could not find the executable file: %s", prog)
+        return wldm.EX_FAILURE
+    prog = resolved_prog
 
-    run_user_session(pw, session_pam_service(), prog, [prog] + args)
+    run_user_session(pw, session_pam_service(), [prog] + args)
 
     return wldm.EX_SUCCESS

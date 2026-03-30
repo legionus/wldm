@@ -51,6 +51,16 @@ The repository default file is [`config/wldm.ini`](../config/wldm.ini).
 
 - `pam-service`
   PAM service used for the final user session. Default: `login`.
+- `command`
+  Session startup wrapper used to run the selected user session. Default:
+  `default`, which resolves to the bundled `share/wldm/scripts/wayland-session`
+  helper. Set this to `none` or `direct` to execute the selected session
+  command directly without a wrapper.
+  This is useful when the session needs extra preparation before the compositor
+  starts, for example running it through the user's login shell so
+  `/etc/profile` and `~/.profile` are loaded, or replacing the default wrapper
+  with a site-local script that does additional setup such as
+  `dbus-update-activation-environment --systemd`.
 - `pre-command`
   Optional command run after the user PAM session is opened and the session
   environment is prepared, but before the final user program is executed.
@@ -93,6 +103,7 @@ log-path = /var/log/wldm/greeter.log
 
 [session]
 pam-service = login
+command = default
 pre-command = /usr/libexec/wldm-session-pre
 post-command = /usr/libexec/wldm-session-post
 ```
