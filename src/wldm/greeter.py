@@ -240,6 +240,9 @@ class LoginApp:
         self.set_status(_("Connection to daemon lost."))
         self.on_quit()
 
+    def log_protocol_error(self, context: str, raw: str, error: Exception) -> None:
+        logger.critical("%s: %s; raw=%r", context, error, raw.rstrip("\n"))
+
     def set_auth_state(self, busy: bool) -> None:
         self.auth_in_progress = busy
 
@@ -353,7 +356,12 @@ class LoginApp:
                     connection_lost = True
                     break
 
-                message = wldm.protocol.decode_message(line)
+                try:
+                    message = wldm.protocol.decode_message(line)
+                except (json.decoder.JSONDecodeError, ValueError) as e:
+                    self.log_protocol_error("bad greeter event message", line, e)
+                    connection_lost = True
+                    break
 
                 if wldm.protocol.is_event(message):
                     self.handle_event(message)
@@ -361,8 +369,6 @@ class LoginApp:
 
                 logger.debug("unexpected protocol message while idle: %s", message)
 
-        except (json.decoder.JSONDecodeError, ValueError):
-            logger.critical("bad json while polling greeter events")
         except Exception as e:
             logger.critical("unexpected polling error: %r", e)
             connection_lost = True
@@ -511,7 +517,12 @@ class LoginApp:
                     connection_lost = True
                     break
 
-                message = wldm.protocol.decode_message(line)
+                try:
+                    message = wldm.protocol.decode_message(line)
+                except (json.decoder.JSONDecodeError, ValueError) as e:
+                    self.log_protocol_error("bad greeter response message", line, e)
+                    connection_lost = True
+                    break
 
                 if wldm.protocol.is_event(message):
                     self.handle_event(message)
@@ -520,9 +531,6 @@ class LoginApp:
                 if wldm.protocol.is_response(message, data):
                     answer = message
                     break
-
-        except (json.decoder.JSONDecodeError, ValueError):
-            logger.critical("bad json: %s", data)
 
         except Exception as e:
             logger.critical("unexpected error: %r", e)

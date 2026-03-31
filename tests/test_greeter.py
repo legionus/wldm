@@ -496,6 +496,42 @@ def test_on_clock_tick_polls_session_finished_event_and_reenables_inputs(monkeyp
     assert app.status_label.text == "Session finished."
 
 
+def test_poll_events_treats_bad_json_as_connection_loss(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+    events = []
+
+    class FakeClient:
+        def __init__(self):
+            self.reads = 0
+
+        def can_read(self):
+            return self.reads == 0
+
+        def readline(self):
+            self.reads += 1
+            return "{bad json}\n"
+
+        def close(self):
+            return None
+
+    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app.client = FakeClient()
+    app.quit = False
+    app.status_label = types.SimpleNamespace(set_text=lambda text: events.append(("status", text)))
+    monkeypatch.setattr(app, "on_quit", lambda *args: events.append(("quit", True)))
+    monkeypatch.setattr(
+        greeter.logger,
+        "critical",
+        lambda msg, *args: events.append(("log", msg % args if args else msg)),
+    )
+
+    greeter.LoginApp.poll_events(app)
+
+    assert ("status", "Connection to daemon lost.") in events
+    assert ("quit", True) in events
+    assert any(item[0] == "log" and "raw='{bad json}'" in item[1] for item in events)
+
+
 def test_send_recv_answer_returns_empty_dict_on_bad_json(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
 
@@ -520,6 +556,42 @@ def test_send_recv_answer_returns_empty_dict_on_bad_json(monkeypatch):
 
     assert app.send_recv_answer(request) == {}
     assert request["action"] == greeter.wldm.protocol.ACTION_REBOOT
+
+
+def test_send_recv_answer_treats_bad_json_as_connection_loss(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+
+    monkeypatch.setattr(greeter.wldm.sessions, "desktop_sessions", lambda username="": [])
+    events = []
+
+    class FakeClient:
+        def writeline(self, data):
+            return None
+
+        def readline(self):
+            return "{bad json}\n"
+
+        def can_read(self):
+            return False
+
+        def close(self):
+            return None
+
+    app = greeter.LoginApp(client=FakeClient())
+    app.status_label = types.SimpleNamespace(set_text=lambda text: events.append(("status", text)))
+    monkeypatch.setattr(app, "on_quit", lambda *args: events.append(("quit", True)))
+    monkeypatch.setattr(
+        greeter.logger,
+        "critical",
+        lambda msg, *args: events.append(("log", msg % args if args else msg)),
+    )
+
+    request = greeter.wldm.protocol.new_request(greeter.wldm.protocol.ACTION_REBOOT, {})
+
+    assert app.send_recv_answer(request) == {}
+    assert ("status", "Connection to daemon lost.") in events
+    assert ("quit", True) in events
+    assert any(item[0] == "log" and "raw='{bad json}'" in item[1] for item in events)
 
 
 def test_new_ipc_client_requires_socket_env(monkeypatch):
