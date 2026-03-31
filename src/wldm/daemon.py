@@ -166,9 +166,9 @@ def process_request(req: Dict[str, Any], cfg: wldm.inifile.IniFile) -> RequestOu
 
     if req["action"] == wldm.protocol.ACTION_AUTH:
         payload = req["payload"]
+        session_username_bytes = payload["username"].as_bytes()
         try:
             response = {"verified": verify_creds(payload["username"], payload["password"])}
-            session_username = payload["username"].as_bytes().decode("utf-8", errors="replace")
         finally:
             payload["username"].clear()
             payload["password"].clear()
@@ -183,7 +183,7 @@ def process_request(req: Dict[str, Any], cfg: wldm.inifile.IniFile) -> RequestOu
                     "desktop_names": payload.get("desktop_names", []),
                 },
             )
-            outcome.session_username = session_username
+            outcome.session_username = session_username_bytes.decode("utf-8", errors="replace")
             outcome.session_command = payload["command"]
             outcome.session_desktop_names = list(payload.get("desktop_names", []))
         return outcome

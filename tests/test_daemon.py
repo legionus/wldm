@@ -245,6 +245,29 @@ def test_process_request_starts_session_after_successful_auth(monkeypatch):
     assert outcome.session_desktop_names == ["plasma", "kde"]
 
 
+def test_process_request_preserves_username_when_auth_clears_secret(monkeypatch):
+    req = wldm.protocol.new_request(
+        wldm.protocol.ACTION_AUTH,
+        {
+            "username": wldm.secret.SecretBytes(b"alice"),
+            "password": wldm.secret.SecretBytes(b"secret"),
+            "command": "sway",
+            "desktop_names": ["sway"],
+        },
+    )
+
+    def fake_verify_creds(username, password):
+        username.clear()
+        password.clear()
+        return True
+
+    monkeypatch.setattr(wldm.daemon, "verify_creds", fake_verify_creds)
+
+    outcome = wldm.daemon.process_request(req, make_config())
+
+    assert outcome.session_username == "alice"
+
+
 def test_process_request_replies_with_unknown_action_error():
     req = wldm.protocol.new_request("mystery", {})
 
