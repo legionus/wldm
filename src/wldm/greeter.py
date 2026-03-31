@@ -40,30 +40,14 @@ lock = threading.Lock()
 GETTEXT_DOMAIN = "wldm"
 _ = gettext.gettext
 
-REQUIRED_THEME_WIDGETS = [
-    "main_window",
-    "username_entry",
-    "password_entry",
-    "login_button",
-]
+def is_valid_widget(spec: Dict[str, Any], widget: Any) -> bool:
+    if spec.get("editable", False):
+        editable_iface = getattr(Gtk, "Editable", None)
+        if editable_iface is not None and not isinstance(widget, editable_iface):
+            return False
 
-WIDGET_BINDINGS = [
-    "username_entry",
-    "password_entry",
-    "sessions_entry",
-    "status_label",
-    "login_button",
-    "quit_button",
-    "reboot_button",
-    "suspend_button",
-    "hibernate_button",
-    "hostname_label",
-    "date_label",
-    "time_label",
-    "session_label",
-    "identity_label",
-    "avatar_label",
-]
+    methods = tuple(spec.get("methods", ()))
+    return all(hasattr(widget, method) for method in methods)
 
 
 def account_service_profile(username: str) -> Dict[str, str]:
@@ -181,23 +165,6 @@ def themed_resource_path() -> str:
     return base
 
 
-def validate_theme_widgets(builder: Any) -> None:
-    missing = []
-
-    for name in REQUIRED_THEME_WIDGETS:
-        try:
-            widget = builder.get_object(name)
-        except Exception:
-            widget = None
-        if widget is None:
-            missing.append(name)
-
-    if missing:
-        raise RuntimeError(
-            f"theme '{greeter_theme()}' is missing required widget(s): {', '.join(missing)}"
-        )
-
-
 class LoginApp:
     def __init__(self, client: Optional[Any]=None) -> None:
         self.app = Gtk.Application(application_id=wldm.policy.GREETER_APP_ID,
@@ -227,6 +194,116 @@ class LoginApp:
         self.quit = False
         self.auth_in_progress = False
         self.actions = available_actions()
+
+        self.WIDGET_BINDINGS: list[Dict[str, Any]] = [
+            {
+                "name": "main_window",
+                "required": True,
+                "methods": ("set_application", "present")},
+            {
+                "name": "username_entry",
+                "required": True,
+                "methods": ("get_text", "set_text", "connect", "grab_focus"),
+                "editable": True,
+                "signals": (("changed", self.on_username_changed),),
+            },
+            {
+                "name": "password_entry",
+                "required": True,
+                "methods": ("get_text", "set_text", "connect", "grab_focus"),
+                "editable": True,
+                "signals": (("activate", self.on_login_clicked),),
+            },
+            {
+                "name": "sessions_entry",
+                "methods": ("connect", "set_model", "set_selected", "get_selected_item"),
+                "signals": (
+                    ("notify::selected-item", self.on_session_changed),
+                    ("activate", self.on_login_clicked),
+                ),
+            },
+            {
+                "name": "status_label",
+                "methods": ("set_text",)},
+            {
+                "name": "login_button",
+                "required": True,
+                "methods": ("connect", "set_sensitive"),
+                "signals": (("clicked", self.on_login_clicked),),
+            },
+            {
+                "name": "quit_button",
+                "methods": ("connect", "set_visible"),
+                "signals": (("clicked", self.on_poweroff_clicked),),
+            },
+            {
+                "name": "reboot_button",
+                "methods": ("connect", "set_visible"),
+                "signals": (("clicked", self.on_reboot_clicked),),
+            },
+            {
+                "name": "suspend_button",
+                "methods": ("connect", "set_visible"),
+                "signals": (("clicked", self.on_suspend_clicked),),
+            },
+            {
+                "name": "hibernate_button",
+                "methods": ("connect", "set_visible"),
+                "signals": (("clicked", self.on_hibernate_clicked),),
+            },
+            {
+                "name": "hostname_label",
+                "methods": ("set_text",)
+            },
+            {
+                "name": "date_label",
+                "methods": ("set_text",)
+            },
+            {
+                "name": "time_label",
+                "methods": ("set_text",)
+            },
+            {
+                "name": "session_label",
+                "methods": ("set_text",)
+            },
+            {
+                "name": "identity_label",
+                "methods": ("set_text",)
+            },
+            {
+                "name": "avatar_label",
+                "methods": ("set_text",)
+            },
+        ]
+
+    def collect_theme_widgets(self, builder: Any) -> list[tuple[Dict[str, Any], Any]]:
+        bindings: list[tuple[Dict[str, Any], Any]] = []
+        invalid = []
+
+        for spec in self.WIDGET_BINDINGS:
+            name = str(spec["name"])
+
+            try:
+                widget = builder.get_object(name)
+            except Exception:
+                widget = None
+
+            if widget is None:
+                if spec.get("required", False):
+                    invalid.append(name)
+                continue
+
+            if not is_valid_widget(spec, widget):
+                invalid.append(name)
+                continue
+
+            bindings.append((spec, widget))
+
+        if invalid:
+            raise RuntimeError(f"theme '{greeter_theme()}' is missing or invalid for required widget(s): {', '.join(invalid)}")
+
+        return bindings
 
     def set_status(self, message: str) -> None:
         if self.status_label is not None:
@@ -407,46 +484,29 @@ class LoginApp:
         builder = Gtk.Builder.new()
         builder.set_translation_domain(GETTEXT_DOMAIN)
         builder.add_from_file(os.path.join(resource_path, "greeter.ui"))
-        validate_theme_widgets(builder)
 
-        def get_object(name: str) -> Optional[Any]:
-            try:
-                return builder.get_object(name)
-            except Exception:
-                return None
+        bindings = self.collect_theme_widgets(builder)
+        window: Any = None
 
-        window = get_object("main_window")
-        if window is None:
-            raise RuntimeError("greeter.ui is missing main_window")
+        for spec, widget in bindings:
+            name = str(spec["name"])
+
+            if name == "main_window":
+                window = widget
+                continue
+
+            for signal, handler in spec.get("signals", ()):
+                widget.connect(signal, handler)
+
+            setattr(self, name, widget)
+
         window.set_application(app)
-
-        for name in WIDGET_BINDINGS:
-            setattr(self, name, get_object(name))
 
         if self.hostname_label is not None:
             self.hostname_label.set_text(socket.gethostname())
+
         self.update_clock()
         GLib.timeout_add_seconds(1, self.on_clock_tick)
-
-        if self.sessions_entry is not None:
-            self.sessions_entry.connect("notify::selected-item", self.on_session_changed)
-
-        for widget, callback in [
-            (self.login_button, self.on_login_clicked),
-            (self.quit_button, self.on_poweroff_clicked),
-            (self.reboot_button, self.on_reboot_clicked),
-            (self.suspend_button, self.on_suspend_clicked),
-            (self.hibernate_button, self.on_hibernate_clicked),
-        ]:
-            if widget is not None:
-                widget.connect("clicked", callback)
-
-        if self.password_entry is not None:
-            self.password_entry.connect("activate", self.on_login_clicked)
-        if self.sessions_entry is not None:
-            self.sessions_entry.connect("activate", self.on_login_clicked)
-        if self.username_entry is not None:
-            self.username_entry.connect("changed", self.on_username_changed)
 
         self.refresh_sessions()
         self.update_identity_preview()

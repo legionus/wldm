@@ -880,21 +880,68 @@ def test_setup_greeter_i18n_binds_theme_locale(monkeypatch, tmp_path):
     assert textdomain_calls == ["wldm"]
 
 
-def test_validate_theme_widgets_rejects_missing_required_widgets(monkeypatch):
+def test_collect_theme_widgets_rejects_missing_required_widgets(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
     monkeypatch.setenv("WLDM_THEME", "retro")
+    app = greeter.LoginApp(client=DummyClient())
 
     class FakeBuilder:
         def get_object(self, name):
             return None if name == "password_entry" else object()
 
     try:
-        greeter.validate_theme_widgets(FakeBuilder())
+        app.collect_theme_widgets(FakeBuilder())
     except RuntimeError as exc:
         assert "retro" in str(exc)
         assert "password_entry" in str(exc)
     else:
-        raise AssertionError("validate_theme_widgets() should have failed")
+        raise AssertionError("collect_theme_widgets() should have failed")
+
+
+def test_collect_theme_widgets_rejects_invalid_required_widget_type(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+    monkeypatch.setenv("WLDM_THEME", "retro")
+    app = greeter.LoginApp(client=DummyClient())
+
+    class FakeWindow:
+        def set_application(self, app):
+            return None
+
+        def present(self):
+            return None
+
+    class FakeEntry:
+        def get_text(self):
+            return ""
+
+        def set_text(self, text):
+            return None
+
+        def connect(self, signal, callback):
+            return None
+
+        def grab_focus(self):
+            return None
+
+    class FakeBuilder:
+        def get_object(self, name):
+            if name == "main_window":
+                return FakeWindow()
+            if name == "username_entry":
+                return FakeEntry()
+            if name == "password_entry":
+                return object()
+            if name == "login_button":
+                return types.SimpleNamespace(connect=lambda *args: None, set_sensitive=lambda value: None)
+            return None
+
+    try:
+        app.collect_theme_widgets(FakeBuilder())
+    except RuntimeError as exc:
+        assert "retro" in str(exc)
+        assert "password_entry" in str(exc)
+    else:
+        raise AssertionError("collect_theme_widgets() should reject invalid required widgets")
 
 
 def test_on_activate_binds_widgets_and_populates_sessions(monkeypatch):
@@ -916,6 +963,7 @@ def test_on_activate_binds_widgets_and_populates_sessions(monkeypatch):
         def __init__(self):
             self.connections = []
             self.text = ""
+            self.focused = False
 
         def connect(self, signal, callback):
             self.connections.append((signal, callback))
@@ -923,16 +971,26 @@ def test_on_activate_binds_widgets_and_populates_sessions(monkeypatch):
         def get_text(self):
             return self.text
 
+        def set_text(self, text):
+            self.text = text
+
+        def grab_focus(self):
+            self.focused = True
+
     class FakeButton:
         def __init__(self):
             self.connections = []
             self.visible = None
+            self.sensitive = True
 
         def connect(self, signal, callback):
             self.connections.append((signal, callback))
 
         def set_visible(self, visible):
             self.visible = visible
+
+        def set_sensitive(self, value):
+            self.sensitive = value
 
     class FakeSessionsEntry(FakeEntry):
         def __init__(self):
