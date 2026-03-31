@@ -35,12 +35,12 @@ def session_desktop_names() -> List[str]:
 
 def session_pam_service() -> str:
     cfg = wldm.config.read_config()
-    return str(cfg["session"].get("pam-service", "login"))
+    return cfg.get_str("session", "pam-service")
 
 
 def session_hook_command(name: str) -> str:
     cfg = wldm.config.read_config()
-    return str(cfg["session"].get(f"{name}-command", "")).strip()
+    return cfg.get_str("session", f"{name}-command")
 
 
 def resolve_executable(prog: str) -> str:
@@ -64,7 +64,7 @@ def default_session_wrapper() -> str:
 
 def session_wrapper_command() -> List[str]:
     cfg = wldm.config.read_config()
-    command = str(cfg["session"].get("command", "default")).strip()
+    command = cfg.get_str("session", "command")
 
     if command.lower() in ("", "none", "direct"):
         return []

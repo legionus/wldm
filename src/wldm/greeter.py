@@ -3,7 +3,6 @@
 # Copyright (C) 2026  Alexey Gladkov <legion@kernel.org>
 
 import argparse
-import configparser
 import gettext
 import locale
 import os
@@ -27,6 +26,8 @@ from gi.repository import Gtk, Gdk, Gio, GLib  # type: ignore[import-untyped]
 import wldm
 # pylint: disable-next=wrong-import-position
 from wldm import _gtk_ffi as gtk_ffi
+# pylint: disable-next=wrong-import-position
+import wldm.inifile
 # pylint: disable-next=wrong-import-position
 import wldm.policy
 # pylint: disable-next=wrong-import-position
@@ -60,18 +61,22 @@ def account_service_profile(username: str) -> Dict[str, str]:
         return profile
 
     path = os.path.join(wldm.policy.ACCOUNTS_SERVICE_USERS_DIR, username)
-    data = configparser.ConfigParser()
     try:
-        with wldm.open_regular_text_file(path, max_size=wldm.policy.ACCOUNT_SERVICE_MAX_FILE_SIZE) as f:
-            data.read_file(f)
+        data = wldm.inifile.read_ini_file(
+            path,
+            allowed={"User": {"RealName", "Icon"}},
+            max_size=wldm.policy.ACCOUNT_SERVICE_MAX_FILE_SIZE,
+            ignore_unknown_sections=True,
+            ignore_unknown_keys=True,
+        )
     except OverflowError:
         logger.warning("ignoring oversized AccountsService profile: %s", path)
         return profile
-    except (OSError, RuntimeError, UnicodeError, configparser.Error):
+    except (OSError, RuntimeError, UnicodeError, ValueError):
         return profile
 
-    profile["display_name"] = data.get("User", "RealName", fallback=username) or username
-    avatar_path = data.get("User", "Icon", fallback="")
+    profile["display_name"] = data.get("User", "RealName", default=username) or username
+    avatar_path = data.get("User", "Icon")
     if avatar_path and os.path.isfile(avatar_path):
         profile["avatar_path"] = avatar_path
 

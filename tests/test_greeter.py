@@ -2,8 +2,6 @@
 # Copyright (C) 2026  Alexey Gladkov <legion@kernel.org>
 
 import importlib
-import contextlib
-import io
 import pwd
 import sys
 import types
@@ -121,27 +119,19 @@ def test_desktop_sessions_filters_and_sorts_entries(monkeypatch):
         def __exit__(self, exc_type, exc, tb):
             return False
 
-    class FakeConfig:
-        def read_file(self, fileobj):
-            self.path = fileobj.name
-
-        def get(self, section, option, fallback=""):
-            base = self.path.split("/")[-1]
-            data = {
-                "a.desktop": {
-                    "type": "Application", "name": "Alpha", "exec": "alpha",
-                    "comment": "Alpha session", "DesktopNames": "AlphaDesktop;WL;",
-                },
-                "b.desktop": {"type": "Application", "name": "Beta", "exec": "beta", "comment": "Beta session"},
-            }
-            return data.get(base, {}).get(option, fallback)
-
     monkeypatch.setattr(greeter.wldm.sessions.os, "scandir", lambda path: FakeScandir())
-    monkeypatch.setattr(greeter.wldm.sessions.configparser, "ConfigParser", FakeConfig)
     monkeypatch.setattr(
-        greeter.wldm,
-        "open_regular_text_file",
-        contextlib.contextmanager(lambda path, **kwargs: iter([types.SimpleNamespace(name=path)])),
+        greeter.wldm.inifile,
+        "read_ini_file",
+        lambda path, **kwargs: greeter.wldm.inifile.IniFile({
+            "Desktop Entry": {
+                "Type": "Application",
+                "Name": "Alpha" if path.endswith("a.desktop") else "Beta",
+                "Exec": "alpha" if path.endswith("a.desktop") else "beta",
+                "Comment": "Alpha session" if path.endswith("a.desktop") else "Beta session",
+                "DesktopNames": "AlphaDesktop;WL;" if path.endswith("a.desktop") else "",
+            },
+        }),
     )
 
     assert greeter.wldm.sessions.desktop_sessions() == [
@@ -223,19 +213,6 @@ def test_desktop_sessions_merge_user_entries_before_system(monkeypatch):
         def __exit__(self, exc_type, exc, tb):
             return False
 
-    class FakeConfig:
-        def read_file(self, fileobj):
-            self.path = fileobj.name
-
-        def get(self, section, option, fallback=""):
-            base = self.path.split("/")[-1]
-            data = {
-                "user.desktop": {"type": "Application", "name": "Sway", "exec": "sway --debug", "comment": "User sway"},
-                "system.desktop": {"type": "Application", "name": "Sway", "exec": "sway", "comment": "System sway"},
-                "labwc.desktop": {"type": "Application", "name": "Labwc", "exec": "labwc", "comment": "Labwc"},
-            }
-            return data.get(base, {}).get(option, fallback)
-
     monkeypatch.setattr(greeter.wldm.sessions, "session_data_dirs",
                         lambda username="": ["/home/alice/.local/share/wayland-sessions", "/usr/share/wayland-sessions"])
 
@@ -246,11 +223,18 @@ def test_desktop_sessions_merge_user_entries_before_system(monkeypatch):
         return FakeScandir([FakeEntry("system.desktop"), FakeEntry("labwc.desktop")])
 
     monkeypatch.setattr(greeter.wldm.sessions.os, "scandir", fake_scandir)
-    monkeypatch.setattr(greeter.wldm.sessions.configparser, "ConfigParser", FakeConfig)
     monkeypatch.setattr(
-        greeter.wldm,
-        "open_regular_text_file",
-        contextlib.contextmanager(lambda path, **kwargs: iter([types.SimpleNamespace(name=path)])),
+        greeter.wldm.inifile,
+        "read_ini_file",
+        lambda path, **kwargs: greeter.wldm.inifile.IniFile({
+            "Desktop Entry": {
+                "Type": "Application",
+                "Name": "Sway" if path.endswith(("user.desktop", "system.desktop")) else "Labwc",
+                "Exec": "sway --debug" if path.endswith("user.desktop") else "sway" if path.endswith("system.desktop") else "labwc",
+                "Comment": "User sway" if path.endswith("user.desktop") else "System sway" if path.endswith("system.desktop") else "Labwc",
+                "DesktopNames": "",
+            },
+        }),
     )
 
     assert greeter.wldm.sessions.desktop_sessions("alice") == [
@@ -292,30 +276,16 @@ def test_desktop_sessions_ignores_invalid_entries(monkeypatch):
         def __exit__(self, exc_type, exc, tb):
             return False
 
-    class FakeConfig:
-        def read_file(self, fileobj):
-            if fileobj.name.endswith("broken.desktop"):
-                raise greeter.wldm.sessions.configparser.Error("bad entry")
-            self.path = fileobj.name
-
-        def get(self, section, option, fallback=""):
-            data = {
-                "type": "Application",
-                "name": "Good",
-                "exec": "good",
-                "comment": "Good session",
-            }
-            return data.get(option, fallback)
-
-    @contextlib.contextmanager
-    def fake_open_regular_text_file(path, **kwargs):
-        fileobj = io.StringIO("")
-        fileobj.name = path
-        yield fileobj
-
     monkeypatch.setattr(greeter.wldm.sessions.os, "scandir", lambda path: FakeScandir())
-    monkeypatch.setattr(greeter.wldm.sessions.configparser, "ConfigParser", FakeConfig)
-    monkeypatch.setattr(greeter.wldm, "open_regular_text_file", fake_open_regular_text_file)
+    monkeypatch.setattr(
+        greeter.wldm.inifile,
+        "read_ini_file",
+        lambda path, **kwargs: (_ for _ in ()).throw(ValueError("bad entry"))
+        if path.endswith("broken.desktop") else
+        greeter.wldm.inifile.IniFile(
+            {"Desktop Entry": {"Type": "Application", "Name": "Good", "Exec": "good", "Comment": "Good session"}}
+        ),
+    )
 
     assert greeter.wldm.sessions.desktop_sessions() == [
         {"name": "Good", "command": "good", "comment": "Good session", "desktop_names": ["good"]},

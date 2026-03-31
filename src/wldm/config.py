@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (C) 2026  Alexey Gladkov <legion@kernel.org>
 
-import configparser
 import os
 import os.path
 import sys
@@ -10,6 +9,7 @@ import pwd
 import grp
 
 import wldm
+import wldm.inifile
 import wldm.policy
 
 
@@ -29,13 +29,12 @@ def _config_candidates() -> list[str]:
     return candidates
 
 
-def read_config() -> configparser.ConfigParser:
-    cfg = configparser.ConfigParser()
-
+def read_config() -> wldm.inifile.IniFile:
     ent_pw = pwd.getpwuid(os.geteuid())
     ent_gr = grp.getgrgid(ent_pw.pw_gid)
 
-    cfg["daemon"] = {
+    cfg: dict[str, dict[str, str]] = {
+        "daemon": {
             "seat": wldm.policy.DEFAULT_SEAT,
             "socket-path": "/run/wldm/greeter.sock",
             "log-path": "",
@@ -43,9 +42,8 @@ def read_config() -> configparser.ConfigParser:
             "reboot-command": "systemctl reboot",
             "suspend-command": "",
             "hibernate-command": "",
-            }
-
-    cfg["greeter"] = {
+        },
+        "greeter": {
             "user": ent_pw.pw_name,
             "group": ent_gr.gr_name,
             "tty": "7",
@@ -57,23 +55,34 @@ def read_config() -> configparser.ConfigParser:
             "max-restarts": "3",
             "user-sessions": "yes",
             "log-path": "",
-            }
-
-    cfg["session"] = {
+        },
+        "session": {
             "pam-service": "login",
             "command": "default",
             "pre-command": "",
             "post-command": "",
-            }
+        },
+    }
+
+    allowed = {
+        "daemon": set(cfg["daemon"]),
+        "greeter": set(cfg["greeter"]),
+        "session": set(cfg["session"]),
+    }
 
     for path in _config_candidates():
         try:
-            with wldm.open_regular_text_file(path, max_size=wldm.policy.CONFIG_MAX_FILE_SIZE) as f:
-                cfg.read_file(f)
-            return cfg
+            parsed = wldm.inifile.read_ini_file(
+                path,
+                allowed=allowed,
+                max_size=wldm.policy.CONFIG_MAX_FILE_SIZE,
+            )
+            for section, values in parsed.sections.items():
+                cfg[section].update(values)
+            return wldm.inifile.IniFile(cfg)
         except FileNotFoundError:
             continue
-        except (OSError, RuntimeError, OverflowError, UnicodeError, configparser.Error) as e:
+        except (OSError, RuntimeError, OverflowError, UnicodeError, ValueError) as e:
             wldm.logger.warning("ignoring invalid config file %s: %s", path, e)
 
-    return cfg
+    return wldm.inifile.IniFile(cfg)

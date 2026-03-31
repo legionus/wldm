@@ -2,12 +2,12 @@
 # Copyright (C) 2026  Alexey Gladkov <legion@kernel.org>
 
 import asyncio
-import configparser
 import signal
 import stat
 from types import SimpleNamespace
 
 import wldm.daemon
+import wldm.inifile
 import wldm.protocol
 import wldm.secret
 
@@ -103,30 +103,30 @@ def make_config(user="gdm",
                 socket_path="/tmp/wldm/greeter.sock",
                 daemon_log="/tmp/wldm/daemon.log",
                 greeter_log="/tmp/wldm/greeter.log"):
-    cfg = configparser.ConfigParser()
-    cfg["daemon"] = {
-        "seat": seat,
-        "socket-path": socket_path,
-        "log-path": daemon_log,
-        "poweroff-command": "systemctl poweroff",
-        "reboot-command": "systemctl reboot",
-        "suspend-command": "",
-        "hibernate-command": "",
-    }
-    cfg["greeter"] = {
-        "user": user,
-        "group": group,
-        "tty": tty,
-        "theme": theme,
-        "session-dirs": session_dirs,
-        "user-session-dir": user_session_dir,
-        "command": command,
-        "pam-service": pam_service,
-        "max-restarts": max_restarts,
-        "user-sessions": user_sessions,
-        "log-path": greeter_log,
-    }
-    return cfg
+    return wldm.inifile.IniFile({
+        "daemon": {
+            "seat": seat,
+            "socket-path": socket_path,
+            "log-path": daemon_log,
+            "poweroff-command": "systemctl poweroff",
+            "reboot-command": "systemctl reboot",
+            "suspend-command": "",
+            "hibernate-command": "",
+        },
+        "greeter": {
+            "user": user,
+            "group": group,
+            "tty": tty,
+            "theme": theme,
+            "session-dirs": session_dirs,
+            "user-session-dir": user_session_dir,
+            "command": command,
+            "pam-service": pam_service,
+            "max-restarts": max_restarts,
+            "user-sessions": user_sessions,
+            "log-path": greeter_log,
+        },
+    })
 
 
 def test_verify_creds_requires_username_and_password(monkeypatch):

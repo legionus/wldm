@@ -4,7 +4,12 @@
 from types import SimpleNamespace
 import pwd
 
+import wldm.inifile
 import wldm.session
+
+
+def make_config(session: dict[str, str]) -> wldm.inifile.IniFile:
+    return wldm.inifile.IniFile({"session": session})
 
 
 def test_new_user_environ_merges_pam_and_user_fields(monkeypatch):
@@ -46,13 +51,13 @@ def test_session_hook_command_uses_config(monkeypatch):
     monkeypatch.setattr(
         wldm.session.wldm.config,
         "read_config",
-        lambda: {
-            "session": {
+        lambda: make_config(
+            {
                 "command": "default",
                 "pre-command": "/usr/libexec/pre-hook",
                 "post-command": "/usr/libexec/post-hook",
             }
-        },
+        ),
     )
 
     assert wldm.session.session_hook_command("pre") == "/usr/libexec/pre-hook"
@@ -79,7 +84,7 @@ def test_session_wrapper_command_uses_default_wrapper(monkeypatch):
     monkeypatch.setattr(
         wldm.session.wldm.config,
         "read_config",
-        lambda: {"session": {"command": "default"}},
+        lambda: make_config({"command": "default"}),
     )
     monkeypatch.setattr(wldm.session, "default_session_wrapper", lambda: "/usr/share/wldm/scripts/wayland-session")
 
@@ -90,7 +95,7 @@ def test_session_wrapper_command_can_disable_wrapper(monkeypatch):
     monkeypatch.setattr(
         wldm.session.wldm.config,
         "read_config",
-        lambda: {"session": {"command": "none"}},
+        lambda: make_config({"command": "none"}),
     )
 
     assert wldm.session.session_wrapper_command() == []
@@ -499,7 +504,7 @@ def test_session_pam_service_uses_config(monkeypatch):
     monkeypatch.setattr(
         wldm.session.wldm.config,
         "read_config",
-        lambda: {"session": {"pam-service": "session-custom", "command": "default"}},
+        lambda: make_config({"pam-service": "session-custom", "command": "default"}),
     )
 
     assert wldm.session.session_pam_service() == "session-custom"

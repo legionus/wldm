@@ -20,6 +20,7 @@ from asyncio.subprocess import Process as AsyncProcess
 
 import wldm
 import wldm.config
+import wldm.inifile
 import wldm.pam
 import wldm.policy
 import wldm.protocol
@@ -81,11 +82,11 @@ POWER_ACTION_COMMANDS = {
 }
 
 
-def greeter_socket_path(cfg: Optional[Any] = None) -> str:
+def greeter_socket_path(cfg: Optional[wldm.inifile.IniFile] = None) -> str:
     if "WLDM_SOCKET" in os.environ:
         return os.environ["WLDM_SOCKET"]
     if cfg is not None:
-        return str(cfg["daemon"].get("socket-path", "/tmp/wldm/greeter.sock"))
+        return cfg.get_str("daemon", "socket-path")
     return "/tmp/wldm/greeter.sock"
 
 
@@ -122,24 +123,24 @@ def get_peer_uid(writer: asyncio.StreamWriter) -> int:
     return int(uid)
 
 
-def greeter_command(cfg: Any, progname: str) -> list[str]:
-    command = str(cfg["greeter"].get("command", "cage -s -m last --"))
+def greeter_command(cfg: wldm.inifile.IniFile, progname: str) -> list[str]:
+    command = cfg.get_str("greeter", "command")
     return shlex.split(command) + [progname, "greeter"]
 
 
-def configured_power_actions(cfg: Any) -> list[str]:
+def configured_power_actions(cfg: wldm.inifile.IniFile) -> list[str]:
     actions = []
     for action, option in POWER_ACTION_COMMANDS.items():
-        if str(cfg["daemon"].get(option, "")).strip():
+        if cfg.get_str("daemon", option):
             actions.append(action)
     return actions
 
 
-def control_command(cfg: Any, action: str) -> list[str]:
+def control_command(cfg: wldm.inifile.IniFile, action: str) -> list[str]:
     option = POWER_ACTION_COMMANDS.get(action)
     if option is None:
         raise ValueError(f"unsupported control action: {action}")
-    command = str(cfg["daemon"].get(option, "")).strip()
+    command = cfg.get_str("daemon", option)
     if not command:
         raise ValueError(f"control action is disabled: {action}")
     return shlex.split(command)
@@ -157,7 +158,7 @@ def verify_creds(username: wldm.secret.SecretBytes, password: wldm.secret.Secret
     return False
 
 
-def process_request(req: Dict[str, Any], cfg: Optional[Any] = None) -> RequestOutcome:
+def process_request(req: Dict[str, Any], cfg: Optional[wldm.inifile.IniFile] = None) -> RequestOutcome:
     if not wldm.protocol.is_request(req):
         return RequestOutcome(
             response=wldm.protocol.new_error(req, "bad_request", "Malformed request"),
@@ -311,7 +312,7 @@ async def wait_for_stop_or_process(proc: AsyncProcess,
 
 async def handle_request_async(state: DaemonState,
                                req: Dict[str, Any],
-                               cfg: Optional[Any] = None) -> None:
+                               cfg: Optional[wldm.inifile.IniFile] = None) -> None:
     outcome = process_request(req, cfg)
     await send_message(state.greeter_writer, outcome.response)
 
@@ -344,7 +345,7 @@ async def handle_request_async(state: DaemonState,
 async def handle_greeter_client(state: DaemonState,
                                 reader: asyncio.StreamReader,
                                 writer: asyncio.StreamWriter,
-                                cfg: Optional[Any] = None) -> None:
+                                cfg: Optional[wldm.inifile.IniFile] = None) -> None:
     try:
         peer_uid = get_peer_uid(writer)
     except Exception as e:
@@ -388,19 +389,22 @@ async def handle_greeter_client(state: DaemonState,
 
 
 async def start_greeter(state: DaemonState,
-                        cfg: Any,
+                        cfg: wldm.inifile.IniFile,
                         greeter_tty: int,
                         socket_path: str) -> AsyncProcess:
+    greeter_pam_service = cfg.get_str("greeter", "pam-service")
+    greeter_user = cfg.get_str("greeter", "user")
+    greeter_group = cfg.get_str("greeter", "group")
     env = dict(
         os.environ,
         WLDM_SOCKET=socket_path,
         WLDM_SEAT=state.seat,
-        WLDM_THEME=cfg["greeter"].get("theme", "default"),
-        WLDM_GREETER_SESSION_DIRS=cfg["greeter"].get("session-dirs", ":".join(wldm.policy.SYSTEM_WAYLAND_SESSION_DIRS)),
-        WLDM_GREETER_USER_SESSION_DIR=cfg["greeter"].get("user-session-dir", wldm.policy.USER_WAYLAND_SESSION_DIR),
+        WLDM_THEME=cfg.get_str("greeter", "theme"),
+        WLDM_GREETER_SESSION_DIRS=cfg.get_str("greeter", "session-dirs"),
+        WLDM_GREETER_USER_SESSION_DIR=cfg.get_str("greeter", "user-session-dir"),
         WLDM_ACTIONS=":".join(configured_power_actions(cfg)),
-        WLDM_GREETER_STDERR_LOG=cfg["greeter"].get("log-path", "/tmp/wldm/greeter.log"),
-        WLDM_GREETER_USER_SESSIONS=cfg["greeter"].get("user-sessions", "yes"),
+        WLDM_GREETER_STDERR_LOG=cfg.get_str("greeter", "log-path"),
+        WLDM_GREETER_USER_SESSIONS="yes" if cfg.get_bool("greeter", "user-sessions") else "no",
     )
     proc = await asyncio.create_subprocess_exec(
         state.progname,
@@ -408,9 +412,9 @@ async def start_greeter(state: DaemonState,
         "--tty",
         str(greeter_tty),
         "--pam-service",
-        cfg["greeter"]["pam-service"],
-        cfg["greeter"]["user"],
-        cfg["greeter"]["group"],
+        greeter_pam_service,
+        greeter_user,
+        greeter_group,
         *greeter_command(cfg, state.progname),
         env=env,
     )
@@ -438,17 +442,14 @@ async def cleanup_async(state: DaemonState) -> None:
         await asyncio.gather(*state.session_tasks, return_exceptions=True)
 
 
-async def run_daemon_async(parser: argparse.Namespace, cfg: Optional[Any] = None) -> int:
+async def run_daemon_async(parser: argparse.Namespace, cfg: Optional[wldm.inifile.IniFile] = None) -> int:
     if cfg is None:
         cfg = wldm.config.read_config()
 
     progname = os.environ.get("WLDM_PROGNAME", sys.argv[0])
 
-    greeter_tty = 0
-    greeter_max_restarts = int(cfg["greeter"].get("max-restarts", "3"))
-
-    if "tty" in cfg["greeter"]:
-        greeter_tty = int(cfg["greeter"]["tty"])
+    greeter_tty = cfg.get_int("greeter", "tty", 0)
+    greeter_max_restarts = cfg.get_int("greeter", "max-restarts", 3)
 
     if not greeter_tty:
         greeter_tty = parser.tty
@@ -473,14 +474,16 @@ async def run_daemon_async(parser: argparse.Namespace, cfg: Optional[Any] = None
 
     logger.debug("daemon start")
 
-    greeter_uid = pwd.getpwnam(cfg["greeter"]["user"]).pw_uid
+    greeter_user = cfg.get_str("greeter", "user")
+    greeter_group = cfg.get_str("greeter", "group")
+    greeter_uid = pwd.getpwnam(greeter_user).pw_uid
     socket_path = greeter_socket_path(cfg)
-    listener = create_greeter_listener(cfg["greeter"]["user"], cfg["greeter"]["group"], socket_path)
+    listener = create_greeter_listener(greeter_user, greeter_group, socket_path)
     state = DaemonState(
         progname,
         greeter_max_restarts,
         greeter_uid=greeter_uid,
-        seat=cfg["daemon"].get("seat", wldm.policy.DEFAULT_SEAT),
+        seat=cfg.get_str("daemon", "seat"),
     )
     state.console = console
     state.greeter_tty = greeter_tty
@@ -540,7 +543,7 @@ async def run_daemon_async(parser: argparse.Namespace, cfg: Optional[Any] = None
 
 def cmd_main(parser: argparse.Namespace) -> int:
     cfg = wldm.config.read_config()
-    log_path = str(cfg["daemon"].get("log-path", "")).strip()
+    log_path = cfg.get_str("daemon", "log-path")
     if log_path:
         wldm.setup_file_logger(logger, level=logger.level, fmt="[%(asctime)s] %(message)s", path=log_path)
     return asyncio.run(run_daemon_async(parser, cfg))

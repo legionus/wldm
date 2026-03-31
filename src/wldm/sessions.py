@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (C) 2026  Alexey Gladkov <legion@kernel.org>
 
-import configparser
 import os
 import os.path
 import pwd
@@ -10,6 +9,7 @@ import pwd
 from typing import Any, Dict, List
 
 import wldm
+import wldm.inifile
 import wldm.policy
 
 logger = wldm.logger
@@ -61,21 +61,31 @@ def read_desktop_sessions(datadirs: List[str]) -> List[Dict[str, Any]]:
                         continue
 
                     path = os.path.join(datadir, entry.name)
-                    desktop = configparser.ConfigParser()
                     try:
-                        with wldm.open_regular_text_file(path, max_size=wldm.policy.SESSION_ENTRY_MAX_FILE_SIZE) as f:
-                            desktop.read_file(f)
-                    except (OSError, RuntimeError, UnicodeError, configparser.Error) as e:
+                        desktop = wldm.inifile.read_ini_file(
+                            path,
+                            allowed={
+                                "Desktop Entry": {
+                                    "Type",
+                                    "Name",
+                                    "Exec",
+                                    "Comment",
+                                    "DesktopNames",
+                                },
+                            },
+                            max_size=wldm.policy.SESSION_ENTRY_MAX_FILE_SIZE,
+                            ignore_unknown_sections=True,
+                            ignore_unknown_keys=True,
+                        )
+                    except (OSError, RuntimeError, OverflowError, UnicodeError, ValueError) as e:
                         logger.warning("ignoring invalid wayland session entry %s: %s", path, e)
                         continue
 
-                    entry_type = desktop.get('Desktop Entry', 'type', fallback='').lower()
-                    entry_name = desktop.get('Desktop Entry', 'name', fallback='')
-                    entry_exec = desktop.get('Desktop Entry', 'exec', fallback='')
-                    entry_comment = desktop.get('Desktop Entry', 'comment', fallback='')
-                    entry_desktop_names = parse_desktop_names(
-                        desktop.get('Desktop Entry', 'DesktopNames', fallback='')
-                    )
+                    entry_type = desktop.get("Desktop Entry", "Type").lower()
+                    entry_name = desktop.get("Desktop Entry", "Name")
+                    entry_exec = desktop.get("Desktop Entry", "Exec")
+                    entry_comment = desktop.get("Desktop Entry", "Comment")
+                    entry_desktop_names = parse_desktop_names(desktop.get("Desktop Entry", "DesktopNames"))
 
                     if entry_type != 'application' or not entry_name or not entry_exec:
                         continue
