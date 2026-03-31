@@ -176,22 +176,25 @@ def run_greeter_session(pw: pwd.struct_passwd,
 
     try:
         with open_console_fd() as console:
-            try:
-                ttydev = wldm.tty.TTYdevice(console, pw.pw_uid, number=tty_number)
-                prepare_greeter_terminal(ttydev)
+            ttydev = wldm.tty.TTYdevice(console, pw.pw_uid, number=tty_number)
+            prepare_greeter_terminal(ttydev)
 
-                with open_greeter_pam_session(pam_service, pw, ttydev) as pamh:
+            with open_greeter_pam_session(pam_service, pw, ttydev) as pamh:
+                try:
                     exec_greeter_program(
                         pw.pw_name, pw.pw_uid, gid, pw.pw_dir,
                         prog, prog_args,
                         new_greeter_environ(pamh, pw),
                     )
-                return wldm.EX_SUCCESS
-            except Exception as e:
-                logger.critical("Failed to exec `%s %s': %r", prog, prog_args, e)
-                return wldm.EX_FAILURE
-    except RuntimeError:
-        logger.critical("[!] Unable to open console")
+                except Exception as e:
+                    logger.critical("Failed to exec `%s %s': %r", prog, prog_args, e)
+                    return wldm.EX_FAILURE
+            return wldm.EX_SUCCESS
+    except RuntimeError as e:
+        logger.critical("[!] %s", e)
+        return wldm.EX_FAILURE
+    except Exception:
+        logger.exception("unexpected greeter session failure")
         return wldm.EX_FAILURE
 
 
