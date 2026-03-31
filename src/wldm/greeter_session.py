@@ -69,24 +69,9 @@ def log_greeter_diag(message: str, *args: Any) -> None:
     print(f"[wldm] {text}", file=os.fdopen(os.dup(2), "w", encoding="utf-8", buffering=1))
 
 
-def log_pam_environment(pamh: Optional[Any]) -> None:
-    if pamh is None:
-        log_greeter_diag("PAM handle is not available")
-        return
-
-    pam_env = wldm.pam.getenvlist(pamh)
-    if not pam_env:
-        log_greeter_diag("PAM env is empty")
-        return
-
-    for name in sorted(pam_env):
-        log_greeter_diag("PAM env %s=%s", name, pam_env[name])
-
-
 def log_exec_environment(env: Dict[str, str], uid: int, gid: int) -> None:
-    log_greeter_diag("exec uid=%d euid=%d gid=%d egid=%d", os.getuid(), os.geteuid(), os.getgid(), os.getegid())
     log_greeter_diag("target uid=%d gid=%d", uid, gid)
-    for name in ["XDG_SESSION_ID", "XDG_RUNTIME_DIR", "XDG_SEAT", "XDG_VTNR", "XDG_SESSION_TYPE", "XDG_SESSION_CLASS"]:
+    for name in ["XDG_SEAT", "XDG_VTNR", "XDG_SESSION_TYPE", "XDG_SESSION_CLASS"]:
         if name in env:
             log_greeter_diag("exec env %s=%s", name, env[name])
         else:
@@ -147,7 +132,6 @@ def open_greeter_pam_session(pam_service: str,
         wldm.pam.open_pam_session_only(pamh)
         log_greeter_diag("opened PAM session for user=%s service=%s tty=%s",
                          pw.pw_name, pam_service, ttydev.filename)
-        log_pam_environment(pamh)
         yield pamh
     finally:
         finish_greeter_session(pamh)
