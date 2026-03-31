@@ -147,10 +147,16 @@ def test_verify_creds_returns_false_on_auth_exception(monkeypatch):
 
 
 def test_process_request_accepts_poweroff_and_reboot():
-    poweroff = wldm.daemon.process_request(wldm.protocol.new_request(wldm.protocol.ACTION_POWEROFF, {}))
-    reboot = wldm.daemon.process_request(wldm.protocol.new_request(wldm.protocol.ACTION_REBOOT, {}))
-    suspend = wldm.daemon.process_request(wldm.protocol.new_request(wldm.protocol.ACTION_SUSPEND, {}))
-    hibernate = wldm.daemon.process_request(wldm.protocol.new_request(wldm.protocol.ACTION_HIBERNATE, {}))
+    cfg = make_config()
+    cfg["daemon"]["poweroff-command"] = "do-poweroff"
+    cfg["daemon"]["reboot-command"] = "do-reboot"
+    cfg["daemon"]["suspend-command"] = "do-suspend"
+    cfg["daemon"]["hibernate-command"] = "do-hibernate"
+
+    poweroff = wldm.daemon.process_request(wldm.protocol.new_request(wldm.protocol.ACTION_POWEROFF, {}), cfg)
+    reboot = wldm.daemon.process_request(wldm.protocol.new_request(wldm.protocol.ACTION_REBOOT, {}), cfg)
+    suspend = wldm.daemon.process_request(wldm.protocol.new_request(wldm.protocol.ACTION_SUSPEND, {}), cfg)
+    hibernate = wldm.daemon.process_request(wldm.protocol.new_request(wldm.protocol.ACTION_HIBERNATE, {}), cfg)
 
     assert poweroff.response["payload"] == {"accepted": True}
     assert poweroff.control_action == wldm.protocol.ACTION_POWEROFF
@@ -171,7 +177,7 @@ def test_process_request_rejects_disabled_control_actions():
 
 
 def test_process_request_replies_with_bad_request_for_unknown_payload():
-    outcome = wldm.daemon.process_request({})
+    outcome = wldm.daemon.process_request({}, make_config())
 
     assert outcome.response == {
         "v": 1,
@@ -197,7 +203,7 @@ def test_process_request_does_not_start_session_for_failed_auth(monkeypatch):
 
     monkeypatch.setattr(wldm.daemon, "verify_creds", lambda username, password: False)
 
-    outcome = wldm.daemon.process_request(req)
+    outcome = wldm.daemon.process_request(req, make_config())
 
     assert outcome.response["payload"] == {"verified": False}
     assert isinstance(req["payload"]["username"], wldm.secret.SecretBytes)
@@ -221,7 +227,7 @@ def test_process_request_starts_session_after_successful_auth(monkeypatch):
 
     monkeypatch.setattr(wldm.daemon, "verify_creds", lambda username, password: True)
 
-    outcome = wldm.daemon.process_request(req)
+    outcome = wldm.daemon.process_request(req, make_config())
 
     assert outcome.response["payload"] == {"verified": True}
     assert isinstance(req["payload"]["username"], wldm.secret.SecretBytes)
@@ -242,7 +248,7 @@ def test_process_request_starts_session_after_successful_auth(monkeypatch):
 def test_process_request_replies_with_unknown_action_error():
     req = wldm.protocol.new_request("mystery", {})
 
-    outcome = wldm.daemon.process_request(req)
+    outcome = wldm.daemon.process_request(req, make_config())
 
     assert outcome.response["error"]["code"] == "unknown_action"
 
@@ -476,7 +482,7 @@ def test_handle_greeter_client_marks_greeter_ready(monkeypatch):
     reader = DummyReader([encoded[:4], encoded[4:], b""])
     calls = []
 
-    async def fake_handle_request_async(state_arg, req_arg, cfg_arg=None):
+    async def fake_handle_request_async(state_arg, req_arg, cfg_arg):
         calls.append((state_arg, req_arg, cfg_arg))
 
     monkeypatch.setattr(wldm.daemon, "handle_request_async", fake_handle_request_async)
@@ -602,10 +608,9 @@ def test_wait_for_stop_or_process_returns_false_when_process_exits():
 
 
 def test_run_daemon_async_fails_when_console_is_unavailable(monkeypatch):
-    monkeypatch.setattr(wldm.daemon.wldm.config, "read_config", lambda: make_config())
     monkeypatch.setattr(wldm.daemon.wldm.tty, "open_console", lambda: None)
 
-    result = asyncio.run(wldm.daemon.run_daemon_async(SimpleNamespace(tty=None)))
+    result = asyncio.run(wldm.daemon.run_daemon_async(SimpleNamespace(tty=None), make_config()))
 
     assert result == wldm.daemon.wldm.EX_FAILURE
 
@@ -613,12 +618,11 @@ def test_run_daemon_async_fails_when_console_is_unavailable(monkeypatch):
 def test_run_daemon_async_fails_when_tty_switch_fails(monkeypatch):
     closed = []
 
-    monkeypatch.setattr(wldm.daemon.wldm.config, "read_config", lambda: make_config(tty="7"))
     monkeypatch.setattr(wldm.daemon.wldm.tty, "open_console", lambda: 88)
     monkeypatch.setattr(wldm.daemon.wldm.tty, "change", lambda console, tty: False)
     monkeypatch.setattr(wldm.daemon.os, "close", lambda fd: closed.append(fd))
 
-    result = asyncio.run(wldm.daemon.run_daemon_async(SimpleNamespace(tty=None)))
+    result = asyncio.run(wldm.daemon.run_daemon_async(SimpleNamespace(tty=None), make_config(tty="7")))
 
     assert result == wldm.daemon.wldm.EX_FAILURE
     assert closed == [88]
@@ -642,7 +646,6 @@ def test_run_daemon_async_stops_after_configured_failed_greeter_starts(monkeypat
     async def fake_sleep(seconds):
         sleeps.append(seconds)
 
-    monkeypatch.setattr(wldm.daemon.wldm.config, "read_config", lambda: make_config(max_restarts="2"))
     monkeypatch.setattr(wldm.daemon.wldm.tty, "open_console", lambda: 88)
     monkeypatch.setattr(wldm.daemon.wldm.tty, "change", lambda console, tty: True)
     monkeypatch.setattr(wldm.daemon.pwd, "getpwnam", lambda user: SimpleNamespace(pw_uid=32))
@@ -653,7 +656,9 @@ def test_run_daemon_async_stops_after_configured_failed_greeter_starts(monkeypat
     monkeypatch.setattr(wldm.daemon.asyncio, "sleep", fake_sleep)
     monkeypatch.setattr(wldm.daemon.os, "close", lambda fd: None)
 
-    result = asyncio.run(wldm.daemon.run_daemon_async(SimpleNamespace(tty=None)))
+    result = asyncio.run(
+        wldm.daemon.run_daemon_async(SimpleNamespace(tty=None), make_config(max_restarts="2"))
+    )
 
     assert result == wldm.daemon.wldm.EX_FAILURE
     assert sleeps == [1]
@@ -683,7 +688,6 @@ def test_run_daemon_async_cleans_up_after_stop_signal(monkeypatch):
     async def fake_cleanup_async(state):
         cleanup_calls.append(state)
 
-    monkeypatch.setattr(wldm.daemon.wldm.config, "read_config", lambda: make_config())
     monkeypatch.setattr(wldm.daemon.wldm.tty, "open_console", lambda: 88)
     monkeypatch.setattr(wldm.daemon.wldm.tty, "change", lambda console, tty: True)
     monkeypatch.setattr(wldm.daemon.pwd, "getpwnam", lambda user: SimpleNamespace(pw_uid=32))
@@ -697,7 +701,7 @@ def test_run_daemon_async_cleans_up_after_stop_signal(monkeypatch):
     monkeypatch.setattr(wldm.daemon.os, "close", lambda fd: closed.append(fd))
     monkeypatch.setattr(wldm.daemon.asyncio, "Event", lambda: stop_event)
 
-    result = asyncio.run(wldm.daemon.run_daemon_async(SimpleNamespace(tty=None)))
+    result = asyncio.run(wldm.daemon.run_daemon_async(SimpleNamespace(tty=None), make_config()))
 
     assert result == wldm.daemon.wldm.EX_SUCCESS
     assert len(cleanup_calls) == 1
@@ -722,7 +726,6 @@ def test_run_daemon_async_cleans_up_on_cancellation(monkeypatch):
     async def fake_cleanup_async(state):
         cleanup_calls.append(state)
 
-    monkeypatch.setattr(wldm.daemon.wldm.config, "read_config", lambda: make_config())
     monkeypatch.setattr(wldm.daemon.wldm.tty, "open_console", lambda: 88)
     monkeypatch.setattr(wldm.daemon.wldm.tty, "change", lambda console, tty: True)
     monkeypatch.setattr(wldm.daemon.pwd, "getpwnam", lambda user: SimpleNamespace(pw_uid=32))
@@ -733,7 +736,7 @@ def test_run_daemon_async_cleans_up_on_cancellation(monkeypatch):
     monkeypatch.setattr(wldm.daemon.os, "close", lambda fd: closed.append(fd))
 
     try:
-        asyncio.run(wldm.daemon.run_daemon_async(SimpleNamespace(tty=None)))
+        asyncio.run(wldm.daemon.run_daemon_async(SimpleNamespace(tty=None), make_config()))
     except asyncio.CancelledError:
         pass
     else:

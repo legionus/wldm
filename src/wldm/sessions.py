@@ -50,10 +50,10 @@ def session_data_dirs(username: str = "") -> List[str]:
     return datadirs
 
 
-def read_desktop_sessions(datadirs: List[str]) -> List[Dict[str, Any]]:
+def desktop_sessions(username: str = "") -> List[Dict[str, Any]]:
     sessions_by_name: Dict[str, Dict[str, Any]] = {}
 
-    for datadir in datadirs:
+    for datadir in session_data_dirs(username):
         try:
             with os.scandir(datadir) as it:
                 for entry in it:
@@ -103,7 +103,3 @@ def read_desktop_sessions(datadirs: List[str]) -> List[Dict[str, Any]]:
             logger.warning("unable to read wayland sessions from %s: %s", datadir, e)
 
     return [sessions_by_name[name] for name in sorted(sessions_by_name)]
-
-
-def desktop_sessions(username: str = "") -> List[Dict[str, Any]]:
-    return read_desktop_sessions(session_data_dirs(username))

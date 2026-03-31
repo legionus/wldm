@@ -153,6 +153,8 @@ def test_redirect_greeter_stderr_replaces_fd_2(monkeypatch):
         lambda src, dst: calls.append(("dup2", src, dst)),
     )
 
+    monkeypatch.delenv("WLDM_GREETER_STDERR_LOG", raising=False)
+
     wldm.greeter_session.redirect_greeter_stderr()
 
     assert calls == [
@@ -161,11 +163,3 @@ def test_redirect_greeter_stderr_replaces_fd_2(monkeypatch):
         ("dup2", 9, 2),
         ("close_file",),
     ]
-
-
-def test_greeter_runtime_helpers_use_environment(monkeypatch):
-    monkeypatch.setenv("WLDM_SEAT", "seat9")
-    monkeypatch.setenv("WLDM_GREETER_STDERR_LOG", "/tmp/custom-greeter.log")
-
-    assert wldm.greeter_session.greeter_seat() == "seat9"
-    assert wldm.greeter_session.greeter_stderr_log_path() == "/tmp/custom-greeter.log"

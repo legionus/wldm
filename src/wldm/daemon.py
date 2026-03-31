@@ -158,7 +158,7 @@ def verify_creds(username: wldm.secret.SecretBytes, password: wldm.secret.Secret
     return False
 
 
-def process_request(req: Dict[str, Any], cfg: Optional[wldm.inifile.IniFile] = None) -> RequestOutcome:
+def process_request(req: Dict[str, Any], cfg: wldm.inifile.IniFile) -> RequestOutcome:
     if not wldm.protocol.is_request(req):
         return RequestOutcome(
             response=wldm.protocol.new_error(req, "bad_request", "Malformed request"),
@@ -189,7 +189,7 @@ def process_request(req: Dict[str, Any], cfg: Optional[wldm.inifile.IniFile] = N
         return outcome
 
     if req["action"] in POWER_ACTION_COMMANDS:
-        if cfg is not None and req["action"] not in configured_power_actions(cfg):
+        if req["action"] not in configured_power_actions(cfg):
             return RequestOutcome(
                 response=wldm.protocol.new_error(
                     req, "action_disabled", f"Action disabled: {req['action']}"
@@ -312,7 +312,7 @@ async def wait_for_stop_or_process(proc: AsyncProcess,
 
 async def handle_request_async(state: DaemonState,
                                req: Dict[str, Any],
-                               cfg: Optional[wldm.inifile.IniFile] = None) -> None:
+                               cfg: wldm.inifile.IniFile) -> None:
     outcome = process_request(req, cfg)
     await send_message(state.greeter_writer, outcome.response)
 
@@ -335,8 +335,6 @@ async def handle_request_async(state: DaemonState,
         track_session_task(state, asyncio.create_task(monitor_session(state, proc)))
 
     if outcome.control_action:
-        if cfg is None:
-            raise RuntimeError("daemon config is required for control actions")
         command = control_command(cfg, outcome.control_action)
         logger.info("execute %s command: %s", outcome.control_action, command)
         await asyncio.create_subprocess_exec(*command)
@@ -345,7 +343,7 @@ async def handle_request_async(state: DaemonState,
 async def handle_greeter_client(state: DaemonState,
                                 reader: asyncio.StreamReader,
                                 writer: asyncio.StreamWriter,
-                                cfg: Optional[wldm.inifile.IniFile] = None) -> None:
+                                cfg: wldm.inifile.IniFile) -> None:
     try:
         peer_uid = get_peer_uid(writer)
     except Exception as e:
@@ -442,10 +440,7 @@ async def cleanup_async(state: DaemonState) -> None:
         await asyncio.gather(*state.session_tasks, return_exceptions=True)
 
 
-async def run_daemon_async(parser: argparse.Namespace, cfg: Optional[wldm.inifile.IniFile] = None) -> int:
-    if cfg is None:
-        cfg = wldm.config.read_config()
-
+async def run_daemon_async(parser: argparse.Namespace, cfg: wldm.inifile.IniFile) -> int:
     progname = os.environ.get("WLDM_PROGNAME", sys.argv[0])
 
     greeter_tty = cfg.get_int("greeter", "tty", 0)

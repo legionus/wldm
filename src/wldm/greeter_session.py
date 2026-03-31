@@ -47,17 +47,9 @@ def new_greeter_environ(pamh: Optional[Any],
     return env
 
 
-def greeter_stderr_log_path() -> str:
-    return os.environ.get("WLDM_GREETER_STDERR_LOG", "/tmp/wldm/greeter.log")
-
-
-def greeter_seat() -> str:
-    return os.environ.get("WLDM_SEAT", wldm.policy.DEFAULT_SEAT)
-
-
 def redirect_greeter_stderr(log_path: Optional[str] = None) -> None:
     if log_path is None:
-        log_path = greeter_stderr_log_path()
+        log_path = os.environ.get("WLDM_GREETER_STDERR_LOG", "/tmp/wldm/greeter.log")
     logfile = wldm.open_secure_append_file(log_path, mode=0o600)
     logfd = logfile.fileno()
     os.dup2(logfd, 2)
@@ -125,7 +117,7 @@ def open_greeter_pam_session(pam_service: str,
         wldm.pam.set_pam_item(pamh, wldm.pam.PAM_TTY, ttydev.filename)
         wldm.pam.putenv(pamh, "XDG_SESSION_TYPE", wldm.policy.SESSION_TYPE_WAYLAND)
         wldm.pam.putenv(pamh, "XDG_SESSION_CLASS", wldm.policy.SESSION_CLASS_GREETER)
-        wldm.pam.putenv(pamh, "XDG_SEAT", greeter_seat())
+        wldm.pam.putenv(pamh, "XDG_SEAT", os.environ.get("WLDM_SEAT", wldm.policy.DEFAULT_SEAT))
         wldm.pam.putenv(pamh, "XDG_VTNR", str(ttydev.number))
         logger.debug("[+] Greeter PAM session starting for %s (service=%s)",
                      pw.pw_name, pam_service)

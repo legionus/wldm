@@ -15,6 +15,7 @@ from typing import Dict, Iterator, List, Optional, Any
 
 import wldm
 import wldm.config
+import wldm.inifile
 import wldm.pam
 import wldm.policy
 import wldm.tty
@@ -22,25 +23,6 @@ import wldm.logindefs
 import wldm.wtmp
 
 logger = wldm.logger
-
-
-def session_seat() -> str:
-    return os.environ.get("WLDM_SEAT", wldm.policy.DEFAULT_SEAT)
-
-
-def session_desktop_names() -> List[str]:
-    value = os.environ.get("WLDM_SESSION_DESKTOP_NAMES", "")
-    return [item for item in value.split(":") if item]
-
-
-def session_pam_service() -> str:
-    cfg = wldm.config.read_config()
-    return cfg.get_str("session", "pam-service")
-
-
-def session_hook_command(name: str) -> str:
-    cfg = wldm.config.read_config()
-    return cfg.get_str("session", f"{name}-command")
 
 
 def resolve_executable(prog: str) -> str:
@@ -62,8 +44,7 @@ def default_session_wrapper() -> str:
     return os.path.join(sys.prefix, "share", "wldm", "scripts", "wayland-session")
 
 
-def session_wrapper_command() -> List[str]:
-    cfg = wldm.config.read_config()
+def session_wrapper_command(cfg: wldm.inifile.IniFile) -> List[str]:
     command = cfg.get_str("session", "command")
 
     if command.lower() in ("", "none", "direct"):
@@ -73,8 +54,7 @@ def session_wrapper_command() -> List[str]:
     return shlex.split(command)
 
 
-def session_exec_command(prog_args: List[str]) -> List[str]:
-    wrapper = session_wrapper_command()
+def session_exec_command(wrapper: List[str], prog_args: List[str]) -> List[str]:
     if not wrapper:
         return prog_args
     wrapper_prog = resolve_executable(wrapper[0])
@@ -102,8 +82,8 @@ def new_user_environ(pamh: Optional[Any],
     env["XDG_RUNTIME_DIR"] = f"/run/user/{pw.pw_uid}"
     env["XDG_SESSION_TYPE"] = wldm.policy.SESSION_TYPE_WAYLAND
     env["XDG_SESSION_CLASS"] = wldm.policy.SESSION_CLASS_USER
-    env["XDG_SEAT"] = session_seat()
-    desktop_names = session_desktop_names()
+    env["XDG_SEAT"] = os.environ.get("WLDM_SEAT", wldm.policy.DEFAULT_SEAT)
+    desktop_names = [item for item in os.environ.get("WLDM_SESSION_DESKTOP_NAMES", "").split(":") if item]
     if desktop_names:
         env["XDG_SESSION_DESKTOP"] = desktop_names[0]
         env["XDG_CURRENT_DESKTOP"] = ":".join(desktop_names)
@@ -201,7 +181,7 @@ def open_user_pam_session(pam_service: str,
         wldm.pam.set_pam_item(pamh, wldm.pam.PAM_TTY, ttydev.filename)
         wldm.pam.putenv(pamh, "XDG_SESSION_TYPE", wldm.policy.SESSION_TYPE_WAYLAND)
         wldm.pam.putenv(pamh, "XDG_SESSION_CLASS", wldm.policy.SESSION_CLASS_USER)
-        wldm.pam.putenv(pamh, "XDG_SEAT", session_seat())
+        wldm.pam.putenv(pamh, "XDG_SEAT", os.environ.get("WLDM_SEAT", wldm.policy.DEFAULT_SEAT))
         wldm.pam.putenv(pamh, "XDG_VTNR", str(ttydev.number))
         logger.debug("[+] PAM session starting for %s (service=%s)",
                      pw.pw_name, pam_service)
@@ -214,7 +194,10 @@ def open_user_pam_session(pam_service: str,
 
 def run_user_session(pw: pwd.struct_passwd,
                      pam_service: str,
-                     prog_args: List[str]) -> int:
+                     prog_args: List[str],
+                     wrapper: Optional[List[str]] = None,
+                     pre_hook: str = "",
+                     post_hook: str = "") -> int:
     try:
         with open_console_fd() as console:
             logger.debug("[+] Opening free TTY device")
@@ -224,9 +207,9 @@ def run_user_session(pw: pwd.struct_passwd,
                 prepare_user_terminal(ttydev)
                 with open_user_pam_session(pam_service, pw, ttydev) as pamh:
                     env = new_user_environ(pamh, pw, ttydev)
-                    exec_argv = session_exec_command(prog_args)
+                    exec_argv = session_exec_command(wrapper or [], prog_args)
                     session_command = shlex.join(prog_args)
-                    if not run_session_hook("pre", session_hook_command("pre"), pw, env, ttydev, session_command):
+                    if not run_session_hook("pre", pre_hook, pw, env, ttydev, session_command):
                         return wldm.EX_FAILURE
                     pid = os.fork()
                     if pid == 0:
@@ -248,7 +231,7 @@ def run_user_session(pw: pwd.struct_passwd,
                         if exitcode != 0:
                             logger.critical("[+] Child exited. status=%s, exitcode=%s",
                                             status, exitcode)
-                        run_session_hook("post", session_hook_command("post"), pw, env, ttydev, session_command)
+                        run_session_hook("post", post_hook, pw, env, ttydev, session_command)
                         return exitcode
             finally:
                 if wtmp_line is not None:
@@ -275,6 +258,7 @@ def finish_user_session(pamh: Optional[Any]) -> None:
 
 
 def cmd_main(parser: argparse.Namespace) -> int:
+    cfg = wldm.config.read_config()
     try:
         pw = pwd.getpwnam(parser.username)
     except KeyError:
@@ -296,4 +280,11 @@ def cmd_main(parser: argparse.Namespace) -> int:
         return wldm.EX_FAILURE
     prog = resolved_prog
 
-    return run_user_session(pw, session_pam_service(), [prog] + args)
+    return run_user_session(
+        pw,
+        cfg.get_str("session", "pam-service"),
+        [prog] + args,
+        session_wrapper_command(cfg),
+        cfg.get_str("session", "pre-command"),
+        cfg.get_str("session", "post-command"),
+    )
