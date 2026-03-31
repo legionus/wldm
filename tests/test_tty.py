@@ -19,6 +19,24 @@ def test_open_console_returns_first_available_device(monkeypatch):
     assert opened == ["/dev/tty0", "/dev/systty", "/dev/console"]
 
 
+def test_open_console_logs_errors_when_no_device_is_available(monkeypatch):
+    criticals = []
+
+    monkeypatch.setattr(
+        wldm.tty.os,
+        "open",
+        lambda path, flags: (_ for _ in ()).throw(OSError(f"{path} denied")),
+    )
+    monkeypatch.setattr(
+        wldm.tty.logger,
+        "critical",
+        lambda msg, *args: criticals.append(msg % args if args else msg),
+    )
+
+    assert wldm.tty.open_console() is None
+    assert any("/dev/tty0" in message and "/dev/console" in message for message in criticals)
+
+
 def test_device_name_formats_number():
     assert wldm.tty.device_name(7) == "/dev/tty7"
 

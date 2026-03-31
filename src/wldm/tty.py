@@ -27,16 +27,20 @@ def open_console() -> Optional[int]:
             '/dev/tty0',
             '/dev/systty',
             '/dev/console']
+    errors = []
 
     for dev in dev_candidates:
         try:
             console = os.open(dev, os.O_RDONLY)
-        except OSError:
+        except OSError as e:
+            errors.append(f"{dev}: {e}")
             continue
 
         logger.debug("tty device: %s", dev)
         return console
 
+    if errors:
+        logger.critical("unable to open console from %s", ", ".join(errors))
     return None
 
 
