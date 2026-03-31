@@ -46,6 +46,24 @@ REQUIRED_THEME_WIDGETS = [
     "login_button",
 ]
 
+WIDGET_BINDINGS = [
+    "username_entry",
+    "password_entry",
+    "sessions_entry",
+    "status_label",
+    "login_button",
+    "quit_button",
+    "reboot_button",
+    "suspend_button",
+    "hibernate_button",
+    "hostname_label",
+    "date_label",
+    "time_label",
+    "session_label",
+    "identity_label",
+    "avatar_label",
+]
+
 
 def account_service_profile(username: str) -> Dict[str, str]:
     profile = {
@@ -218,6 +236,10 @@ class LoginApp:
         if self.status_label is not None:
             self.status_label.set_text(message)
 
+    def handle_connection_lost(self) -> None:
+        self.set_status(_("Connection to daemon lost."))
+        self.on_quit()
+
     def set_auth_state(self, busy: bool) -> None:
         self.auth_in_progress = busy
 
@@ -349,8 +371,7 @@ class LoginApp:
                 lock.release()
 
         if connection_lost:
-            self.set_status(_("Connection to daemon lost."))
-            self.on_quit()
+            self.handle_connection_lost()
 
     def handle_event(self, event: Dict[str, Any]) -> None:
         if not wldm.protocol.is_event(event):
@@ -399,41 +420,26 @@ class LoginApp:
             raise RuntimeError("greeter.ui is missing main_window")
         window.set_application(app)
 
-        self.username_entry = get_object("username_entry")
-        self.password_entry = get_object("password_entry")
-        self.sessions_entry = get_object("sessions_entry")
-        self.status_label   = get_object("status_label")
-        self.login_button   = get_object("login_button")
-        self.quit_button    = get_object("quit_button")
-        self.reboot_button  = get_object("reboot_button")
-        self.suspend_button = get_object("suspend_button")
-        self.hibernate_button = get_object("hibernate_button")
-        self.hostname_label = get_object("hostname_label")
-        self.date_label     = get_object("date_label")
-        self.time_label     = get_object("time_label")
-        self.session_label  = get_object("session_label")
-        self.identity_label = get_object("identity_label")
-        self.avatar_label   = get_object("avatar_label")
+        for name in WIDGET_BINDINGS:
+            setattr(self, name, get_object(name))
 
         if self.hostname_label is not None:
             self.hostname_label.set_text(socket.gethostname())
         self.update_clock()
         GLib.timeout_add_seconds(1, self.on_clock_tick)
 
-        if self.sessions_entry:
+        if self.sessions_entry is not None:
             self.sessions_entry.connect("notify::selected-item", self.on_session_changed)
 
-        if self.login_button:
-            self.login_button.connect("clicked", self.on_login_clicked)
-
-        if self.quit_button:
-            self.quit_button.connect("clicked", self.on_poweroff_clicked)
-        if self.reboot_button:
-            self.reboot_button.connect("clicked", self.on_reboot_clicked)
-        if self.suspend_button:
-            self.suspend_button.connect("clicked", self.on_suspend_clicked)
-        if self.hibernate_button:
-            self.hibernate_button.connect("clicked", self.on_hibernate_clicked)
+        for widget, callback in [
+            (self.login_button, self.on_login_clicked),
+            (self.quit_button, self.on_poweroff_clicked),
+            (self.reboot_button, self.on_reboot_clicked),
+            (self.suspend_button, self.on_suspend_clicked),
+            (self.hibernate_button, self.on_hibernate_clicked),
+        ]:
+            if widget is not None:
+                widget.connect("clicked", callback)
 
         if self.password_entry is not None:
             self.password_entry.connect("activate", self.on_login_clicked)
@@ -452,38 +458,32 @@ class LoginApp:
 
         window.present()
 
-    def get_session_command(self) -> str:
-        command = ""
-
+    def get_selected_session_name(self) -> str:
         if self.sessions_entry is None:
-            return command
+            return ""
 
         item = self.sessions_entry.get_selected_item()
         if item is None:
-            return command
-        name = item.get_string()
+            return ""
 
-        for entry in self.sessions:
-            if entry["name"] == name:
-                command = str(entry["command"])
-                break
-
-        return command
+        return str(item.get_string())
 
     def get_selected_session(self) -> Optional[Dict[str, Any]]:
-        if self.sessions_entry is None:
+        name = self.get_selected_session_name()
+        if not name:
             return None
-
-        item = self.sessions_entry.get_selected_item()
-        if item is None:
-            return None
-        name = item.get_string()
 
         for entry in self.sessions:
             if entry["name"] == name:
                 return entry
 
         return None
+
+    def get_session_command(self) -> str:
+        entry = self.get_selected_session()
+        if entry is None:
+            return ""
+        return str(entry["command"])
 
     # pylint: disable-next=unused-argument
     def on_session_changed(self, *args: Any) -> None:
@@ -532,8 +532,7 @@ class LoginApp:
             lock.release()
 
         if connection_lost:
-            self.set_status(_("Connection to daemon lost."))
-            self.on_quit()
+            self.handle_connection_lost()
 
         return answer
 
