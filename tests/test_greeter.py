@@ -398,6 +398,26 @@ def test_send_recv_answer_round_trips_protocol_messages(monkeypatch):
     assert sent["payload"] == {}
 
 
+def test_read_password_secret_uses_native_ffi_when_available(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+    monkeypatch.setattr(greeter.gtk_ffi, "_gtk", None)
+
+    secret = greeter.gtk_ffi.read_password_secret(types.SimpleNamespace(get_text=lambda: "secret"))
+
+    assert secret.as_bytes() == b"secret"
+    secret.clear()
+
+
+def test_read_password_secret_falls_back_to_entry_text(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+    monkeypatch.setattr(greeter.gtk_ffi, "_editable_pointer", lambda entry: None)
+
+    secret = greeter.gtk_ffi.read_password_secret(types.SimpleNamespace(get_text=lambda: "secret"))
+
+    assert secret.as_bytes() == b"secret"
+    secret.clear()
+
+
 def test_handle_event_updates_status_label(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
 

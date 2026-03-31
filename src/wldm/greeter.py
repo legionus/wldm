@@ -26,6 +26,8 @@ from gi.repository import Gtk, Gdk, Gio, GLib  # type: ignore[import-untyped]
 # pylint: disable-next=wrong-import-position
 import wldm
 # pylint: disable-next=wrong-import-position
+from wldm import _gtk_ffi as gtk_ffi
+# pylint: disable-next=wrong-import-position
 import wldm.policy
 # pylint: disable-next=wrong-import-position
 import wldm.protocol
@@ -544,9 +546,8 @@ class LoginApp:
 
         username = self.username_entry.get_text()
         # NOTE: GtkPasswordEntry.get_text() already materializes a Python string
-        # here, so the first in-memory copy of the password still exists in the
-        # greeter process. The binary IPC path only avoids additional JSON copies.
-        password = self.password_entry.get_text().encode("utf-8")
+        # here whenever the native GtkEditable FFI path is not available.
+        password = gtk_ffi.read_password_secret(self.password_entry)
 
         data = {
                 "username": username,
@@ -558,10 +559,6 @@ class LoginApp:
         if session_entry is not None:
             data["desktop_names"] = list(session_entry.get("desktop_names", []))
 
-        logger.debug("client request: username=[%s] password=[%s] command=[%s]",
-                     data["username"], '*' * len(data["password"]),
-                     data["command"])
-
         if len(data["username"]) == 0:
             self.set_status(_("Enter a username."))
             return
@@ -570,11 +567,16 @@ class LoginApp:
             self.set_status(_("Enter a password."))
             if hasattr(self.password_entry, "grab_focus"):
                 self.password_entry.grab_focus()
+            data["password"].clear()
             return
 
         self.password_entry.set_text("")
         self.set_auth_state(True)
-        answer = self.send_recv_answer(wldm.protocol.new_request(wldm.protocol.ACTION_AUTH, data))
+        request = wldm.protocol.new_request(wldm.protocol.ACTION_AUTH, data)
+        try:
+            answer = self.send_recv_answer(request)
+        finally:
+            request["payload"]["password"].clear()
         logger.debug("client answer: %s", answer)
 
         if answer.get("ok") and answer.get("payload", {}).get("verified"):

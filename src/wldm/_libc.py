@@ -32,6 +32,11 @@ _free_ptr.argtypes = [ctypes.c_void_p]
 _free_ptr.restype = None
 free: Any = _free_ptr
 
+_strlen_ptr = _require_symbol(_libc, "strlen")
+_strlen_ptr.argtypes = [ctypes.c_char_p]
+_strlen_ptr.restype = ctypes.c_size_t
+strlen: Any = _strlen_ptr
+
 if hasattr(_libc, "logwtmp"):
     _logwtmp_ptr = _libc.logwtmp
     _logwtmp_ptr.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p]

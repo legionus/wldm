@@ -4,6 +4,7 @@
 
 import ctypes
 from ctypes import addressof, c_char_p, c_void_p, cast, create_string_buffer, sizeof
+from typing import Any
 
 
 class SecretBytes:
@@ -25,6 +26,13 @@ class SecretBytes:
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(<hidden>, len={self._length})"
+
+    @classmethod
+    def from_buffer(cls, buffer: Any, length: int) -> "SecretBytes":
+        secret = cls.__new__(cls)
+        secret._buffer = buffer
+        secret._length = length
+        return secret
 
     def as_bytes(self) -> bytes:
         return self._buffer.raw[:self._length]
