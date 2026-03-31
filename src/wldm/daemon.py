@@ -521,6 +521,8 @@ async def run_daemon_async(parser: argparse.Namespace, cfg: Optional[Any] = None
         await cleanup_async(state)
         raise
     except Exception:
+        logger.exception("unexpected daemon failure")
+        exit_code = wldm.EX_FAILURE
         await cleanup_async(state)
     finally:
         remove_stop_handlers(loop)
