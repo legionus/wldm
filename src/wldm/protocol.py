@@ -19,6 +19,12 @@ ACTION_POWEROFF = "poweroff"
 ACTION_REBOOT = "reboot"
 ACTION_SUSPEND = "suspend"
 ACTION_HIBERNATE = "hibernate"
+CONTROL_ACTIONS = {
+    ACTION_POWEROFF,
+    ACTION_REBOOT,
+    ACTION_SUSPEND,
+    ACTION_HIBERNATE,
+}
 
 EVENT_SESSION_STARTING = "session-starting"
 EVENT_SESSION_FINISHED = "session-finished"
@@ -160,11 +166,43 @@ def _decode_signed_int(payload: memoryview, offset: int) -> tuple[int, int]:
     return value, offset + SIGNED_INT.size
 
 
+def _encode_response_payload(body: bytearray, action: str, payload: Dict[str, Any]) -> None:
+    if action == ACTION_AUTH:
+        body.extend(_encode_bool(bool(payload.get("verified", False))))
+    elif action in CONTROL_ACTIONS:
+        body.extend(_encode_bool(bool(payload.get("accepted", False))))
+
+
+def _decode_response_payload(action: str, payload: memoryview, offset: int) -> tuple[Dict[str, Any], int]:
+    if action == ACTION_AUTH:
+        verified, offset = _decode_bool(payload, offset)
+        return {"verified": verified}, offset
+    if action in CONTROL_ACTIONS:
+        accepted, offset = _decode_bool(payload, offset)
+        return {"accepted": accepted}, offset
+    return {}, offset
+
+
+def _is_versioned_type(message: Dict[str, Any], message_type: str) -> bool:
+    return message.get("v") == PROTOCOL_VERSION and message.get("type") == message_type
+
+
+def _has_fields(message: Dict[str, Any], fields: tuple[tuple[str, type, bool], ...]) -> bool:
+    for key, value_type, nonempty in fields:
+        value = message.get(key)
+        if not isinstance(value, value_type):
+            return False
+        if nonempty and isinstance(value, str) and len(value) == 0:
+            return False
+    return True
+
+
 def encode_message(message: Dict[str, Any]) -> bytes:
     body = bytearray()
     body.append(PROTOCOL_VERSION)
+    message_type = message.get("type")
 
-    if message.get("type") == "request":
+    if message_type == "request":
         body.append(TYPE_REQUEST)
         body.extend(_encode_text(str(message.get("id", ""))))
         body.extend(_encode_text(str(message.get("action", ""))))
@@ -174,22 +212,19 @@ def encode_message(message: Dict[str, Any]) -> bytes:
             body.extend(_encode_blob(payload.get("password", b"")))
             body.extend(_encode_text(str(payload.get("command", ""))))
             body.extend(_encode_string_list(list(payload.get("desktop_names", []))))
-    elif message.get("type") == "response":
+    elif message_type == "response":
         body.append(TYPE_RESPONSE)
         body.extend(_encode_text(str(message.get("id", ""))))
         body.extend(_encode_text(str(message.get("action", ""))))
-        body.extend(_encode_bool(bool(message.get("ok", False))))
-        if message.get("ok"):
-            payload = message.get("payload", {})
-            if message.get("action") == ACTION_AUTH:
-                body.extend(_encode_bool(bool(payload.get("verified", False))))
-            elif message.get("action") in {ACTION_POWEROFF, ACTION_REBOOT, ACTION_SUSPEND, ACTION_HIBERNATE}:
-                body.extend(_encode_bool(bool(payload.get("accepted", False))))
+        ok = bool(message.get("ok", False))
+        body.extend(_encode_bool(ok))
+        if ok:
+            _encode_response_payload(body, str(message.get("action", "")), message.get("payload", {}))
         else:
             error = message.get("error", {})
             body.extend(_encode_text(str(error.get("code", ""))))
             body.extend(_encode_text(str(error.get("message", ""))))
-    elif message.get("type") == "event":
+    elif message_type == "event":
         body.append(TYPE_EVENT)
         body.extend(_encode_text(str(message.get("event", ""))))
         payload = message.get("payload", {})
@@ -263,12 +298,7 @@ def decode_message(raw: bytes | str) -> Dict[str, Any]:
             "ok": ok,
         }
         if ok:
-            if action == ACTION_AUTH:
-                verified, offset = _decode_bool(payload, offset)
-                decoded["payload"] = {"verified": verified}
-            elif action in {ACTION_POWEROFF, ACTION_REBOOT, ACTION_SUSPEND, ACTION_HIBERNATE}:
-                accepted, offset = _decode_bool(payload, offset)
-                decoded["payload"] = {"accepted": accepted}
+            decoded["payload"], offset = _decode_response_payload(action, payload, offset)
         else:
             code, offset = _decode_text(payload, offset)
             message, offset = _decode_text(payload, offset)
@@ -349,15 +379,9 @@ def _recv_exact(sock: socket.socket, size: int) -> bytes | None:
 
 
 def is_request(message: Dict[str, Any], action: str | None = None) -> bool:
-    if message.get("v") != PROTOCOL_VERSION:
+    if not _is_versioned_type(message, "request"):
         return False
-    if message.get("type") != "request":
-        return False
-    if not isinstance(message.get("id"), str) or len(message["id"]) == 0:
-        return False
-    if not isinstance(message.get("action"), str) or len(message["action"]) == 0:
-        return False
-    if not isinstance(message.get("payload"), dict):
+    if not _has_fields(message, (("id", str, True), ("action", str, True), ("payload", dict, False))):
         return False
     if action is not None and message["action"] != action:
         return False
@@ -365,15 +389,9 @@ def is_request(message: Dict[str, Any], action: str | None = None) -> bool:
 
 
 def is_response(message: Dict[str, Any], request: Dict[str, Any] | None = None) -> bool:
-    if message.get("v") != PROTOCOL_VERSION:
+    if not _is_versioned_type(message, "response"):
         return False
-    if message.get("type") != "response":
-        return False
-    if not isinstance(message.get("id"), str):
-        return False
-    if not isinstance(message.get("action"), str):
-        return False
-    if not isinstance(message.get("ok"), bool):
+    if not _has_fields(message, (("id", str, False), ("action", str, False), ("ok", bool, False))):
         return False
     if request is not None:
         if message["id"] != request.get("id"):
@@ -384,13 +402,9 @@ def is_response(message: Dict[str, Any], request: Dict[str, Any] | None = None) 
 
 
 def is_event(message: Dict[str, Any], name: str | None = None) -> bool:
-    if message.get("v") != PROTOCOL_VERSION:
+    if not _is_versioned_type(message, "event"):
         return False
-    if message.get("type") != "event":
-        return False
-    if not isinstance(message.get("event"), str) or len(message["event"]) == 0:
-        return False
-    if not isinstance(message.get("payload"), dict):
+    if not _has_fields(message, (("event", str, True), ("payload", dict, False))):
         return False
     if name is not None and message["event"] != name:
         return False
