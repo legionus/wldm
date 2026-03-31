@@ -66,6 +66,22 @@ running it as a system-managed service and can confuse `logind`.
 testing can keep the socket and logs under `/tmp/wldm/` without changing the
 main production defaults.
 
+For more logging:
+
+```bash
+./wldm.sh -vv
+```
+
+or:
+
+```bash
+WLDM_VERBOSITY=2 ./wldm.sh greeter
+```
+
+The daemon exports `WLDM_VERBOSITY` to the greeter and session helpers it
+starts, so increasing verbosity on the main `wldm` command enables their debug
+logging too.
+
 ## Configuration
 
 Configuration lookup order, option descriptions, and example files are

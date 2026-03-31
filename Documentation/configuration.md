@@ -108,6 +108,32 @@ metadata is available.
 Commands are parsed with `shlex.split()` and are not run through a shell unless
 the configured command explicitly invokes one.
 
+## Verbosity
+
+`wldm`, `wldm greeter`, `wldm session`, and `wldm greeter-session` all accept
+the common CLI flags:
+
+- `-v`
+  Set log level to `INFO`.
+- `-vv` and above
+  Set log level to `DEBUG`.
+- `-q`
+  Set log level to `CRITICAL`.
+
+The effective verbosity is also exported through `WLDM_VERBOSITY`. Child
+processes inherit it, so starting the main daemon with `-vv` also enables
+debug logging in the greeter and session helpers it launches.
+
+Examples:
+
+```bash
+wldm -vv
+```
+
+```bash
+WLDM_VERBOSITY=2 ./wldm.sh greeter
+```
+
 ## Example
 
 ```ini
