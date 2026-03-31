@@ -40,6 +40,11 @@ def test_read_config_uses_repo_default_when_progname_is_set(monkeypatch):
     assert cfg["session"]["command"] == "default"
     assert cfg["session"]["pre-command"] == ""
     assert cfg["session"]["post-command"] == ""
+    assert cfg["keyboard"]["rules"] == ""
+    assert cfg["keyboard"]["model"] == ""
+    assert cfg["keyboard"]["layout"] == ""
+    assert cfg["keyboard"]["variant"] == ""
+    assert cfg["keyboard"]["options"] == ""
 
 
 def test_read_config_prefers_explicit_env_path(monkeypatch, tmp_path):
@@ -81,6 +86,11 @@ def test_read_config_sets_default_runtime_greeter_values(monkeypatch):
     assert cfg["session"]["command"] == "default"
     assert cfg["session"]["pre-command"] == ""
     assert cfg["session"]["post-command"] == ""
+    assert cfg["keyboard"]["rules"] == ""
+    assert cfg["keyboard"]["model"] == ""
+    assert cfg["keyboard"]["layout"] == ""
+    assert cfg["keyboard"]["variant"] == ""
+    assert cfg["keyboard"]["options"] == ""
 
 
 def test_read_config_sets_default_greeter_restart_limit(monkeypatch):

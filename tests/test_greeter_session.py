@@ -14,6 +14,8 @@ def test_new_greeter_environ_preserves_safe_base_env_and_adds_runtime_dir(monkey
         {
             "PATH": "/usr/bin",
             "WLDM_PROGNAME": "/srv/wldm/wldm.sh",
+            "XKB_DEFAULT_LAYOUT": "us,ru",
+            "XKB_DEFAULT_OPTIONS": "grp:alt_shift_toggle",
             "XDG_SESSION_ID": "19",
             "XDG_RUNTIME_DIR": "/run/user/0",
         },
@@ -29,6 +31,8 @@ def test_new_greeter_environ_preserves_safe_base_env_and_adds_runtime_dir(monkey
 
     assert env["PATH"] == "/usr/bin"
     assert env["WLDM_PROGNAME"] == "/srv/wldm/wldm.sh"
+    assert env["XKB_DEFAULT_LAYOUT"] == "us,ru"
+    assert env["XKB_DEFAULT_OPTIONS"] == "grp:alt_shift_toggle"
     assert env["HOME"] == "/var/lib/gdm"
     assert env["USER"] == "gdm"
     assert env["XDG_RUNTIME_DIR"] == "/run/user/1001"

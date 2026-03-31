@@ -108,6 +108,27 @@ metadata is available.
 Commands are parsed with `shlex.split()` and are not run through a shell unless
 the configured command explicitly invokes one.
 
+## `[keyboard]`
+
+- `rules`
+- `model`
+- `layout`
+- `variant`
+- `options`
+
+These values are exported to the greeter environment as the corresponding
+`XKB_DEFAULT_*` variables:
+
+- `XKB_DEFAULT_RULES`
+- `XKB_DEFAULT_MODEL`
+- `XKB_DEFAULT_LAYOUT`
+- `XKB_DEFAULT_VARIANT`
+- `XKB_DEFAULT_OPTIONS`
+
+`wldm` itself does not apply keyboard settings inside the GTK greeter process.
+Instead, it exposes the configured values to `greeter.command`, which lets
+`cage` and other compositors consume them through their normal XKB handling.
+
 ## Verbosity
 
 `wldm`, `wldm greeter`, `wldm session`, and `wldm greeter-session` all accept
@@ -164,4 +185,11 @@ pam-service = login
 command = default
 pre-command = /usr/libexec/wldm-session-pre
 post-command = /usr/libexec/wldm-session-post
+
+[keyboard]
+rules = evdev
+model = pc105
+layout = us,ru
+variant =
+options = grp:alt_shift_toggle
 ```

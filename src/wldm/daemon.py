@@ -81,6 +81,14 @@ POWER_ACTION_COMMANDS = {
     wldm.protocol.ACTION_HIBERNATE: "hibernate-command",
 }
 
+KEYBOARD_ENV_OPTIONS = {
+    "rules": "XKB_DEFAULT_RULES",
+    "model": "XKB_DEFAULT_MODEL",
+    "layout": "XKB_DEFAULT_LAYOUT",
+    "variant": "XKB_DEFAULT_VARIANT",
+    "options": "XKB_DEFAULT_OPTIONS",
+}
+
 
 def greeter_socket_path(cfg: Optional[wldm.inifile.IniFile] = None) -> str:
     if "WLDM_SOCKET" in os.environ:
@@ -144,6 +152,15 @@ def control_command(cfg: wldm.inifile.IniFile, action: str) -> list[str]:
     if not command:
         raise ValueError(f"control action is disabled: {action}")
     return shlex.split(command)
+
+
+def keyboard_environment(cfg: wldm.inifile.IniFile) -> Dict[str, str]:
+    env: Dict[str, str] = {}
+    for option, env_name in KEYBOARD_ENV_OPTIONS.items():
+        value = cfg.get_str("keyboard", option)
+        if value:
+            env[env_name] = value
+    return env
 
 
 def verify_creds(username: wldm.secret.SecretBytes, password: wldm.secret.SecretBytes) -> bool:
@@ -404,6 +421,7 @@ async def start_greeter(state: DaemonState,
         WLDM_GREETER_STDERR_LOG=cfg.get_str("greeter", "log-path"),
         WLDM_GREETER_USER_SESSIONS="yes" if cfg.get_bool("greeter", "user-sessions") else "no",
     )
+    env.update(keyboard_environment(cfg))
     proc = await asyncio.create_subprocess_exec(
         state.progname,
         "greeter-session",

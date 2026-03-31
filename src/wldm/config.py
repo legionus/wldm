@@ -62,12 +62,20 @@ def read_config() -> wldm.inifile.IniFile:
             "pre-command": "",
             "post-command": "",
         },
+        "keyboard": {
+            "rules": "",
+            "model": "",
+            "layout": "",
+            "variant": "",
+            "options": "",
+        },
     }
 
     allowed = {
         "daemon": set(cfg["daemon"]),
         "greeter": set(cfg["greeter"]),
         "session": set(cfg["session"]),
+        "keyboard": set(cfg["keyboard"]),
     }
 
     for path in _config_candidates():

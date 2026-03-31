@@ -539,6 +539,13 @@ def test_start_greeter_passes_socket_env(monkeypatch):
     state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3, seat="seat9")
     cfg = make_config(command="labwc --", greeter_log="/tmp/custom-greeter.log", user_sessions="no", theme="retro")
     cfg["daemon"]["suspend-command"] = "do-suspend"
+    cfg.sections["keyboard"] = {
+        "rules": "evdev",
+        "model": "pc105",
+        "layout": "us,ru",
+        "variant": "",
+        "options": "grp:alt_shift_toggle",
+    }
     calls = {}
     proc = DummyAsyncProc(pid=4321, returncode=0)
 
@@ -576,6 +583,10 @@ def test_start_greeter_passes_socket_env(monkeypatch):
     assert calls["env"]["WLDM_ACTIONS"] == "poweroff:reboot:suspend"
     assert calls["env"]["WLDM_GREETER_STDERR_LOG"] == "/tmp/custom-greeter.log"
     assert calls["env"]["WLDM_GREETER_USER_SESSIONS"] == "no"
+    assert calls["env"]["XKB_DEFAULT_RULES"] == "evdev"
+    assert calls["env"]["XKB_DEFAULT_MODEL"] == "pc105"
+    assert calls["env"]["XKB_DEFAULT_LAYOUT"] == "us,ru"
+    assert calls["env"]["XKB_DEFAULT_OPTIONS"] == "grp:alt_shift_toggle"
 
 
 def test_terminate_process_tree_sends_signals_to_process_group(monkeypatch):

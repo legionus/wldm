@@ -252,6 +252,16 @@
 								</style>
 
 								<child>
+									<object class="GtkLabel" id="keyboard_label">
+										<property name="visible">false</property>
+										<property name="valign">center</property>
+										<style>
+											<class name="keyboard-indicator"/>
+										</style>
+									</object>
+								</child>
+
+								<child>
 									<object class="GtkButton" id="suspend_button">
 										<property name="label">⏾</property>
 										<property name="tooltip-text" translatable="yes">Suspend</property>

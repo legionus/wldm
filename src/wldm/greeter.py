@@ -3,6 +3,7 @@
 # Copyright (C) 2026  Alexey Gladkov <legion@kernel.org>
 
 import argparse
+import dataclasses
 import gettext
 import locale
 import os
@@ -113,6 +114,63 @@ def available_actions() -> set[str]:
     return {item for item in value.split(":") if item}
 
 
+@dataclasses.dataclass(frozen=True)
+class KeyboardLayout:
+    short_name: str
+    long_name: str
+
+
+def configured_keyboard_short_names() -> list[str]:
+    value = os.environ.get("XKB_DEFAULT_LAYOUT", "").strip()
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def keyboard_state() -> tuple[list[KeyboardLayout], int]:
+    display = Gdk.Display.get_default()
+    if display is None or not hasattr(display, "get_default_seat"):
+        return [], -1
+
+    seat = display.get_default_seat()
+    if seat is None or not hasattr(seat, "get_keyboard"):
+        return [], -1
+
+    keyboard = seat.get_keyboard()
+    if keyboard is None:
+        return [], -1
+
+    if not hasattr(keyboard, "get_layout_names") or not hasattr(keyboard, "get_active_layout_index"):
+        return [], -1
+
+    try:
+        layout_names = keyboard.get_layout_names()
+        active_index = keyboard.get_active_layout_index()
+    except Exception:
+        return [], -1
+
+    if not layout_names or not isinstance(active_index, int):
+        return [], -1
+
+    if active_index < 0 or active_index >= len(layout_names):
+        return [], -1
+
+    configured_names = configured_keyboard_short_names()
+    layouts = []
+
+    for index, name in enumerate(layout_names):
+        long_name = str(name).strip()
+
+        if not long_name:
+            continue
+
+        short_name = configured_names[index] if index < len(configured_names) else long_name
+        layouts.append(KeyboardLayout(short_name=short_name, long_name=long_name))
+
+    if active_index >= len(layouts):
+        return [], -1
+
+    return layouts, active_index
+
+
 def setup_greeter_logging() -> None:
     def log_uncaught_exception(exc_type: type[BaseException],
                                exc_value: BaseException,
@@ -190,6 +248,7 @@ class LoginApp:
         self.hostname_label: Optional[Any] = None
         self.date_label:     Optional[Any] = None
         self.time_label:     Optional[Any] = None
+        self.keyboard_label: Optional[Any] = None
         self.session_label:  Optional[Any] = None
         self.identity_label: Optional[Any] = None
         self.avatar_label:   Optional[Any] = None
@@ -268,6 +327,10 @@ class LoginApp:
             {
                 "name": "time_label",
                 "methods": ("set_text",)
+            },
+            {
+                "name": "keyboard_label",
+                "methods": ("set_text", "set_visible", "set_tooltip_text", "set_width_chars")
             },
             {
                 "name": "session_label",
@@ -415,9 +478,31 @@ class LoginApp:
         if self.time_label is not None:
             self.time_label.set_text(time.strftime("%H:%M"))
 
+    def update_keyboard_indicator(self) -> None:
+        keyboard_label = getattr(self, "keyboard_label", None)
+        if keyboard_label is None:
+            return
+
+        layouts, active_index = keyboard_state()
+
+        if not layouts or active_index < 0 or active_index >= len(layouts):
+            keyboard_label.set_text("")
+            keyboard_label.set_tooltip_text(None)
+            keyboard_label.set_visible(False)
+            return
+
+        current = layouts[active_index]
+        max_width = max(len(layout.short_name) for layout in layouts)
+
+        keyboard_label.set_text(current.short_name.upper())
+        keyboard_label.set_tooltip_text(current.long_name)
+        keyboard_label.set_width_chars(max_width)
+        keyboard_label.set_visible(True)
+
     def on_clock_tick(self) -> bool:
         self.poll_events()
         self.update_clock()
+        self.update_keyboard_indicator()
         return not self.quit
 
     def poll_events(self) -> None:
@@ -512,6 +597,7 @@ class LoginApp:
             self.hostname_label.set_text(socket.gethostname())
 
         self.update_clock()
+        self.update_keyboard_indicator()
         GLib.timeout_add_seconds(1, self.on_clock_tick)
 
         self.refresh_sessions()

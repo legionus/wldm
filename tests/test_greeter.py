@@ -102,6 +102,26 @@ class DummyClient:
         return None
 
 
+class DummyLabel:
+    def __init__(self):
+        self.text = None
+        self.visible = None
+        self.tooltip = None
+        self.width_chars = None
+
+    def set_text(self, text):
+        self.text = text
+
+    def set_visible(self, value):
+        self.visible = value
+
+    def set_tooltip_text(self, text):
+        self.tooltip = text
+
+    def set_width_chars(self, value):
+        self.width_chars = value
+
+
 def test_desktop_sessions_filters_and_sorts_entries(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
 
@@ -174,6 +194,80 @@ def test_available_actions_reads_environment(monkeypatch):
     monkeypatch.setenv("WLDM_ACTIONS", "poweroff:reboot:suspend")
 
     assert greeter.available_actions() == {"poweroff", "reboot", "suspend"}
+
+
+def test_keyboard_state_reads_active_layout(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+
+    class FakeKeyboard:
+        def get_layout_names(self):
+            return ["English (US)", "Russian"]
+
+        def get_active_layout_index(self):
+            return 1
+
+    class FakeSeat:
+        def get_keyboard(self):
+            return FakeKeyboard()
+
+    class FakeDisplay:
+        def get_default_seat(self):
+            return FakeSeat()
+
+    monkeypatch.setattr(greeter.Gdk.Display, "get_default", lambda: FakeDisplay())
+    monkeypatch.setenv("XKB_DEFAULT_LAYOUT", "us,ru")
+
+    layouts, active_index = greeter.keyboard_state()
+
+    assert active_index == 1
+    assert layouts == [
+        greeter.KeyboardLayout(short_name="us", long_name="English (US)"),
+        greeter.KeyboardLayout(short_name="ru", long_name="Russian"),
+    ]
+
+
+def test_keyboard_state_returns_empty_without_gtk418_api(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+
+    class FakeKeyboard:
+        pass
+
+    class FakeSeat:
+        def get_keyboard(self):
+            return FakeKeyboard()
+
+    class FakeDisplay:
+        def get_default_seat(self):
+            return FakeSeat()
+
+    monkeypatch.setattr(greeter.Gdk.Display, "get_default", lambda: FakeDisplay())
+
+    assert greeter.keyboard_state() == ([], -1)
+
+
+def test_update_keyboard_indicator_sets_visibility_from_active_layout(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app.keyboard_label = DummyLabel()
+
+    monkeypatch.setattr(
+        greeter,
+        "keyboard_state",
+        lambda: (
+            [
+                greeter.KeyboardLayout(short_name="us", long_name="English (US)"),
+                greeter.KeyboardLayout(short_name="ru", long_name="Russian"),
+            ],
+            1,
+        ),
+    )
+
+    greeter.LoginApp.update_keyboard_indicator(app)
+
+    assert app.keyboard_label.text == "RU"
+    assert app.keyboard_label.tooltip == "Russian"
+    assert app.keyboard_label.width_chars == 2
+    assert app.keyboard_label.visible is True
 
 
 def test_login_app_uses_project_application_id(monkeypatch):
