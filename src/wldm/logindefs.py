@@ -7,6 +7,9 @@ import re
 
 from typing import Dict
 
+import wldm
+import wldm.policy
+
 LOGIN_DEFS = "/etc/login.defs"
 
 login_defs: Dict[str, str] = {}
@@ -19,15 +22,18 @@ def read_values() -> None:
     if not os.access(LOGIN_DEFS, os.R_OK):
         return
 
-    with open(LOGIN_DEFS, 'r', encoding='utf-8') as fd:
-        for line in fd:
-            line = line.strip()
+    try:
+        with wldm.open_regular_text_file(LOGIN_DEFS, max_size=wldm.policy.LOGIN_DEFS_MAX_FILE_SIZE) as fd:
+            for line in fd:
+                line = line.strip()
 
-            if len(line) == 0 or line.startswith("#"):
-                continue
+                if len(line) == 0 or line.startswith("#"):
+                    continue
 
-            name, value = re.split(r'\s+', line, maxsplit=1)
-            login_defs[name] = value
+                name, value = re.split(r'\s+', line, maxsplit=1)
+                login_defs[name] = value
+    except (OSError, RuntimeError, OverflowError, UnicodeError):
+        return
 
 
 def get_bool(name: str) -> bool:

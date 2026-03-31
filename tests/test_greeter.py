@@ -2,6 +2,8 @@
 # Copyright (C) 2026  Alexey Gladkov <legion@kernel.org>
 
 import importlib
+import contextlib
+import io
 import pwd
 import sys
 import types
@@ -120,8 +122,8 @@ def test_desktop_sessions_filters_and_sorts_entries(monkeypatch):
             return False
 
     class FakeConfig:
-        def read(self, path):
-            self.path = path
+        def read_file(self, fileobj):
+            self.path = fileobj.name
 
         def get(self, section, option, fallback=""):
             base = self.path.split("/")[-1]
@@ -136,6 +138,11 @@ def test_desktop_sessions_filters_and_sorts_entries(monkeypatch):
 
     monkeypatch.setattr(greeter.wldm.sessions.os, "scandir", lambda path: FakeScandir())
     monkeypatch.setattr(greeter.wldm.sessions.configparser, "ConfigParser", FakeConfig)
+    monkeypatch.setattr(
+        greeter.wldm,
+        "open_regular_text_file",
+        contextlib.contextmanager(lambda path, **kwargs: iter([types.SimpleNamespace(name=path)])),
+    )
 
     assert greeter.wldm.sessions.desktop_sessions() == [
         {"name": "Alpha", "command": "alpha", "comment": "Alpha session", "desktop_names": ["AlphaDesktop", "WL"]},
@@ -217,8 +224,8 @@ def test_desktop_sessions_merge_user_entries_before_system(monkeypatch):
             return False
 
     class FakeConfig:
-        def read(self, path):
-            self.path = path
+        def read_file(self, fileobj):
+            self.path = fileobj.name
 
         def get(self, section, option, fallback=""):
             base = self.path.split("/")[-1]
@@ -240,6 +247,11 @@ def test_desktop_sessions_merge_user_entries_before_system(monkeypatch):
 
     monkeypatch.setattr(greeter.wldm.sessions.os, "scandir", fake_scandir)
     monkeypatch.setattr(greeter.wldm.sessions.configparser, "ConfigParser", FakeConfig)
+    monkeypatch.setattr(
+        greeter.wldm,
+        "open_regular_text_file",
+        contextlib.contextmanager(lambda path, **kwargs: iter([types.SimpleNamespace(name=path)])),
+    )
 
     assert greeter.wldm.sessions.desktop_sessions("alice") == [
         {"name": "Labwc", "command": "labwc", "comment": "Labwc", "desktop_names": ["labwc"]},
@@ -261,6 +273,53 @@ def test_desktop_sessions_handles_oserror(monkeypatch):
     )
 
     assert greeter.wldm.sessions.desktop_sessions() == []
+
+
+def test_desktop_sessions_ignores_invalid_entries(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+
+    class FakeEntry:
+        def __init__(self, name):
+            self.name = name
+
+        def is_file(self):
+            return True
+
+    class FakeScandir:
+        def __enter__(self):
+            return iter([FakeEntry("broken.desktop"), FakeEntry("good.desktop")])
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class FakeConfig:
+        def read_file(self, fileobj):
+            if fileobj.name.endswith("broken.desktop"):
+                raise greeter.wldm.sessions.configparser.Error("bad entry")
+            self.path = fileobj.name
+
+        def get(self, section, option, fallback=""):
+            data = {
+                "type": "Application",
+                "name": "Good",
+                "exec": "good",
+                "comment": "Good session",
+            }
+            return data.get(option, fallback)
+
+    @contextlib.contextmanager
+    def fake_open_regular_text_file(path, **kwargs):
+        fileobj = io.StringIO("")
+        fileobj.name = path
+        yield fileobj
+
+    monkeypatch.setattr(greeter.wldm.sessions.os, "scandir", lambda path: FakeScandir())
+    monkeypatch.setattr(greeter.wldm.sessions.configparser, "ConfigParser", FakeConfig)
+    monkeypatch.setattr(greeter.wldm, "open_regular_text_file", fake_open_regular_text_file)
+
+    assert greeter.wldm.sessions.desktop_sessions() == [
+        {"name": "Good", "command": "good", "comment": "Good session", "desktop_names": ["good"]},
+    ]
 
 
 def test_get_session_command_returns_selected_command(monkeypatch):
@@ -297,13 +356,40 @@ def test_account_service_profile_reads_real_name(monkeypatch, tmp_path):
     profile_file = profile_dir / "alice"
     profile_file.write_text("[User]\nRealName=Alice Doe\nIcon=/missing/icon.png\n", encoding="utf-8")
 
-    monkeypatch.setattr(greeter.os.path, "isfile", lambda path: path in [str(profile_file)])
     monkeypatch.setattr(greeter.os.path, "join", lambda *parts: str(profile_file) if parts[-1] == "alice" else "/".join(parts))
 
     profile = greeter.account_service_profile("alice")
 
     assert profile["display_name"] == "Alice Doe"
     assert profile["avatar_path"] == ""
+
+
+def test_account_service_profile_ignores_parse_errors(monkeypatch, tmp_path):
+    greeter = load_greeter_module(monkeypatch)
+    profile_dir = tmp_path / "AccountsService" / "users"
+    profile_dir.mkdir(parents=True)
+    profile_file = profile_dir / "alice"
+    profile_file.write_text("not an ini file\n", encoding="utf-8")
+
+    monkeypatch.setattr(greeter.os.path, "join", lambda *parts: str(profile_file) if parts[-1] == "alice" else "/".join(parts))
+
+    profile = greeter.account_service_profile("alice")
+
+    assert profile == {"display_name": "alice", "avatar_path": ""}
+
+
+def test_account_service_profile_ignores_oversized_files(monkeypatch, tmp_path):
+    greeter = load_greeter_module(monkeypatch)
+    profile_dir = tmp_path / "AccountsService" / "users"
+    profile_dir.mkdir(parents=True)
+    profile_file = profile_dir / "alice"
+    profile_file.write_text("A" * (greeter.wldm.policy.ACCOUNT_SERVICE_MAX_FILE_SIZE + 1), encoding="utf-8")
+
+    monkeypatch.setattr(greeter.os.path, "join", lambda *parts: str(profile_file) if parts[-1] == "alice" else "/".join(parts))
+
+    profile = greeter.account_service_profile("alice")
+
+    assert profile == {"display_name": "alice", "avatar_path": ""}
 
 
 def test_login_app_run_calls_application_run(monkeypatch):

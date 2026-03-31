@@ -9,6 +9,7 @@ import sys
 import pwd
 import grp
 
+import wldm
 import wldm.policy
 
 
@@ -66,7 +67,13 @@ def read_config() -> configparser.ConfigParser:
             }
 
     for path in _config_candidates():
-        if cfg.read([path]):
+        try:
+            with wldm.open_regular_text_file(path, max_size=wldm.policy.CONFIG_MAX_FILE_SIZE) as f:
+                cfg.read_file(f)
             return cfg
+        except FileNotFoundError:
+            continue
+        except (OSError, RuntimeError, OverflowError, UnicodeError, configparser.Error) as e:
+            wldm.logger.warning("ignoring invalid config file %s: %s", path, e)
 
     return cfg

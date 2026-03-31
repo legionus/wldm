@@ -60,13 +60,14 @@ def account_service_profile(username: str) -> Dict[str, str]:
         return profile
 
     path = os.path.join(wldm.policy.ACCOUNTS_SERVICE_USERS_DIR, username)
-    if not os.path.isfile(path):
-        return profile
-
     data = configparser.ConfigParser()
     try:
-        data.read(path)
-    except OSError:
+        with wldm.open_regular_text_file(path, max_size=wldm.policy.ACCOUNT_SERVICE_MAX_FILE_SIZE) as f:
+            data.read_file(f)
+    except OverflowError:
+        logger.warning("ignoring oversized AccountsService profile: %s", path)
+        return profile
+    except (OSError, RuntimeError, UnicodeError, configparser.Error):
         return profile
 
     profile["display_name"] = data.get("User", "RealName", fallback=username) or username

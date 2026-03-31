@@ -6,6 +6,7 @@ import pwd
 from pathlib import Path
 
 import wldm.config
+import wldm.policy
 
 
 def test_read_config_uses_repo_default_when_progname_is_set(monkeypatch):
@@ -125,3 +126,37 @@ def test_read_config_uses_installed_share_default(monkeypatch, tmp_path):
     cfg = wldm.config.read_config()
 
     assert cfg["greeter"]["user"] == "share-user"
+
+
+def test_read_config_ignores_invalid_explicit_file(monkeypatch, tmp_path):
+    config_file = tmp_path / "wldm.ini"
+    config_file.write_text("not an ini file\n", encoding="utf-8")
+
+    monkeypatch.setenv("WLDM_CONFIG", str(config_file))
+    monkeypatch.delenv("WLDM_PROGNAME", raising=False)
+    monkeypatch.setattr(pwd, "getpwuid", lambda uid: pwd.struct_passwd(
+        ("fallback-user", "x", 1000, 1000, "", "/home/fallback-user", "/bin/sh")))
+    monkeypatch.setattr(grp, "getgrgid", lambda gid: grp.struct_group(
+        ("fallback-group", "x", 1000, [])))
+
+    cfg = wldm.config.read_config()
+
+    assert cfg["daemon"]["socket-path"] == "/run/wldm/greeter.sock"
+    assert cfg["greeter"]["user"] == "fallback-user"
+
+
+def test_read_config_ignores_oversized_explicit_file(monkeypatch, tmp_path):
+    config_file = tmp_path / "wldm.ini"
+    config_file.write_text("A" * (wldm.policy.CONFIG_MAX_FILE_SIZE + 1), encoding="utf-8")
+
+    monkeypatch.setenv("WLDM_CONFIG", str(config_file))
+    monkeypatch.delenv("WLDM_PROGNAME", raising=False)
+    monkeypatch.setattr(pwd, "getpwuid", lambda uid: pwd.struct_passwd(
+        ("fallback-user", "x", 1000, 1000, "", "/home/fallback-user", "/bin/sh")))
+    monkeypatch.setattr(grp, "getgrgid", lambda gid: grp.struct_group(
+        ("fallback-group", "x", 1000, [])))
+
+    cfg = wldm.config.read_config()
+
+    assert cfg["daemon"]["socket-path"] == "/run/wldm/greeter.sock"
+    assert cfg["greeter"]["user"] == "fallback-user"

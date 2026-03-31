@@ -113,6 +113,38 @@ def open_secure_append_file(path: str, mode: int = 0o600) -> TextIO:
     return os.fdopen(fd, "a", encoding="utf-8", buffering=1)
 
 
+@contextlib.contextmanager
+def open_regular_text_file(path: str, *,
+                           max_size: int | None = None,
+                           encoding: str = "utf-8") -> Iterator[TextIO]:
+    flags = os.O_RDONLY
+
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+
+    fd = os.open(path, flags)
+    try:
+        st = os.fstat(fd)
+
+        if not stat.S_ISREG(st.st_mode):
+            raise RuntimeError(f"refusing to read non-regular file: {path}")
+
+        if max_size is not None and st.st_size > max_size:
+            raise OverflowError(f"refusing to read oversized file: {path}")
+
+        f = os.fdopen(fd, "r", encoding=encoding)
+        fd = -1
+
+        with f:
+            yield f
+    finally:
+        if fd >= 0:
+            os.close(fd)
+
+
 def setup_file_logger(logger: logging.Logger, level: int,
                       fmt: str, path: str) -> logging.Logger:
     formatter = logging.Formatter(fmt=fmt, datefmt="%H:%M:%S")

@@ -2,6 +2,7 @@
 # Copyright (C) 2026  Alexey Gladkov <legion@kernel.org>
 
 import wldm.logindefs
+import wldm.policy
 
 
 def test_read_values_parses_numbers_and_strings(monkeypatch, tmp_path):
@@ -33,3 +34,14 @@ def test_get_bool_defaults_to_false(monkeypatch, tmp_path):
 
     assert wldm.logindefs.get_bool("MAIL_CHECK_ENAB") is True
     assert wldm.logindefs.get_bool("UNKNOWN_FLAG") is False
+
+
+def test_read_values_ignores_oversized_file(monkeypatch, tmp_path):
+    login_defs = tmp_path / "login.defs"
+    login_defs.write_text("A" * (wldm.policy.LOGIN_DEFS_MAX_FILE_SIZE + 1), encoding="utf-8")
+
+    monkeypatch.setattr(wldm.logindefs, "LOGIN_DEFS", str(login_defs))
+
+    wldm.logindefs.read_values()
+
+    assert wldm.logindefs.login_defs == {}

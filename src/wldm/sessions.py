@@ -60,8 +60,14 @@ def read_desktop_sessions(datadirs: List[str]) -> List[Dict[str, Any]]:
                     if not entry.is_file() or not entry.name.endswith(".desktop"):
                         continue
 
+                    path = os.path.join(datadir, entry.name)
                     desktop = configparser.ConfigParser()
-                    desktop.read(os.path.join(datadir, entry.name))
+                    try:
+                        with wldm.open_regular_text_file(path, max_size=wldm.policy.SESSION_ENTRY_MAX_FILE_SIZE) as f:
+                            desktop.read_file(f)
+                    except (OSError, RuntimeError, UnicodeError, configparser.Error) as e:
+                        logger.warning("ignoring invalid wayland session entry %s: %s", path, e)
+                        continue
 
                     entry_type = desktop.get('Desktop Entry', 'type', fallback='').lower()
                     entry_name = desktop.get('Desktop Entry', 'name', fallback='')
