@@ -11,6 +11,7 @@ import wldm
 import wldm.config
 import wldm._pam_ffi as ffi
 from wldm._libc import calloc, free
+from wldm.secret import SecretBytes
 
 logger = wldm.logger
 
@@ -189,22 +190,23 @@ def getenvlist(pamh: Any, encoding: str = 'utf-8') -> Dict[str, str]:
     return pam_env_items
 
 
-def authenticate(username: bytes, password: bytes) -> bool:
+def authenticate(username: SecretBytes, password: SecretBytes) -> bool:
     service: bytes = b"login"
-
-    pw_ptr = ctypes.c_char_p(password)
-    conv = ffi.PamConv(password_conv, ctypes.cast(pw_ptr, c_void_p))
+    conv = ffi.PamConv(password_conv, password.as_c_void_p())
     pamh = ffi.pam_handle_t()
-
-    rc = libpam.pam_start(service, username, byref(conv), byref(pamh))
-
-    if rc != ffi.PAM_SUCCESS:
-        err = pam_error_str(None, rc)
-        raise RuntimeError(f"pam_start failed: {rc} ({err})")
+    rc = ffi.PAM_CONV_ERR
 
     try:
+        rc = libpam.pam_start(service, username.as_c_char_p(), byref(conv), byref(pamh))
+
+        if rc != ffi.PAM_SUCCESS:
+            err = pam_error_str(None, rc)
+            raise RuntimeError(f"pam_start failed: {rc} ({err})")
+
         rc = libpam.pam_authenticate(pamh, 0)
     finally:
+        password.clear()
+        username.clear()
         end_pam(pamh)
 
     if rc != ffi.PAM_SUCCESS:

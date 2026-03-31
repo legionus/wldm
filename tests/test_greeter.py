@@ -2,7 +2,6 @@
 # Copyright (C) 2026  Alexey Gladkov <legion@kernel.org>
 
 import importlib
-import json
 import pwd
 import sys
 import types
@@ -90,11 +89,11 @@ def load_greeter_module(monkeypatch):
 
 
 class DummyClient:
-    def writeline(self, data):
+    def write_message(self, message):
         return None
 
-    def readline(self):
-        return ""
+    def read_message(self):
+        return None
 
     def can_read(self):
         return False
@@ -340,22 +339,22 @@ def test_update_clock_sets_date_and_time(monkeypatch):
     assert app.time_label.text == "09:45"
 
 
-def test_send_recv_answer_round_trips_json(monkeypatch):
+def test_send_recv_answer_round_trips_protocol_messages(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
 
     monkeypatch.setattr(greeter.wldm.sessions, "desktop_sessions", lambda username="": [])
 
     class FakeClient:
-        def __init__(self, lines):
-            self.lines = iter(lines)
+        def __init__(self, messages):
+            self.messages = iter(messages)
             self.sent = []
             self.readable = False
 
-        def writeline(self, data):
-            self.sent.append(data)
+        def write_message(self, message):
+            self.sent.append(message)
 
-        def readline(self):
-            return next(self.lines, "")
+        def read_message(self):
+            return next(self.messages, None)
 
         def can_read(self):
             return self.readable
@@ -365,8 +364,20 @@ def test_send_recv_answer_round_trips_json(monkeypatch):
 
     request = greeter.wldm.protocol.new_request(greeter.wldm.protocol.ACTION_REBOOT, {})
     client = FakeClient([
-        f'{{"v": 1, "type": "event", "event": "{greeter.wldm.protocol.EVENT_SESSION_FINISHED}", "payload": {{"pid": 1, "returncode": 0}}}}\n',
-        f'{{"v": 1, "id": "{request["id"]}", "type": "response", "action": "{greeter.wldm.protocol.ACTION_REBOOT}", "ok": true, "payload": {{"accepted": true}}}}\n',
+        {
+            "v": 1,
+            "type": "event",
+            "event": greeter.wldm.protocol.EVENT_SESSION_FINISHED,
+            "payload": {"pid": 1, "returncode": 0},
+        },
+        {
+            "v": 1,
+            "id": request["id"],
+            "type": "response",
+            "action": greeter.wldm.protocol.ACTION_REBOOT,
+            "ok": True,
+            "payload": {"accepted": True},
+        },
     ])
     app = greeter.LoginApp(client=client)
 
@@ -380,7 +391,7 @@ def test_send_recv_answer_round_trips_json(monkeypatch):
         "ok": True,
         "payload": {"accepted": True},
     }
-    sent = json.loads(client.sent[0])
+    sent = client.sent[0]
     assert sent["v"] == 1
     assert sent["type"] == "request"
     assert sent["action"] == greeter.wldm.protocol.ACTION_REBOOT
@@ -407,9 +418,9 @@ def test_handle_event_updates_status_label(monkeypatch):
 
     greeter.LoginApp.handle_event(
         app,
-        {"v": 1, "type": "event", "event": greeter.wldm.protocol.EVENT_SESSION_STARTING, "payload": {"username": "alice"}},
+        {"v": 1, "type": "event", "event": greeter.wldm.protocol.EVENT_SESSION_STARTING, "payload": {}},
     )
-    assert app.status_label.text == "Starting session for alice..."
+    assert app.status_label.text == "Starting session..."
 
     greeter.LoginApp.handle_event(
         app,
@@ -464,12 +475,14 @@ def test_on_clock_tick_polls_session_finished_event_and_reenables_inputs(monkeyp
         def can_read(self):
             return self.reads == 0
 
-        def readline(self):
+        def read_message(self):
             self.reads += 1
-            return (
-                f'{{"v": 1, "type": "event", "event": "{greeter.wldm.protocol.EVENT_SESSION_FINISHED}", '
-                f'"payload": {{"pid": 1, "returncode": 0, "failed": false, "message": "Session finished."}}}}\n'
-            )
+            return {
+                "v": 1,
+                "type": "event",
+                "event": greeter.wldm.protocol.EVENT_SESSION_FINISHED,
+                "payload": {"pid": 1, "returncode": 0, "failed": False, "message": "Session finished."},
+            }
 
         def close(self):
             return None
@@ -496,7 +509,7 @@ def test_on_clock_tick_polls_session_finished_event_and_reenables_inputs(monkeyp
     assert app.status_label.text == "Session finished."
 
 
-def test_poll_events_treats_bad_json_as_connection_loss(monkeypatch):
+def test_poll_events_treats_bad_protocol_as_connection_loss(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
     events = []
 
@@ -507,9 +520,9 @@ def test_poll_events_treats_bad_json_as_connection_loss(monkeypatch):
         def can_read(self):
             return self.reads == 0
 
-        def readline(self):
+        def read_message(self):
             self.reads += 1
-            return "{bad json}\n"
+            raise greeter.wldm.protocol.ProtocolError("broken frame", b"\x00\x01bad")
 
         def close(self):
             return None
@@ -529,20 +542,20 @@ def test_poll_events_treats_bad_json_as_connection_loss(monkeypatch):
 
     assert ("status", "Connection to daemon lost.") in events
     assert ("quit", True) in events
-    assert any(item[0] == "log" and "raw='{bad json}'" in item[1] for item in events)
+    assert any(item[0] == "log" and "raw=b'\\x00\\x01bad'" in item[1] for item in events)
 
 
-def test_send_recv_answer_returns_empty_dict_on_bad_json(monkeypatch):
+def test_send_recv_answer_returns_empty_dict_on_bad_protocol(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
 
     monkeypatch.setattr(greeter.wldm.sessions, "desktop_sessions", lambda username="": [])
 
     class FakeClient:
-        def writeline(self, data):
+        def write_message(self, message):
             return None
 
-        def readline(self):
-            return "{bad json}\n"
+        def read_message(self):
+            raise greeter.wldm.protocol.ProtocolError("broken frame", b"\x00\x01bad")
 
         def can_read(self):
             return False
@@ -558,18 +571,18 @@ def test_send_recv_answer_returns_empty_dict_on_bad_json(monkeypatch):
     assert request["action"] == greeter.wldm.protocol.ACTION_REBOOT
 
 
-def test_send_recv_answer_treats_bad_json_as_connection_loss(monkeypatch):
+def test_send_recv_answer_treats_bad_protocol_as_connection_loss(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
 
     monkeypatch.setattr(greeter.wldm.sessions, "desktop_sessions", lambda username="": [])
     events = []
 
     class FakeClient:
-        def writeline(self, data):
+        def write_message(self, message):
             return None
 
-        def readline(self):
-            return "{bad json}\n"
+        def read_message(self):
+            raise greeter.wldm.protocol.ProtocolError("broken frame", b"\x00\x01bad")
 
         def can_read(self):
             return False
@@ -591,7 +604,7 @@ def test_send_recv_answer_treats_bad_json_as_connection_loss(monkeypatch):
     assert app.send_recv_answer(request) == {}
     assert ("status", "Connection to daemon lost.") in events
     assert ("quit", True) in events
-    assert any(item[0] == "log" and "raw='{bad json}'" in item[1] for item in events)
+    assert any(item[0] == "log" and "raw=b'\\x00\\x01bad'" in item[1] for item in events)
 
 
 def test_new_ipc_client_requires_socket_env(monkeypatch):

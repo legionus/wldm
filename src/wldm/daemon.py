@@ -5,7 +5,6 @@
 import argparse
 import asyncio
 import grp
-import json
 import os
 import pwd
 import shlex
@@ -24,6 +23,7 @@ import wldm.config
 import wldm.pam
 import wldm.policy
 import wldm.protocol
+import wldm.secret
 import wldm.tty
 
 logger = wldm.logger
@@ -145,12 +145,11 @@ def control_command(cfg: Any, action: str) -> list[str]:
     return shlex.split(command)
 
 
-def verify_creds(data: Dict[str, str]) -> bool:
-    for field in ["username", "password"]:
-        if field not in data or len(data[field]) == 0:
-            return False
+def verify_creds(username: wldm.secret.SecretBytes, password: wldm.secret.SecretBytes) -> bool:
+    if not username or not password:
+        return False
     try:
-        ret = wldm.pam.authenticate(data["username"].encode(), data["password"].encode())
+        ret = wldm.pam.authenticate(username, password)
         if ret:
             return True
     except Exception as e:
@@ -166,7 +165,12 @@ def process_request(req: Dict[str, Any], cfg: Optional[Any] = None) -> RequestOu
 
     if req["action"] == wldm.protocol.ACTION_AUTH:
         payload = req["payload"]
-        response = {"verified": verify_creds(payload)}
+        try:
+            response = {"verified": verify_creds(payload["username"], payload["password"])}
+            session_username = payload["username"].as_bytes().decode("utf-8", errors="replace")
+        finally:
+            payload["username"].clear()
+            payload["password"].clear()
         outcome = RequestOutcome(
             response=wldm.protocol.new_response(req, ok=True, payload=response),
         )
@@ -174,12 +178,11 @@ def process_request(req: Dict[str, Any], cfg: Optional[Any] = None) -> RequestOu
             outcome.event = wldm.protocol.new_event(
                 wldm.protocol.EVENT_SESSION_STARTING,
                 {
-                    "username": payload["username"],
                     "command": payload["command"],
                     "desktop_names": payload.get("desktop_names", []),
                 },
             )
-            outcome.session_username = payload["username"]
+            outcome.session_username = session_username
             outcome.session_command = payload["command"]
             outcome.session_desktop_names = list(payload.get("desktop_names", []))
         return outcome
@@ -208,7 +211,7 @@ async def send_message(writer: Optional[asyncio.StreamWriter], message: Dict[str
         return False
 
     try:
-        writer.write((wldm.protocol.encode_message(message) + "\n").encode())
+        writer.write(wldm.protocol.encode_message(message))
         await writer.drain()
         return True
     except Exception as e:
@@ -365,15 +368,14 @@ async def handle_greeter_client(state: DaemonState,
 
     try:
         while True:
-            line = await reader.readline()
-            if len(line) == 0:
+            try:
+                req = await wldm.protocol.read_message_async(reader)
+            except wldm.protocol.ProtocolError as e:
+                logger.critical("bad protocol message from greeter: %s; raw=%r", e, e.raw)
                 break
 
-            try:
-                req = wldm.protocol.decode_message(line.decode())
-            except (json.decoder.JSONDecodeError, ValueError) as e:
-                logger.critical("bad json from greeter: %s", e)
-                continue
+            if req is None:
+                break
 
             state.greeter_ready = True
             await handle_request_async(state, req, cfg)

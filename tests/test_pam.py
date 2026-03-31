@@ -5,6 +5,7 @@ import ctypes
 
 import wldm.pam
 import wldm._pam_ffi
+import wldm.secret
 
 
 def test_simple_conv_returns_success():
@@ -77,6 +78,20 @@ def test_password_conv_populates_response_for_password_prompt(monkeypatch):
 
     assert rc == wldm.pam.PAM_SUCCESS
     assert response[0] is not None
+
+
+def test_authenticate_accepts_secret_bytes(monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(wldm.pam.libpam, "pam_start", lambda service, user, conv, pamh: 0)
+    monkeypatch.setattr(wldm.pam.libpam, "pam_authenticate", lambda pamh, flags: 0)
+    monkeypatch.setattr(wldm.pam, "end_pam", lambda pamh: calls.append("end"))
+
+    secret = wldm.secret.SecretBytes(b"secret")
+
+    assert wldm.pam.authenticate(wldm.secret.SecretBytes(b"alice"), secret) is True
+    assert secret.as_bytes() == b""
+    assert calls == ["end"]
 
 
 def test_password_conv_frees_partial_allocations_when_message_buffer_alloc_fails(monkeypatch):
@@ -331,7 +346,7 @@ def test_authenticate_returns_false_and_ends_pam_on_failure(monkeypatch):
                         lambda pamh, flags: calls.append(("authenticate", flags)) or 7)
     monkeypatch.setattr(wldm.pam, "end_pam", lambda pamh: calls.append(("end_pam", pamh)))
 
-    assert wldm.pam.authenticate(b"alice", b"bad") is False
+    assert wldm.pam.authenticate(wldm.secret.SecretBytes(b"alice"), wldm.secret.SecretBytes(b"bad")) is False
     assert calls[0] == ("authenticate", 0)
     assert calls[1][0] == "end_pam"
 
@@ -344,7 +359,7 @@ def test_authenticate_returns_true_on_success(monkeypatch):
                         lambda pamh, flags: calls.append(("authenticate", flags)) or 0)
     monkeypatch.setattr(wldm.pam, "end_pam", lambda pamh: calls.append(("end_pam", pamh)))
 
-    assert wldm.pam.authenticate(b"alice", b"good") is True
+    assert wldm.pam.authenticate(wldm.secret.SecretBytes(b"alice"), wldm.secret.SecretBytes(b"good")) is True
     assert calls[0] == ("authenticate", 0)
     assert calls[1][0] == "end_pam"
 
@@ -354,7 +369,7 @@ def test_authenticate_raises_when_pam_start_fails(monkeypatch):
     monkeypatch.setattr(wldm.pam, "pam_error_str", lambda pamh, code: f"err {code}")
 
     try:
-        wldm.pam.authenticate(b"alice", b"bad")
+        wldm.pam.authenticate(wldm.secret.SecretBytes(b"alice"), wldm.secret.SecretBytes(b"bad"))
     except RuntimeError as exc:
         assert "pam_start failed: 11 (err 11)" in str(exc)
     else:

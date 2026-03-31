@@ -5,7 +5,6 @@
 import argparse
 import configparser
 import gettext
-import json
 import locale
 import os
 import os.path
@@ -95,23 +94,18 @@ class SocketClient:
     def __init__(self, path: str) -> None:
         self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self.sock.connect(path)
-        self.reader = self.sock.makefile("r", encoding="utf-8")
 
-    def writeline(self, data: str) -> None:
-        self.sock.sendall((data + "\n").encode())
+    def write_message(self, message: Dict[str, Any]) -> None:
+        self.sock.sendall(wldm.protocol.encode_message(message))
 
-    def readline(self) -> str:
-        return self.reader.readline()
+    def read_message(self) -> Dict[str, Any] | None:
+        return wldm.protocol.read_message_socket(self.sock)
 
     def can_read(self) -> bool:
         readable, _, _ = select.select([self.sock], [], [], 0.0)
         return self.sock in readable
 
     def close(self) -> None:
-        try:
-            self.reader.close()
-        except Exception:
-            pass
         self.sock.close()
 
 
@@ -240,8 +234,8 @@ class LoginApp:
         self.set_status(_("Connection to daemon lost."))
         self.on_quit()
 
-    def log_protocol_error(self, context: str, raw: str, error: Exception) -> None:
-        logger.critical("%s: %s; raw=%r", context, error, raw.rstrip("\n"))
+    def log_protocol_error(self, context: str, raw: bytes, error: Exception) -> None:
+        logger.critical("%s: %s; raw=%r", context, error, raw)
 
     def set_auth_state(self, busy: bool) -> None:
         self.auth_in_progress = busy
@@ -351,15 +345,14 @@ class LoginApp:
                 return
 
             while hasattr(self.client, "can_read") and self.client.can_read():
-                line = self.client.readline()
-                if len(line) == 0:
+                try:
+                    message = self.client.read_message()
+                except wldm.protocol.ProtocolError as e:
+                    self.log_protocol_error("bad greeter event message", e.raw, e)
                     connection_lost = True
                     break
 
-                try:
-                    message = wldm.protocol.decode_message(line)
-                except (json.decoder.JSONDecodeError, ValueError) as e:
-                    self.log_protocol_error("bad greeter event message", line, e)
+                if message is None:
                     connection_lost = True
                     break
 
@@ -390,8 +383,7 @@ class LoginApp:
 
         if event_name == wldm.protocol.EVENT_SESSION_STARTING:
             self.set_auth_state(True)
-            self.set_status(_("Starting session for %(username)s...") %
-                            {"username": payload.get("username", "user")})
+            self.set_status(_("Starting session..."))
             return
 
         if event_name == wldm.protocol.EVENT_SESSION_FINISHED:
@@ -509,18 +501,17 @@ class LoginApp:
 
         try:
             lock.acquire()
-            self.client.writeline(wldm.protocol.encode_message(data))
+            self.client.write_message(data)
 
             while True:
-                line = self.client.readline()
-                if len(line) == 0:
+                try:
+                    message = self.client.read_message()
+                except wldm.protocol.ProtocolError as e:
+                    self.log_protocol_error("bad greeter response message", e.raw, e)
                     connection_lost = True
                     break
 
-                try:
-                    message = wldm.protocol.decode_message(line)
-                except (json.decoder.JSONDecodeError, ValueError) as e:
-                    self.log_protocol_error("bad greeter response message", line, e)
+                if message is None:
                     connection_lost = True
                     break
 
@@ -552,7 +543,10 @@ class LoginApp:
             return
 
         username = self.username_entry.get_text()
-        password = self.password_entry.get_text()
+        # NOTE: GtkPasswordEntry.get_text() already materializes a Python string
+        # here, so the first in-memory copy of the password still exists in the
+        # greeter process. The binary IPC path only avoids additional JSON copies.
+        password = self.password_entry.get_text().encode("utf-8")
 
         data = {
                 "username": username,

@@ -29,18 +29,29 @@ def test_new_response_and_error_preserve_request_identity():
 
 
 def test_encode_and_decode_round_trip():
-    msg = wldm.protocol.new_request(wldm.protocol.ACTION_AUTH, {"username": "alice"})
+    msg = wldm.protocol.new_request(
+        wldm.protocol.ACTION_AUTH,
+        {"username": "alice", "password": "secret", "command": "sway", "desktop_names": ["sway"]},
+    )
 
-    assert wldm.protocol.decode_message(wldm.protocol.encode_message(msg)) == msg
+    decoded = wldm.protocol.decode_message(wldm.protocol.encode_message(msg))
 
+    assert decoded["v"] == msg["v"]
+    assert decoded["id"] == msg["id"]
+    assert decoded["type"] == msg["type"]
+    assert decoded["action"] == msg["action"]
+    assert decoded["payload"]["username"].as_bytes() == b"alice"
+    assert decoded["payload"]["password"].as_bytes() == b"secret"
+    assert decoded["payload"]["command"] == "sway"
+    assert decoded["payload"]["desktop_names"] == ["sway"]
 
-def test_decode_message_rejects_non_object_json():
+def test_decode_message_rejects_truncated_frame():
     try:
-        wldm.protocol.decode_message("[]")
-    except ValueError as exc:
-        assert "JSON object" in str(exc)
+        wldm.protocol.decode_message(b"\x00\x00")
+    except wldm.protocol.ProtocolError as exc:
+        assert "truncated protocol frame" in str(exc)
     else:
-        raise AssertionError("decode_message() should reject non-object JSON")
+        raise AssertionError("decode_message() should reject truncated frames")
 
 
 def test_is_request_validates_shape():

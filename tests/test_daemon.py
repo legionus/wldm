@@ -3,21 +3,25 @@
 
 import asyncio
 import configparser
-import json
 import signal
 import stat
 from types import SimpleNamespace
 
 import wldm.daemon
 import wldm.protocol
+import wldm.secret
 
 
 class DummyReader:
-    def __init__(self, lines):
-        self.lines = iter(lines)
+    def __init__(self, chunks):
+        self.chunks = iter(chunks)
 
-    async def readline(self):
-        return next(self.lines, b"")
+    async def readexactly(self, size):
+        chunk = next(self.chunks, b"")
+        if len(chunk) == size:
+            return chunk
+        partial = chunk[:size]
+        raise asyncio.IncompleteReadError(partial=partial, expected=size)
 
 
 class DummyWriter:
@@ -28,7 +32,7 @@ class DummyWriter:
         self.peer_uid = peer_uid
 
     def write(self, data):
-        self.lines.append(data.decode())
+        self.lines.append(data)
 
     async def drain(self):
         return None
@@ -128,8 +132,8 @@ def make_config(user="gdm",
 def test_verify_creds_requires_username_and_password(monkeypatch):
     monkeypatch.setattr(wldm.daemon.wldm.pam, "authenticate", lambda username, password: True)
 
-    assert wldm.daemon.verify_creds({"username": "alice", "password": "secret"}) is True
-    assert wldm.daemon.verify_creds({"username": "alice"}) is False
+    assert wldm.daemon.verify_creds(wldm.secret.SecretBytes(b"alice"), wldm.secret.SecretBytes(b"secret")) is True
+    assert wldm.daemon.verify_creds(wldm.secret.SecretBytes(b"alice"), wldm.secret.SecretBytes()) is False
 
 
 def test_verify_creds_returns_false_on_auth_exception(monkeypatch):
@@ -139,7 +143,7 @@ def test_verify_creds_returns_false_on_auth_exception(monkeypatch):
         lambda username, password: (_ for _ in ()).throw(RuntimeError("boom")),
     )
 
-    assert wldm.daemon.verify_creds({"username": "alice", "password": "secret"}) is False
+    assert wldm.daemon.verify_creds(wldm.secret.SecretBytes(b"alice"), wldm.secret.SecretBytes(b"secret")) is False
 
 
 def test_process_request_accepts_poweroff_and_reboot():
@@ -183,14 +187,23 @@ def test_process_request_replies_with_bad_request_for_unknown_payload():
 def test_process_request_does_not_start_session_for_failed_auth(monkeypatch):
     req = wldm.protocol.new_request(
         wldm.protocol.ACTION_AUTH,
-        {"username": "alice", "password": "bad", "command": "ignored", "desktop_names": ["sway"]},
+        {
+            "username": wldm.secret.SecretBytes(b"alice"),
+            "password": wldm.secret.SecretBytes(b"bad"),
+            "command": "ignored",
+            "desktop_names": ["sway"],
+        },
     )
 
-    monkeypatch.setattr(wldm.daemon, "verify_creds", lambda req: False)
+    monkeypatch.setattr(wldm.daemon, "verify_creds", lambda username, password: False)
 
     outcome = wldm.daemon.process_request(req)
 
     assert outcome.response["payload"] == {"verified": False}
+    assert isinstance(req["payload"]["username"], wldm.secret.SecretBytes)
+    assert req["payload"]["username"].as_bytes() == b""
+    assert isinstance(req["payload"]["password"], wldm.secret.SecretBytes)
+    assert req["payload"]["password"].as_bytes() == b""
     assert outcome.event is None
     assert outcome.session_username == ""
 
@@ -199,23 +212,27 @@ def test_process_request_starts_session_after_successful_auth(monkeypatch):
     req = wldm.protocol.new_request(
         wldm.protocol.ACTION_AUTH,
         {
-            "username": "alice",
-            "password": "secret",
+            "username": wldm.secret.SecretBytes(b"alice"),
+            "password": wldm.secret.SecretBytes(b"secret"),
             "command": "startplasma-wayland --debug",
             "desktop_names": ["plasma", "kde"],
         },
     )
 
-    monkeypatch.setattr(wldm.daemon, "verify_creds", lambda req: True)
+    monkeypatch.setattr(wldm.daemon, "verify_creds", lambda username, password: True)
 
     outcome = wldm.daemon.process_request(req)
 
     assert outcome.response["payload"] == {"verified": True}
+    assert isinstance(req["payload"]["username"], wldm.secret.SecretBytes)
+    assert req["payload"]["username"].as_bytes() == b""
+    assert isinstance(req["payload"]["password"], wldm.secret.SecretBytes)
+    assert req["payload"]["password"].as_bytes() == b""
     assert outcome.event == {
         "v": 1,
         "type": "event",
         "event": wldm.protocol.EVENT_SESSION_STARTING,
-        "payload": {"username": "alice", "command": "startplasma-wayland --debug", "desktop_names": ["plasma", "kde"]},
+        "payload": {"command": "startplasma-wayland --debug", "desktop_names": ["plasma", "kde"]},
     }
     assert outcome.session_username == "alice"
     assert outcome.session_command == "startplasma-wayland --debug"
@@ -338,11 +355,12 @@ def test_configured_power_actions_only_includes_enabled_actions():
 
 def test_send_message_writes_encoded_line():
     writer = DummyWriter()
+    message = wldm.protocol.new_request(wldm.protocol.ACTION_REBOOT, {})
 
-    result = asyncio.run(wldm.daemon.send_message(writer, {"ping": True}))
+    result = asyncio.run(wldm.daemon.send_message(writer, message))
 
     assert result is True
-    assert writer.lines == ['{"ping": true}\n']
+    assert writer.lines == [wldm.protocol.encode_message(message)]
 
 
 def test_handle_request_async_starts_session_after_auth(monkeypatch):
@@ -351,8 +369,8 @@ def test_handle_request_async_starts_session_after_auth(monkeypatch):
     req = wldm.protocol.new_request(
         wldm.protocol.ACTION_AUTH,
         {
-            "username": "alice",
-            "password": "secret",
+            "username": wldm.secret.SecretBytes(b"alice"),
+            "password": wldm.secret.SecretBytes(b"secret"),
             "command": "startplasma-wayland --debug",
             "desktop_names": ["plasma", "kde"],
         },
@@ -360,7 +378,7 @@ def test_handle_request_async_starts_session_after_auth(monkeypatch):
     proc = DummyAsyncProc(pid=777, returncode=0)
     task_calls = []
 
-    monkeypatch.setattr(wldm.daemon, "verify_creds", lambda payload: True)
+    monkeypatch.setattr(wldm.daemon, "verify_creds", lambda username, password: True)
 
     async def fake_create_subprocess_exec(*cmd, env=None):
         assert cmd == (
@@ -386,7 +404,7 @@ def test_handle_request_async_starts_session_after_auth(monkeypatch):
 
     assert 777 in state.active_sessions or task_calls
     assert any(
-        json.loads(line).get("event") == wldm.protocol.EVENT_SESSION_STARTING
+        wldm.protocol.decode_message(line).get("event") == wldm.protocol.EVENT_SESSION_STARTING
         for line in state.greeter_writer.lines
     )
 
@@ -410,7 +428,7 @@ def test_handle_request_async_runs_control_command(monkeypatch):
     asyncio.run(wldm.daemon.handle_request_async(state, req, cfg))
 
     assert calls["cmd"] == ("do-poweroff", "--now")
-    assert json.loads(state.greeter_writer.lines[0])["payload"] == {"accepted": True}
+    assert wldm.protocol.decode_message(state.greeter_writer.lines[0])["payload"] == {"accepted": True}
 
 
 def test_send_session_finished_switches_back_to_greeter_tty(monkeypatch):
@@ -428,7 +446,7 @@ def test_send_session_finished_switches_back_to_greeter_tty(monkeypatch):
 
     assert changes == [(77, 7)]
     assert 333 not in state.active_sessions
-    events = [json.loads(line) for line in state.greeter_writer.lines]
+    events = [wldm.protocol.decode_message(line) for line in state.greeter_writer.lines]
     assert any(event.get("event") == wldm.protocol.EVENT_SESSION_FINISHED for event in events)
     finished = next(event for event in events if event.get("event") == wldm.protocol.EVENT_SESSION_FINISHED)
     assert finished["payload"]["failed"] is False
@@ -445,7 +463,7 @@ def test_send_session_finished_reports_failed_session(monkeypatch):
 
     asyncio.run(wldm.daemon.send_session_finished(state, proc))
 
-    event = next(json.loads(line) for line in state.greeter_writer.lines)
+    event = next(wldm.protocol.decode_message(line) for line in state.greeter_writer.lines)
     assert event["payload"]["failed"] is True
     assert event["payload"]["message"] == "Session failed with exit status 7."
 
@@ -454,7 +472,8 @@ def test_handle_greeter_client_marks_greeter_ready(monkeypatch):
     state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3, greeter_uid=32)
     writer = DummyWriter()
     req = wldm.protocol.new_request(wldm.protocol.ACTION_REBOOT, {})
-    reader = DummyReader([(wldm.protocol.encode_message(req) + "\n").encode(), b""])
+    encoded = wldm.protocol.encode_message(req)
+    reader = DummyReader([encoded[:4], encoded[4:], b""])
     calls = []
 
     async def fake_handle_request_async(state_arg, req_arg, cfg_arg=None):
