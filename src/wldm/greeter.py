@@ -394,12 +394,18 @@ class LoginApp:
 
         return bindings
 
-    def set_status(self, message: str) -> None:
+    def set_status(self, message: str, error: bool = False) -> None:
         if self.status_label is not None:
+            if hasattr(self.status_label, "remove_css_class"):
+                self.status_label.remove_css_class("status-error")
+
+            if error and hasattr(self.status_label, "add_css_class"):
+                self.status_label.add_css_class("status-error")
+
             self.status_label.set_text(message)
 
     def handle_connection_lost(self) -> None:
-        self.set_status(_("Connection to daemon lost."))
+        self.set_status(_("Connection to daemon lost."), error=True)
         self.on_quit()
 
     def log_protocol_error(self, context: str, raw: bytes, error: Exception) -> None:
@@ -608,7 +614,7 @@ class LoginApp:
 
             status_message = str(payload.get("message", _("Session finished.")))
 
-            self.set_status(status_message)
+            self.set_status(status_message, error=bool(payload.get("failed", False)))
             return
 
     def run(self) -> None:
@@ -771,11 +777,11 @@ class LoginApp:
             data["desktop_names"] = list(session_entry.get("desktop_names", []))
 
         if len(data["username"]) == 0:
-            self.set_status(_("Enter a username."))
+            self.set_status(_("Enter a username."), error=True)
             return
 
         if len(data["password"]) == 0:
-            self.set_status(_("Enter a password."))
+            self.set_status(_("Enter a password."), error=True)
 
             if hasattr(self.password_entry, "grab_focus"):
                 self.password_entry.grab_focus()
@@ -799,12 +805,14 @@ class LoginApp:
         if answer.get("ok") and answer.get("payload", {}).get("verified"):
             self.username_entry.set_text("")
             status_message = _("Authentication accepted. Waiting for session...")
+            status_error = False
         else:
             self.set_auth_state(False)
             status_message = _("Authentication failed.")
+            status_error = True
             self.password_entry.grab_focus()
 
-        self.set_status(status_message)
+        self.set_status(status_message, error=status_error)
 
     # pylint: disable-next=unused-argument
     def on_quit(self, *args: Any) -> None:
@@ -819,7 +827,7 @@ class LoginApp:
         logger.debug("client %s answer: %s", action, answer)
 
         if not answer.get("ok") or not answer.get("payload", {}).get("accepted"):
-            self.set_status(_("Unable to %(action)s.") % {"action": action})
+            self.set_status(_("Unable to %(action)s.") % {"action": action}, error=True)
 
     # pylint: disable-next=unused-argument
     def on_poweroff_clicked(self, *args: Any) -> None:

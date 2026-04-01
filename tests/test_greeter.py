@@ -611,6 +611,36 @@ def test_handle_event_updates_status_label(monkeypatch):
     assert app.status_label.text == "Session failed with exit status 7."
 
 
+def test_set_status_toggles_error_css_class(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+
+    class FakeLabel:
+        def __init__(self):
+            self.text = None
+            self.added = []
+            self.removed = []
+
+        def set_text(self, text):
+            self.text = text
+
+        def add_css_class(self, name):
+            self.added.append(name)
+
+        def remove_css_class(self, name):
+            self.removed.append(name)
+
+    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app.status_label = FakeLabel()
+
+    greeter.LoginApp.set_status(app, "Authentication failed.", error=True)
+    assert app.status_label.text == "Authentication failed."
+    assert app.status_label.added == ["status-error"]
+
+    greeter.LoginApp.set_status(app, "Starting session...", error=False)
+    assert app.status_label.text == "Starting session..."
+    assert app.status_label.removed == ["status-error", "status-error"]
+
+
 def test_on_clock_tick_polls_session_finished_event_and_reenables_inputs(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
 
