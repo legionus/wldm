@@ -19,6 +19,7 @@ from typing import Any, Dict, Optional
 from asyncio.subprocess import Process as AsyncProcess
 
 import wldm
+import wldm.command
 import wldm.config
 import wldm.inifile
 import wldm.pam
@@ -46,11 +47,14 @@ class SocketListener:
 
 class DaemonState:
     def __init__(self,
-                 progname: str,
+                 internal_command: str | list[str],
                  greeter_max_restarts: int,
                  greeter_uid: int = -1,
                  seat: str = wldm.policy.DEFAULT_SEAT) -> None:
-        self.progname = progname
+        if isinstance(internal_command, str):
+            self.internal_command = [internal_command]
+        else:
+            self.internal_command = list(internal_command)
         self.greeter_max_restarts = greeter_max_restarts
         self.greeter_uid = greeter_uid
         self.seat = seat
@@ -131,9 +135,16 @@ def get_peer_uid(writer: asyncio.StreamWriter) -> int:
     return int(uid)
 
 
-def greeter_command(cfg: wldm.inifile.IniFile, progname: str) -> list[str]:
+def internal_command_prefix() -> list[str]:
+    path = os.path.abspath(wldm.command.__file__ or "")
+    if path.endswith((".pyc", ".pyo")):
+        path = path[:-1]
+    return [sys.executable, path]
+
+
+def greeter_command(cfg: wldm.inifile.IniFile, internal_prefix: list[str]) -> list[str]:
     command = cfg.get_str("greeter", "command")
-    return shlex.split(command) + [progname, "greeter"]
+    return shlex.split(command) + internal_prefix + ["greeter"]
 
 
 def configured_power_actions(cfg: wldm.inifile.IniFile) -> list[str]:
@@ -336,7 +347,7 @@ async def handle_request_async(state: DaemonState,
     if outcome.event is not None:
         await send_message(state.greeter_writer, outcome.event)
         proc = await asyncio.create_subprocess_exec(
-            state.progname,
+            *state.internal_command,
             "session",
             "--",
             outcome.session_username,
@@ -423,7 +434,7 @@ async def start_greeter(state: DaemonState,
     )
     env.update(keyboard_environment(cfg))
     proc = await asyncio.create_subprocess_exec(
-        state.progname,
+        *state.internal_command,
         "greeter-session",
         "--tty",
         str(greeter_tty),
@@ -431,7 +442,7 @@ async def start_greeter(state: DaemonState,
         greeter_pam_service,
         greeter_user,
         greeter_group,
-        *greeter_command(cfg, state.progname),
+        *greeter_command(cfg, state.internal_command),
         env=env,
     )
     state.greeter_proc = proc
@@ -459,8 +470,6 @@ async def cleanup_async(state: DaemonState) -> None:
 
 
 async def run_daemon_async(parser: argparse.Namespace, cfg: wldm.inifile.IniFile) -> int:
-    progname = os.environ.get("WLDM_PROGNAME", sys.argv[0])
-
     greeter_tty = cfg.get_int("greeter", "tty", 0)
     greeter_max_restarts = cfg.get_int("greeter", "max-restarts", 3)
 
@@ -493,7 +502,7 @@ async def run_daemon_async(parser: argparse.Namespace, cfg: wldm.inifile.IniFile
     socket_path = greeter_socket_path(cfg)
     listener = create_greeter_listener(greeter_user, greeter_group, socket_path)
     state = DaemonState(
-        progname,
+        internal_command_prefix(),
         greeter_max_restarts,
         greeter_uid=greeter_uid,
         seat=cfg.get_str("daemon", "seat"),

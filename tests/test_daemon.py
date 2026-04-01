@@ -349,11 +349,13 @@ def test_create_greeter_listener_rejects_symlink(monkeypatch):
 
 def test_greeter_command_uses_configured_launcher():
     cfg = make_config(command="labwc --")
+    prefix = ["/usr/bin/python3", "/srv/wldm/src/wldm/command.py"]
 
-    assert wldm.daemon.greeter_command(cfg, "/srv/wldm/wldm.sh") == [
+    assert wldm.daemon.greeter_command(cfg, prefix) == [
         "labwc",
         "--",
-        "/srv/wldm/wldm.sh",
+        "/usr/bin/python3",
+        "/srv/wldm/src/wldm/command.py",
         "greeter",
     ]
 
@@ -393,7 +395,7 @@ def test_send_message_writes_encoded_line():
 
 
 def test_handle_request_async_starts_session_after_auth(monkeypatch):
-    state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
+    state = wldm.daemon.DaemonState(["/usr/bin/python3", "/srv/wldm/src/wldm/command.py"], 3)
     state.greeter_writer = DummyWriter()
     req = wldm.protocol.new_request(
         wldm.protocol.ACTION_AUTH,
@@ -411,7 +413,8 @@ def test_handle_request_async_starts_session_after_auth(monkeypatch):
 
     async def fake_create_subprocess_exec(*cmd, env=None):
         assert cmd == (
-            "/srv/wldm/wldm.sh",
+            "/usr/bin/python3",
+            "/srv/wldm/src/wldm/command.py",
             "session",
             "--",
             "alice",
@@ -536,7 +539,7 @@ def test_handle_greeter_client_rejects_unexpected_peer_uid(monkeypatch):
 
 
 def test_start_greeter_passes_socket_env(monkeypatch):
-    state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3, seat="seat9")
+    state = wldm.daemon.DaemonState(["/usr/bin/python3", "/srv/wldm/src/wldm/command.py"], 3, seat="seat9")
     cfg = make_config(command="labwc --", greeter_log="/tmp/custom-greeter.log", user_sessions="no", theme="retro")
     cfg["daemon"]["suspend-command"] = "do-suspend"
     cfg.sections["keyboard"] = {
@@ -559,8 +562,9 @@ def test_start_greeter_passes_socket_env(monkeypatch):
     result = asyncio.run(wldm.daemon.start_greeter(state, cfg, 7, "/tmp/wldm/greeter.sock"))
 
     assert result is proc
-    assert calls["cmd"][:8] == (
-        "/srv/wldm/wldm.sh",
+    assert calls["cmd"][:9] == (
+        "/usr/bin/python3",
+        "/srv/wldm/src/wldm/command.py",
         "greeter-session",
         "--tty",
         "7",
@@ -569,10 +573,11 @@ def test_start_greeter_passes_socket_env(monkeypatch):
         "gdm",
         "gdm",
     )
-    assert calls["cmd"][8:] == (
+    assert calls["cmd"][9:] == (
         "labwc",
         "--",
-        "/srv/wldm/wldm.sh",
+        "/usr/bin/python3",
+        "/srv/wldm/src/wldm/command.py",
         "greeter",
     )
     assert calls["env"]["WLDM_SOCKET"] == "/tmp/wldm/greeter.sock"

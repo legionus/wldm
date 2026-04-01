@@ -23,7 +23,7 @@ def base_greeter_environ() -> Dict[str, str]:
     env: Dict[str, str] = {}
 
     for name, value in os.environ.items():
-        if (name in ["PATH", "LANG", "LANGUAGE"]
+        if (name in ["PATH", "PYTHONPATH", "LANG", "LANGUAGE"]
                 or name.startswith("LC_")
                 or name.startswith("WLDM_")
                 or name.startswith("XKB_DEFAULT_")):

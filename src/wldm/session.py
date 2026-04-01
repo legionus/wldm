@@ -9,8 +9,6 @@ import os.path
 import pwd
 import shlex
 import subprocess
-import sys
-
 from typing import Dict, Iterator, List, Optional, Any
 
 import wldm
@@ -37,20 +35,11 @@ def resolve_executable(prog: str) -> str:
     return ""
 
 
-def default_session_wrapper() -> str:
-    if "WLDM_PROGNAME" in os.environ:
-        script_top = os.path.dirname(os.path.abspath(os.environ["WLDM_PROGNAME"]))
-        return os.path.join(script_top, "scripts", "wayland-session")
-    return os.path.join(sys.prefix, "share", "wldm", "scripts", "wayland-session")
-
-
 def session_wrapper_command(cfg: wldm.inifile.IniFile) -> List[str]:
     command = cfg.get_str("session", "command")
 
-    if command.lower() in ("", "none", "direct"):
+    if not command:
         return []
-    if command.lower() == "default":
-        return [default_session_wrapper()]
     return shlex.split(command)
 
 

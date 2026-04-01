@@ -47,33 +47,14 @@ def test_new_user_environ_exports_desktop_names(monkeypatch):
     assert env["DESKTOP_SESSION"] == "KDE"
 
 
-def test_default_session_wrapper_uses_repo_script_when_progname_is_set(monkeypatch, tmp_path):
-    launcher = tmp_path / "wldm.sh"
-    launcher.write_text("", encoding="utf-8")
-
-    monkeypatch.setenv("WLDM_PROGNAME", str(launcher))
-
-    assert wldm.session.default_session_wrapper() == str(tmp_path / "scripts" / "wayland-session")
-
-
-def test_default_session_wrapper_uses_installed_share_path(monkeypatch, tmp_path):
-    monkeypatch.delenv("WLDM_PROGNAME", raising=False)
-    monkeypatch.setattr(wldm.session.sys, "prefix", str(tmp_path))
-
-    assert wldm.session.default_session_wrapper() == str(tmp_path / "share" / "wldm" / "scripts" / "wayland-session")
-
-
-def test_session_wrapper_command_uses_default_wrapper(monkeypatch):
-    cfg = make_config({"command": "default"})
-    monkeypatch.setattr(
-        wldm.session, "default_session_wrapper", lambda: "/usr/share/wldm/scripts/wayland-session"
-    )
+def test_session_wrapper_command_uses_configured_wrapper():
+    cfg = make_config({"command": "/usr/share/wldm/scripts/wayland-session"})
 
     assert wldm.session.session_wrapper_command(cfg) == ["/usr/share/wldm/scripts/wayland-session"]
 
 
 def test_session_wrapper_command_can_disable_wrapper(monkeypatch):
-    cfg = make_config({"command": "none"})
+    cfg = make_config({"command": ""})
 
     assert wldm.session.session_wrapper_command(cfg) == []
 
