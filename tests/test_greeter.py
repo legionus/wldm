@@ -424,6 +424,7 @@ def test_account_service_profile_reads_real_name(monkeypatch, tmp_path):
 
     profile = greeter.account_service_profile("alice")
 
+    assert profile is not None
     assert profile["display_name"] == "Alice Doe"
     assert profile["avatar_path"] == ""
 
@@ -439,7 +440,7 @@ def test_account_service_profile_ignores_parse_errors(monkeypatch, tmp_path):
 
     profile = greeter.account_service_profile("alice")
 
-    assert profile == {"display_name": "alice", "avatar_path": ""}
+    assert profile is None
 
 
 def test_account_service_profile_ignores_oversized_files(monkeypatch, tmp_path):
@@ -453,7 +454,7 @@ def test_account_service_profile_ignores_oversized_files(monkeypatch, tmp_path):
 
     profile = greeter.account_service_profile("alice")
 
-    assert profile == {"display_name": "alice", "avatar_path": ""}
+    assert profile is None
 
 
 def test_login_app_run_calls_application_run(monkeypatch):
@@ -1344,8 +1345,16 @@ def test_username_change_updates_identity_preview(monkeypatch):
         def set_text(self, text):
             self.text = text
 
+    class FakeBox:
+        def __init__(self):
+            self.visible = None
+
+        def set_visible(self, value):
+            self.visible = value
+
     app = greeter.LoginApp.__new__(greeter.LoginApp)
     app.username_entry = FakeEntry()
+    app.identity_preview = FakeBox()
     app.identity_label = FakeLabel()
     app.avatar_label = FakeLabel()
     app.sessions = []
@@ -1356,4 +1365,44 @@ def test_username_change_updates_identity_preview(monkeypatch):
 
     assert app.identity_label.text == "Alice Doe"
     assert app.avatar_label.text == "A"
+    assert app.identity_preview.visible is True
     assert calls == ["alice"]
+
+
+def test_username_change_hides_identity_preview_without_accountsservice_profile(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+    monkeypatch.setattr(greeter, "account_service_profile", lambda username: None)
+    monkeypatch.setattr(greeter.wldm.sessions, "desktop_sessions", lambda username="": [])
+
+    class FakeEntry:
+        def get_text(self):
+            return "alice"
+
+    class FakeBox:
+        def __init__(self):
+            self.visible = None
+
+        def set_visible(self, value):
+            self.visible = value
+
+    class FakeLabel:
+        def __init__(self):
+            self.text = None
+
+        def set_text(self, text):
+            self.text = text
+
+    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app.username_entry = FakeEntry()
+    app.identity_preview = FakeBox()
+    app.identity_label = FakeLabel()
+    app.avatar_label = FakeLabel()
+    app.sessions = []
+    app.session_label = None
+    app.sessions_entry = None
+
+    greeter.LoginApp.on_username_changed(app)
+
+    assert app.identity_preview.visible is False
+    assert app.identity_label.text is None
+    assert app.avatar_label.text is None

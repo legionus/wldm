@@ -136,7 +136,7 @@
 										</child>
 
 								<child>
-									<object class="GtkBox">
+									<object class="GtkBox" id="identity_preview">
 										<property name="orientation">horizontal</property>
 										<property name="spacing">12</property>
 										<property name="margin-top">5</property>

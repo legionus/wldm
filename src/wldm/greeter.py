@@ -54,14 +54,9 @@ def is_valid_widget(spec: Dict[str, Any], widget: Any) -> bool:
     return all(hasattr(widget, method) for method in methods)
 
 
-def account_service_profile(username: str) -> Dict[str, str]:
-    profile = {
-        "display_name": username,
-        "avatar_path": "",
-    }
-
+def account_service_profile(username: str) -> Dict[str, str] | None:
     if not username:
-        return profile
+        return None
 
     path = os.path.join(wldm.policy.ACCOUNTS_SERVICE_USERS_DIR, username)
     try:
@@ -74,17 +69,23 @@ def account_service_profile(username: str) -> Dict[str, str]:
         )
     except OverflowError:
         logger.warning("ignoring oversized AccountsService profile: %s", path)
-        return profile
+        return None
     except (OSError, RuntimeError, UnicodeError, ValueError):
-        return profile
+        return None
 
-    profile["display_name"] = data.get("User", "RealName", default=username) or username
-    avatar_path = data.get("User", "Icon")
+    display_name = data.get("User", "RealName", default="").strip()
+    avatar_path = data.get("User", "Icon").strip()
 
-    if avatar_path and os.path.isfile(avatar_path):
-        profile["avatar_path"] = avatar_path
+    if not display_name and not avatar_path:
+        return None
 
-    return profile
+    if avatar_path and not os.path.isfile(avatar_path):
+        avatar_path = ""
+
+    return {
+        "display_name": display_name or username,
+        "avatar_path": avatar_path,
+    }
 
 class SocketClient:
     def __init__(self, path: str) -> None:
@@ -261,6 +262,7 @@ class LoginApp:
         self.time_label:     Optional[Any] = None
         self.keyboard_label: Optional[Any] = None
         self.session_label:  Optional[Any] = None
+        self.identity_preview: Optional[Any] = None
         self.identity_label: Optional[Any] = None
         self.avatar_label:   Optional[Any] = None
 
@@ -346,6 +348,10 @@ class LoginApp:
             {
                 "name": "session_label",
                 "methods": ("set_text",)
+            },
+            {
+                "name": "identity_preview",
+                "methods": ("set_visible",)
             },
             {
                 "name": "identity_label",
@@ -468,8 +474,15 @@ class LoginApp:
             username = self.username_entry.get_text().strip()
 
         profile = account_service_profile(username)
-        display_name = profile["display_name"] if username else _("Type a username to preview the account")
-        avatar_text = username[:1].upper() if username else "?"
+
+        if self.identity_preview is not None:
+            self.identity_preview.set_visible(profile is not None)
+
+        if profile is None:
+            return
+
+        display_name = profile["display_name"]
+        avatar_text = username[:1].upper()
 
         if self.identity_label is not None:
             self.identity_label.set_text(display_name)
