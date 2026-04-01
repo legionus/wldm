@@ -135,6 +135,20 @@ def configured_last_session_command() -> str:
     return os.environ.get("WLDM_LAST_SESSION_COMMAND", "").strip()
 
 
+def clear_entry_selection(entry: Any) -> None:
+    if hasattr(entry, "select_region"):
+        text = ""
+
+        if hasattr(entry, "get_text"):
+            text = str(entry.get_text())
+
+        entry.select_region(len(text), len(text))
+        return
+
+    if hasattr(entry, "set_position"):
+        entry.set_position(-1)
+
+
 def keyboard_state() -> tuple[list[KeyboardLayout], int]:
     display = Gdk.Display.get_default()
 
@@ -634,6 +648,8 @@ class LoginApp:
                 if hasattr(self.username_entry, "grab_focus"):
                     self.username_entry.grab_focus()
 
+                clear_entry_selection(self.username_entry)
+
             if self.password_entry is not None:
                 self.password_entry.set_text("")
 
@@ -690,6 +706,9 @@ class LoginApp:
 
         if self.username_entry is not None and hasattr(self.username_entry, "grab_focus"):
             self.username_entry.grab_focus()
+
+            if self.last_username:
+                clear_entry_selection(self.username_entry)
 
         window.present()
 
