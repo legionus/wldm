@@ -76,7 +76,7 @@ artifacts under `/tmp/wldm/` without baking those paths into the main config.
 
 - `pam-service`
   PAM service used for the final user session. Default: `login`.
-- `command`
+- `execute`
   Session startup wrapper used to run the selected user session. Default:
   `/usr/share/wldm/scripts/wayland-session`.
   Set this to an empty value to execute the selected session command directly
@@ -87,14 +87,15 @@ artifacts under `/tmp/wldm/` without baking those paths into the main config.
   with a site-local script that does additional setup such as
   `dbus-update-activation-environment --systemd`.
   Relative paths are resolved against the directory that contains the loaded
-  `wldm.ini`, so the in-tree development config can use
+  `wldm.ini` only in source-tree mode (`WLDM_SOURCE_TREE=1`), so the in-tree
+  development config can use
   `../scripts/wayland-session`.
-- `pre-command`
-  Optional command run after the user PAM session is opened and the session
+- `pre-execute`
+  Optional executable run after the user PAM session is opened and the session
   environment is prepared, but before the final user program is executed.
   A non-zero exit status aborts the session start.
-- `post-command`
-  Optional command run after the user session exits and before the PAM session
+- `post-execute`
+  Optional executable run after the user session exits and before the PAM session
   is closed. A non-zero exit status is logged but does not interrupt cleanup.
 
 Session hooks are executed as the target user, not as `root`. They inherit the
@@ -108,8 +109,8 @@ metadata is available.
 - `WLDM_TTY`
 - `WLDM_SESSION_COMMAND`
 
-Commands are parsed with `shlex.split()` and are not run through a shell unless
-the configured command explicitly invokes one.
+These values are executable paths, not shell command lines. Relative paths are
+resolved against the directory that contains the loaded `wldm.ini`.
 
 ## `[keyboard]`
 
@@ -185,9 +186,9 @@ log-path =
 
 [session]
 pam-service = login
-command = /usr/share/wldm/scripts/wayland-session
-pre-command = /usr/libexec/wldm-session-pre
-post-command = /usr/libexec/wldm-session-post
+execute = /usr/share/wldm/scripts/wayland-session
+pre-execute = /usr/libexec/wldm-session-pre
+post-execute = /usr/libexec/wldm-session-post
 
 [keyboard]
 rules = evdev

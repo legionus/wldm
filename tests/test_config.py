@@ -36,9 +36,9 @@ def test_read_config_uses_explicit_repo_config(monkeypatch):
     assert cfg["greeter"]["user-sessions"] == "yes"
     assert cfg["greeter"]["log-path"] == ""
     assert cfg["session"]["pam-service"] == "login"
-    assert cfg["session"]["command"] == "/usr/share/wldm/scripts/wayland-session"
-    assert cfg["session"]["pre-command"] == ""
-    assert cfg["session"]["post-command"] == ""
+    assert cfg["session"]["execute"] == "/usr/share/wldm/scripts/wayland-session"
+    assert cfg["session"]["pre-execute"] == ""
+    assert cfg["session"]["post-execute"] == ""
     assert cfg["keyboard"]["rules"] == ""
     assert cfg["keyboard"]["model"] == ""
     assert cfg["keyboard"]["layout"] == ""
@@ -82,9 +82,9 @@ def test_read_config_sets_default_runtime_greeter_values(monkeypatch):
     assert cfg["greeter"]["user-sessions"] == "yes"
     assert cfg["greeter"]["log-path"] == ""
     assert cfg["session"]["pam-service"] == "login"
-    assert cfg["session"]["command"] == "/usr/share/wldm/scripts/wayland-session"
-    assert cfg["session"]["pre-command"] == ""
-    assert cfg["session"]["post-command"] == ""
+    assert cfg["session"]["execute"] == "/usr/share/wldm/scripts/wayland-session"
+    assert cfg["session"]["pre-execute"] == ""
+    assert cfg["session"]["post-execute"] == ""
     assert cfg["keyboard"]["rules"] == ""
     assert cfg["keyboard"]["model"] == ""
     assert cfg["keyboard"]["layout"] == ""
@@ -108,6 +108,7 @@ def test_read_config_loads_devel_overrides_when_selected_explicitly(monkeypatch)
     repo_root = Path(__file__).resolve().parents[1]
 
     monkeypatch.setenv("WLDM_CONFIG", str(repo_root / "config" / "wldm-devel.ini"))
+    monkeypatch.setenv("WLDM_SOURCE_TREE", "1")
     monkeypatch.setattr(pwd, "getpwuid", lambda uid: pwd.struct_passwd(
         ("fallback-user", "x", 1000, 1000, "", "/home/fallback-user", "/bin/sh")))
     monkeypatch.setattr(grp, "getgrgid", lambda gid: grp.struct_group(
@@ -118,7 +119,22 @@ def test_read_config_loads_devel_overrides_when_selected_explicitly(monkeypatch)
     assert cfg["daemon"]["socket-path"] == "/tmp/wldm/greeter.sock"
     assert cfg["daemon"]["log-path"] == "/tmp/wldm/daemon.log"
     assert cfg["greeter"]["log-path"] == "/tmp/wldm/greeter.log"
-    assert cfg["session"]["command"] == str(repo_root / "scripts" / "wayland-session")
+    assert cfg["session"]["execute"] == str(repo_root / "scripts" / "wayland-session")
+
+
+def test_read_config_keeps_relative_session_paths_outside_source_tree(monkeypatch):
+    repo_root = Path(__file__).resolve().parents[1]
+
+    monkeypatch.setenv("WLDM_CONFIG", str(repo_root / "config" / "wldm-devel.ini"))
+    monkeypatch.delenv("WLDM_SOURCE_TREE", raising=False)
+    monkeypatch.setattr(pwd, "getpwuid", lambda uid: pwd.struct_passwd(
+        ("fallback-user", "x", 1000, 1000, "", "/home/fallback-user", "/bin/sh")))
+    monkeypatch.setattr(grp, "getgrgid", lambda gid: grp.struct_group(
+        ("fallback-group", "x", 1000, [])))
+
+    cfg = wldm.config.read_config()
+
+    assert cfg["session"]["execute"] == "../scripts/wayland-session"
 
 
 def test_read_config_uses_installed_share_default(monkeypatch, tmp_path):

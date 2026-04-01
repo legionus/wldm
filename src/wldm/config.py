@@ -7,7 +7,6 @@ import os.path
 import sys
 import pwd
 import grp
-import shlex
 
 import wldm
 import wldm.inifile
@@ -24,23 +23,6 @@ def _config_candidates() -> list[str]:
     candidates.append("/etc/wldm.ini")
 
     return candidates
-
-
-def _resolve_command_path(command: str, base_dir: str) -> str:
-    if not command:
-        return ""
-
-    parts = shlex.split(command)
-    if not parts:
-        return ""
-
-    prog = parts[0]
-    if os.path.isabs(prog):
-        parts[0] = os.path.realpath(prog)
-    elif os.path.dirname(prog):
-        parts[0] = os.path.realpath(os.path.join(base_dir, prog))
-
-    return shlex.join(parts)
 
 
 def read_config() -> wldm.inifile.IniFile:
@@ -72,9 +54,9 @@ def read_config() -> wldm.inifile.IniFile:
         },
         "session": {
             "pam-service": "login",
-            "command": "/usr/share/wldm/scripts/wayland-session",
-            "pre-command": "",
-            "post-command": "",
+            "execute": "/usr/share/wldm/scripts/wayland-session",
+            "pre-execute": "",
+            "post-execute": "",
         },
         "keyboard": {
             "rules": "",
@@ -92,6 +74,8 @@ def read_config() -> wldm.inifile.IniFile:
         "keyboard": set(cfg["keyboard"]),
     }
 
+    source_tree = os.environ.get("WLDM_SOURCE_TREE", "") == "1"
+
     for path in _config_candidates():
         try:
             parsed = wldm.inifile.read_ini_file(
@@ -99,11 +83,13 @@ def read_config() -> wldm.inifile.IniFile:
                 allowed=allowed,
                 max_size=wldm.policy.CONFIG_MAX_FILE_SIZE,
             )
-            if parsed.get_str("session", "command") != "":
-                parsed.sections["session"]["command"] = _resolve_command_path(
-                    parsed.get_str("session", "command"),
-                    os.path.dirname(path),
-                )
+            if source_tree:
+                for key in ["execute", "pre-execute", "post-execute"]:
+                    if parsed.get_str("session", key) != "":
+                        parsed.sections["session"][key] = wldm.resolve_config_path(
+                            parsed.get_str("session", key),
+                            base_dir=os.path.dirname(path),
+                        )
             for section, values in parsed.sections.items():
                 cfg[section].update(values)
             return wldm.inifile.IniFile(cfg)

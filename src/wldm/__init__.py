@@ -145,6 +145,20 @@ def open_regular_text_file(path: str, *,
             os.close(fd)
 
 
+def resolve_config_path(path: str, *,
+                        base_dir: str = "") -> str:
+    if not path:
+        return ""
+
+    if os.path.isabs(path):
+        # "/usr/libexec/wldm-session-pre" stays absolute, but collapse symlinks.
+        return os.path.realpath(path)
+
+    # "../scripts/wayland-session" or "helpers/pre-hook" resolve from the
+    # directory that contains the loaded config file.
+    return os.path.realpath(os.path.join(base_dir or ".", path))
+
+
 def setup_file_logger(logger: logging.Logger, level: int,
                       fmt: str, path: str) -> logging.Logger:
     formatter = logging.Formatter(fmt=fmt, datefmt="%H:%M:%S")

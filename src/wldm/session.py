@@ -23,34 +23,14 @@ import wldm.wtmp
 logger = wldm.logger
 
 
-def resolve_executable(prog: str) -> str:
-    if os.access(prog, os.X_OK):
-        return prog
+def validate_execute_path(name: str, execute: str) -> str:
+    if not execute:
+        return ""
 
-    for path in os.get_exec_path():
-        prog_exec = os.path.join(path, prog)
-        if os.access(prog_exec, os.X_OK):
-            return prog_exec
+    if not os.path.isabs(execute) or not os.access(execute, os.X_OK):
+        raise RuntimeError(f"Could not find the {name} executable: {execute}")
 
-    return ""
-
-
-def session_wrapper_command(cfg: wldm.inifile.IniFile) -> List[str]:
-    command = cfg.get_str("session", "command")
-
-    if not command:
-        return []
-    return shlex.split(command)
-
-
-def session_exec_command(wrapper: List[str], prog_args: List[str]) -> List[str]:
-    if not wrapper:
-        return prog_args
-    wrapper_prog = resolve_executable(wrapper[0])
-    if not wrapper_prog:
-        raise RuntimeError(f"Could not find the session wrapper executable: {wrapper[0]}")
-    wrapper[0] = wrapper_prog
-    return wrapper + prog_args
+    return execute
 
 
 def new_user_environ(pamh: Optional[Any],
@@ -84,23 +64,22 @@ def new_user_environ(pamh: Optional[Any],
 
 
 def run_session_hook(name: str,
-                     command: str,
+                     execute: str,
                      pw: pwd.struct_passwd,
                      env: Dict[str, str],
                      ttydev: wldm.tty.TTYdevice,
-                     session_prog: str) -> bool:
-    if not command:
+                     prog_args: List[str]) -> bool:
+    if not execute:
         return True
 
     hook_env = dict(
         env,
         WLDM_TTY=ttydev.filename,
-        WLDM_SESSION_COMMAND=session_prog,
     )
     extra_groups = os.getgrouplist(pw.pw_name, pw.pw_gid)
 
     result = subprocess.run(
-        shlex.split(command),
+        [execute] + prog_args,
         check=False,
         cwd=pw.pw_dir,
         env=hook_env,
@@ -111,7 +90,7 @@ def run_session_hook(name: str,
     if result.returncode == 0:
         return True
 
-    logger.critical("[!] %s hook failed with status %d: %s", name, result.returncode, command)
+    logger.critical("[!] %s hook failed with status %d: %s", name, result.returncode, execute)
     return False
 
 
@@ -184,48 +163,58 @@ def open_user_pam_session(pam_service: str,
 def run_user_session(pw: pwd.struct_passwd,
                      pam_service: str,
                      prog_args: List[str],
-                     wrapper: Optional[List[str]] = None,
-                     pre_hook: str = "",
-                     post_hook: str = "") -> int:
+                     wrapper: str = "",
+                     pre_execute: str = "",
+                     post_execute: str = "") -> int:
     try:
         with open_console_fd() as console:
             logger.debug("[+] Opening free TTY device")
             ttydev = wldm.tty.TTYdevice(console, pw.pw_uid)
             wtmp_line: Optional[str] = None
+
             try:
                 prepare_user_terminal(ttydev)
+
                 with open_user_pam_session(pam_service, pw, ttydev) as pamh:
                     env = new_user_environ(pamh, pw, ttydev)
-                    exec_argv = session_exec_command(wrapper or [], prog_args)
-                    session_command = shlex.join(prog_args)
-                    if not run_session_hook("pre", pre_hook, pw, env, ttydev, session_command):
+
+                    if not run_session_hook("pre", pre_execute, pw, env, ttydev, prog_args):
                         return wldm.EX_FAILURE
+
                     pid = os.fork()
+
                     if pid == 0:
+                        if wrapper:
+                            prog_args = [wrapper] + prog_args
+
                         try:
                             exec_user_program(ttydev,
                                               pw.pw_name, pw.pw_uid, pw.pw_gid, pw.pw_dir,
-                                              exec_argv[0], exec_argv,
-                                              env)
+                                              prog_args[0], prog_args, env)
                         except Exception as e:
                             logger.critical("[child] Failed to exec `%s %s': %r",
-                                            exec_argv[0], exec_argv, e)
+                                            prog_args[0], prog_args, e)
                             os._exit(1)
                     else:
                         wtmp_line = ttydev.filename
                         wldm.wtmp.login(wtmp_line, pw.pw_name)
+
                         _, status = os.waitpid(pid, 0)
                         exitcode = process_exit_status(status)
 
                         if exitcode != 0:
                             logger.critical("[+] Child exited. status=%s, exitcode=%s",
                                             status, exitcode)
-                        run_session_hook("post", post_hook, pw, env, ttydev, session_command)
+
+                        run_session_hook("post", post_execute, pw, env, ttydev, prog_args)
+
                         return exitcode
             finally:
                 if wtmp_line is not None:
                     wldm.wtmp.logout(wtmp_line)
+
                 ttydev.close()
+
     except RuntimeError as exc:
         logger.critical("[!] %s", exc)
         return wldm.EX_FAILURE
@@ -258,22 +247,27 @@ def cmd_main(parser: argparse.Namespace) -> int:
 
     prog = parser.prog
     args = parser.args
+    wrapper = cfg.get_str("session", "execute")
+    pre_execute = cfg.get_str("session", "pre-execute")
+    post_execute = cfg.get_str("session", "post-execute")
 
     if len(prog) == 0:
         prog = pw.pw_shell or "/bin/sh"
         args = ["-l"]
 
-    resolved_prog = resolve_executable(prog)
-    if not resolved_prog:
-        logger.critical("[!] Could not find the executable file: %s", prog)
-        return wldm.EX_FAILURE
-    prog = resolved_prog
+    if not os.path.isabs(prog) or not os.access(prog, os.X_OK):
+        args = ["-c", shlex.join([prog] + args)]
+        prog = pw.pw_shell or "/bin/sh"
 
-    return run_user_session(
-        pw,
-        cfg.get_str("session", "pam-service"),
-        [prog] + args,
-        session_wrapper_command(cfg),
-        cfg.get_str("session", "pre-command"),
-        cfg.get_str("session", "post-command"),
-    )
+    try:
+        return run_user_session(
+            pw,
+            cfg.get_str("session", "pam-service"),
+            [prog] + args,
+            validate_execute_path("session wrapper", wrapper),
+            validate_execute_path("pre hook", pre_execute),
+            validate_execute_path("post hook", post_execute),
+        )
+    except RuntimeError as exc:
+        logger.critical("[!] %s", exc)
+        return wldm.EX_FAILURE
