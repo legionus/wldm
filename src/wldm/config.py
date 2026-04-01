@@ -33,6 +33,7 @@ def read_config() -> wldm.inifile.IniFile:
         "daemon": {
             "seat": wldm.policy.DEFAULT_SEAT,
             "socket-path": "/run/wldm/greeter.sock",
+            "state-dir": "",
             "log-path": "",
             "poweroff-command": "systemctl poweroff",
             "reboot-command": "systemctl reboot",

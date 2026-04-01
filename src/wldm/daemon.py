@@ -26,6 +26,7 @@ import wldm.pam
 import wldm.policy
 import wldm.protocol
 import wldm.secret
+import wldm.state
 import wldm.tty
 
 logger = wldm.logger
@@ -51,7 +52,8 @@ class DaemonState:
                  internal_command: str | list[str],
                  greeter_max_restarts: int,
                  greeter_uid: int = -1,
-                 seat: str = wldm.policy.DEFAULT_SEAT) -> None:
+                 seat: str = wldm.policy.DEFAULT_SEAT,
+                 state_dir: str = "") -> None:
         if isinstance(internal_command, str):
             self.internal_command = [internal_command]
         else:
@@ -60,13 +62,16 @@ class DaemonState:
         self.greeter_max_restarts = greeter_max_restarts
         self.greeter_uid = greeter_uid
         self.seat = seat
+        self.state_dir = state_dir
+        self.last_username = ""
+        self.last_session_command = ""
         self.greeter_proc: Optional[AsyncProcess] = None
         self.greeter_writer: Optional[asyncio.StreamWriter] = None
         self.greeter_failures = 0
         self.greeter_ready = False
         self.console: int = -1
         self.greeter_tty: int = 0
-        self.active_sessions: dict[int, AsyncProcess] = {}
+        self.active_sessions: dict[int, "SessionState"] = {}
         self.session_tasks: set[asyncio.Task[None]] = set()
 
 
@@ -78,6 +83,13 @@ class RequestOutcome:
     session_command: str = ""
     session_desktop_names: list[str] | None = None
     control_action: str = ""
+
+
+@dataclass
+class SessionState:
+    proc: AsyncProcess
+    username: str
+    command: str
 
 
 POWER_ACTION_COMMANDS = {
@@ -94,7 +106,6 @@ KEYBOARD_ENV_OPTIONS = {
     "variant": "XKB_DEFAULT_VARIANT",
     "options": "XKB_DEFAULT_OPTIONS",
 }
-
 
 def greeter_socket_path(cfg: Optional[wldm.inifile.IniFile] = None) -> str:
     if "WLDM_SOCKET" in os.environ:
@@ -281,7 +292,8 @@ async def send_message(writer: Optional[asyncio.StreamWriter], message: Dict[str
 
 
 async def send_session_finished(state: DaemonState,
-                                proc: AsyncProcess) -> None:
+                                session: SessionState) -> None:
+    proc = session.proc
     logger.info("user session (pid=%d) finished with return code %d", proc.pid, proc.returncode)
 
     state.active_sessions.pop(proc.pid, None)
@@ -291,6 +303,16 @@ async def send_session_finished(state: DaemonState,
     returncode = proc.returncode if proc.returncode is not None else wldm.EX_FAILURE
 
     failed = returncode != 0
+
+    if not failed and session.command:
+        state.last_username = session.username
+        state.last_session_command = session.command
+
+        try:
+            wldm.state.save_last_session(state.state_dir, session.username, session.command)
+
+        except OSError as e:
+            logger.warning("unable to save last session state in %s: %s", state.state_dir, e)
 
     if failed:
         message = f"Session failed with exit status {returncode}."
@@ -307,9 +329,9 @@ async def send_session_finished(state: DaemonState,
 
 
 async def monitor_session(state: DaemonState,
-                          proc: AsyncProcess) -> None:
-    await proc.wait()
-    await send_session_finished(state, proc)
+                          session: SessionState) -> None:
+    await session.proc.wait()
+    await send_session_finished(state, session)
 
 
 def track_session_task(state: DaemonState, task: asyncio.Task[None]) -> None:
@@ -401,11 +423,12 @@ async def handle_request_async(state: DaemonState,
                 WLDM_SESSION_DESKTOP_NAMES=":".join(outcome.session_desktop_names or []),
             ),
         )
-        state.active_sessions[proc.pid] = proc
+        session = SessionState(proc=proc, username=outcome.session_username, command=outcome.session_command)
+        state.active_sessions[proc.pid] = session
 
         logger.info("start user session (pid=%d)", proc.pid)
 
-        track_session_task(state, asyncio.create_task(monitor_session(state, proc)))
+        track_session_task(state, asyncio.create_task(monitor_session(state, session)))
 
     if outcome.control_action:
         command = control_command(cfg, outcome.control_action)
@@ -490,6 +513,12 @@ async def start_greeter(state: DaemonState,
         WLDM_GREETER_USER_SESSIONS="yes" if cfg.get_bool("greeter", "user-sessions") else "no",
     )
 
+    if state.last_session_command:
+        env["WLDM_LAST_SESSION_COMMAND"] = state.last_session_command
+
+    if state.last_username:
+        env["WLDM_LAST_USERNAME"] = state.last_username
+
     # Keep compositor-side keyboard setup in the daemon environment contract so
     # greeter.command can stay a plain launcher wrapper.
     env.update(keyboard_environment(cfg))
@@ -524,9 +553,9 @@ async def cleanup_async(state: DaemonState) -> None:
     if state.greeter_proc is not None and state.greeter_proc.returncode is None:
         await terminate_process_tree(state.greeter_proc, "the greeter")
 
-    for proc in list(state.active_sessions.values()):
+    for session in list(state.active_sessions.values()):
         with suppress(Exception):
-            await terminate_process_tree(proc, "user session")
+            await terminate_process_tree(session.proc, "user session")
 
     if state.session_tasks:
         await asyncio.gather(*state.session_tasks, return_exceptions=True)
@@ -576,9 +605,11 @@ async def run_daemon_async(parser: argparse.Namespace, cfg: wldm.inifile.IniFile
         greeter_max_restarts,
         greeter_uid=greeter_uid,
         seat=cfg.get_str("daemon", "seat"),
+        state_dir=cfg.get_str("daemon", "state-dir"),
     )
     state.console = console
     state.greeter_tty = greeter_tty
+    state.last_username, state.last_session_command = wldm.state.load_last_session(state.state_dir)
 
     exit_code = wldm.EX_SUCCESS
 

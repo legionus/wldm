@@ -24,6 +24,10 @@ artifacts under `/tmp/wldm/` without baking those paths into the main config.
   Seat identifier passed into session metadata. Default: `seat0`.
 - `socket-path`
   UNIX socket used for daemon/greeter IPC. Default: `/run/wldm/greeter.sock`.
+- `state-dir`
+  Optional directory used for small daemon-managed runtime state. When set,
+  `wldm` stores the last successfully completed session command there and uses
+  it as the greeter's default session selection on the next login screen.
 - `log-path`
   Daemon log file. Default: empty, which keeps logging on stderr/journal.
 - `poweroff-command`
@@ -165,6 +169,7 @@ WLDM_VERBOSITY=2 ./wldm.sh greeter
 [daemon]
 seat = seat0
 socket-path = /run/wldm/greeter.sock
+state-dir =
 log-path =
 poweroff-command = systemctl poweroff
 reboot-command = systemctl reboot

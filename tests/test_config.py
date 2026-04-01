@@ -22,6 +22,7 @@ def test_read_config_uses_explicit_repo_config(monkeypatch):
 
     assert cfg["daemon"]["seat"] == "seat0"
     assert cfg["daemon"]["socket-path"] == "/run/wldm/greeter.sock"
+    assert cfg["daemon"]["state-dir"] == ""
     assert cfg["daemon"]["log-path"] == ""
     assert cfg["daemon"]["suspend-command"] == ""
     assert cfg["daemon"]["hibernate-command"] == ""
@@ -71,6 +72,7 @@ def test_read_config_sets_default_runtime_greeter_values(monkeypatch):
 
     assert cfg["daemon"]["seat"] == "seat0"
     assert cfg["daemon"]["socket-path"] == "/run/wldm/greeter.sock"
+    assert cfg["daemon"]["state-dir"] == ""
     assert cfg["daemon"]["log-path"] == ""
     assert cfg["daemon"]["suspend-command"] == ""
     assert cfg["daemon"]["hibernate-command"] == ""
@@ -117,6 +119,7 @@ def test_read_config_loads_devel_overrides_when_selected_explicitly(monkeypatch)
     cfg = wldm.config.read_config()
 
     assert cfg["daemon"]["socket-path"] == "/tmp/wldm/greeter.sock"
+    assert cfg["daemon"]["state-dir"] == "/tmp/wldm/state"
     assert cfg["daemon"]["log-path"] == "/tmp/wldm/daemon.log"
     assert cfg["greeter"]["log-path"] == "/tmp/wldm/greeter.log"
     assert cfg["session"]["execute"] == str(repo_root / "scripts" / "wayland-session")

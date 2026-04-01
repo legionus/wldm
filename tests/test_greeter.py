@@ -270,6 +270,99 @@ def test_update_keyboard_indicator_sets_visibility_from_active_layout(monkeypatc
     assert app.keyboard_label.visible is True
 
 
+def test_refresh_sessions_prefers_last_session_command(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app.sessions = []
+    app.last_username = ""
+    app.last_session_command = "labwc"
+
+    class FakeSessionsEntry:
+        def __init__(self):
+            self.model = None
+            self.selected = None
+
+        def set_model(self, model):
+            self.model = model
+
+        def set_selected(self, index):
+            self.selected = index
+
+        def get_selected_item(self):
+            return None
+
+    app.sessions_entry = FakeSessionsEntry()
+    app.session_label = None
+
+    monkeypatch.setattr(
+        greeter.wldm.sessions,
+        "desktop_sessions",
+        lambda username="": [
+            {"name": "Sway", "command": "sway", "comment": "Sway", "desktop_names": ["sway"]},
+            {"name": "Labwc", "command": "labwc", "comment": "Labwc", "desktop_names": ["labwc"]},
+        ],
+    )
+
+    greeter.LoginApp.refresh_sessions(app)
+
+    assert app.sessions_entry.selected == 1
+
+
+def test_refresh_sessions_explicit_preference_overrides_previous_selection(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app.last_username = ""
+    app.last_session_command = ""
+    app.sessions = [
+        {"name": "Sway", "command": "sway", "comment": "Sway", "desktop_names": ["sway"]},
+        {"name": "Labwc", "command": "labwc", "comment": "Labwc", "desktop_names": ["labwc"]},
+    ]
+
+    class FakeItem:
+        def __init__(self, text):
+            self.text = text
+
+        def get_string(self):
+            return self.text
+
+    class FakeSessionsEntry:
+        def __init__(self):
+            self.model = None
+            self.selected = 0
+
+        def set_model(self, model):
+            self.model = model
+
+        def set_selected(self, index):
+            self.selected = index
+
+        def get_selected_item(self):
+            if self.selected is None:
+                return None
+            return FakeItem(self.model.items[self.selected])
+
+    app.sessions_entry = FakeSessionsEntry()
+    app.session_label = None
+
+    monkeypatch.setattr(
+        greeter.wldm.sessions,
+        "desktop_sessions",
+        lambda username="": [
+            {"name": "Sway", "command": "sway", "comment": "Sway", "desktop_names": ["sway"]},
+            {"name": "Labwc", "command": "labwc", "comment": "Labwc", "desktop_names": ["labwc"]},
+        ],
+    )
+
+    app.sessions_entry.set_model(greeter.Gtk.StringList())
+    app.sessions_entry.model.append("Sway")
+    app.sessions_entry.model.append("Labwc")
+
+    greeter.LoginApp.refresh_sessions(app, preferred_command="labwc")
+
+    assert app.sessions_entry.selected == 1
+
+
+
 def test_login_app_uses_project_application_id(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
 
@@ -581,11 +674,14 @@ def test_handle_event_updates_status_label(monkeypatch):
 
     app = greeter.LoginApp.__new__(greeter.LoginApp)
     app.auth_in_progress = False
+    app.last_username = ""
+    app.last_session_command = ""
     app.username_entry = None
     app.password_entry = None
     app.sessions_entry = None
     app.login_button = None
     app.status_label = FakeLabel()
+    app.session_label = None
 
     greeter.LoginApp.handle_event(
         app,
@@ -692,17 +788,20 @@ def test_on_clock_tick_polls_session_finished_event_and_reenables_inputs(monkeyp
     app.client = FakeClient()
     app.quit = False
     app.auth_in_progress = True
+    app.last_username = ""
+    app.last_session_command = ""
     app.username_entry = FakeEntry("alice")
     app.password_entry = FakeEntry("secret")
-    app.sessions_entry = FakeEntry()
+    app.sessions_entry = None
     app.login_button = FakeEntry()
     app.status_label = FakeLabel()
+    app.session_label = None
     app.date_label = None
     app.time_label = None
 
     assert greeter.LoginApp.on_clock_tick(app) is True
     assert app.auth_in_progress is False
-    assert app.username_entry.text == ""
+    assert app.username_entry.text == "alice"
     assert app.password_entry.text == ""
     assert app.username_entry.focused is True
     assert app.username_entry.sensitive is True
@@ -936,6 +1035,7 @@ def test_on_login_clicked_sets_success_message_and_clears_username(monkeypatch):
     app.on_login_clicked()
 
     assert app.status_label.text == "Authentication accepted. Waiting for session..."
+    assert app.last_username == "alice"
     assert app.username_entry.text == ""
     assert app.password_entry.text == ""
 
@@ -1422,6 +1522,8 @@ def test_username_change_updates_identity_preview(monkeypatch):
     app.identity_label = FakeLabel()
     app.avatar_label = FakeLabel()
     app.sessions = []
+    app.last_username = ""
+    app.last_session_command = ""
     app.session_label = None
     app.sessions_entry = None
 
@@ -1462,6 +1564,8 @@ def test_username_change_hides_identity_preview_without_accountsservice_profile(
     app.identity_label = FakeLabel()
     app.avatar_label = FakeLabel()
     app.sessions = []
+    app.last_username = ""
+    app.last_session_command = ""
     app.session_label = None
     app.sessions_entry = None
 

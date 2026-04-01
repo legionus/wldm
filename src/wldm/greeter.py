@@ -131,6 +131,10 @@ def configured_keyboard_short_names() -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
+def configured_last_session_command() -> str:
+    return os.environ.get("WLDM_LAST_SESSION_COMMAND", "").strip()
+
+
 def keyboard_state() -> tuple[list[KeyboardLayout], int]:
     display = Gdk.Display.get_default()
 
@@ -272,6 +276,8 @@ class LoginApp:
         self.quit = False
         self.auth_in_progress = False
         self.actions = available_actions()
+        self.last_username = os.environ.get("WLDM_LAST_USERNAME", "").strip()
+        self.last_session_command = configured_last_session_command()
 
         self.WIDGET_BINDINGS: list[Dict[str, Any]] = [
             {
@@ -447,12 +453,19 @@ class LoginApp:
         else:
             self.session_label.set_text(_("Session command: %(command)s") % {"command": item})
 
-    def refresh_sessions(self, username: str = "") -> None:
+    def refresh_sessions(self, username: str = "", preferred_command: str = "") -> None:
         current_name = ""
+        current_command = ""
         entry = self.get_selected_session()
 
         if entry is not None:
             current_name = str(entry["name"])
+            current_command = str(entry["command"])
+
+        if not preferred_command:
+            preferred_command = current_command or self.last_session_command
+        else:
+            current_name = ""
 
         self.sessions = wldm.sessions.desktop_sessions(username)
 
@@ -469,6 +482,10 @@ class LoginApp:
 
                 for index, session in enumerate(self.sessions):
                     if session["name"] == current_name:
+                        selected = index
+                        break
+
+                    if not current_name and preferred_command and session["command"] == preferred_command:
                         selected = index
                         break
 
@@ -603,14 +620,24 @@ class LoginApp:
         if event_name == wldm.protocol.EVENT_SESSION_FINISHED:
             self.set_auth_state(False)
 
+            if not bool(payload.get("failed", False)):
+                self.last_username = ""
+
+                if self.username_entry is not None:
+                    self.last_username = self.username_entry.get_text().strip()
+
+                self.last_session_command = self.get_session_command()
+
             if self.username_entry is not None:
-                self.username_entry.set_text("")
+                self.username_entry.set_text(self.last_username)
 
                 if hasattr(self.username_entry, "grab_focus"):
                     self.username_entry.grab_focus()
 
             if self.password_entry is not None:
                 self.password_entry.set_text("")
+
+            self.refresh_sessions(self.last_username, preferred_command=self.last_session_command)
 
             status_message = str(payload.get("message", _("Session finished.")))
 
@@ -653,7 +680,10 @@ class LoginApp:
 
         GLib.timeout_add_seconds(1, self.on_clock_tick)
 
-        self.refresh_sessions()
+        if self.username_entry is not None and self.last_username:
+            self.username_entry.set_text(self.last_username)
+
+        self.refresh_sessions(self.last_username, preferred_command=self.last_session_command)
         self.update_identity_preview()
         self.update_action_buttons()
         self.set_status("")
@@ -803,6 +833,7 @@ class LoginApp:
         logger.debug("client answer: %s", answer)
 
         if answer.get("ok") and answer.get("payload", {}).get("verified"):
+            self.last_username = username.strip()
             self.username_entry.set_text("")
             status_message = _("Authentication accepted. Waiting for session...")
             status_error = False
