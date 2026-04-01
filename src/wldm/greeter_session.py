@@ -59,37 +59,38 @@ def redirect_greeter_stderr(log_path: Optional[str] = None) -> None:
     logfile.close()
 
 
-def log_greeter_diag(message: str, *args: Any) -> None:
+def log_greeter_diag(message: str, *args: Any, fd: int = 2) -> None:
     text = message % args if args else message
-    print(f"[wldm] {text}", file=os.fdopen(os.dup(2), "w", encoding="utf-8", buffering=1))
+    print(f"[wldm] {text}", file=os.fdopen(os.dup(fd), "w", encoding="utf-8", buffering=1))
 
 
-def log_exec_environment(env: Dict[str, str], uid: int, gid: int) -> None:
-    log_greeter_diag("target uid=%d gid=%d", uid, gid)
+def log_exec_environment(env: Dict[str, str], uid: int, gid: int, *, fd: int = 2) -> None:
+    log_greeter_diag("target uid=%d gid=%d", uid, gid, fd=fd)
     for name in ["XDG_SEAT", "XDG_VTNR", "XDG_SESSION_TYPE", "XDG_SESSION_CLASS"]:
         if name in env:
-            log_greeter_diag("exec env %s=%s", name, env[name])
+            log_greeter_diag("exec env %s=%s", name, env[name], fd=fd)
         else:
-            log_greeter_diag("exec env %s is unset", name)
+            log_greeter_diag("exec env %s is unset", name, fd=fd)
 
 
 def exec_greeter_program(username: str,
                          uid: int,
                          gid: int,
                          workdir: str,
-                         prog: str,
                          prog_args: List[str],
                          env: Dict[str, str]) -> None:
-    redirect_greeter_stderr()
-    log_exec_environment(env, uid, gid)
-
-    os.initgroups(username, gid)
-    os.setgid(gid)
-    os.setuid(uid)
-    os.chdir(workdir)
-
-    os.closerange(3, os.sysconf("SC_OPEN_MAX"))
-    os.execve(prog, prog_args, env)
+    log_path = os.environ.get("WLDM_GREETER_STDERR_LOG", "/tmp/wldm/greeter.log")
+    logfile = wldm.open_secure_append_file(log_path, mode=0o600)
+    try:
+        logfd = logfile.fileno()
+        log_exec_environment(env, uid, gid, fd=logfd)
+        wldm.exec_program(
+            username=username, uid=uid, gid=gid, workdir=workdir,
+            argv=prog_args, env=env,
+            stderr_fd=logfd,
+        )
+    finally:
+        logfile.close()
 
 
 def prepare_greeter_terminal(ttydev: wldm.tty.TTYdevice) -> None:
@@ -162,7 +163,7 @@ def run_greeter_session(pw: pwd.struct_passwd,
                 try:
                     exec_greeter_program(
                         pw.pw_name, pw.pw_uid, gid, pw.pw_dir,
-                        prog, prog_args,
+                        prog_args,
                         new_greeter_environ(pamh, pw),
                     )
                 except Exception as e:

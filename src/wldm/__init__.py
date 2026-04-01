@@ -159,6 +159,34 @@ def resolve_config_path(path: str, *,
     return os.path.realpath(os.path.join(base_dir or ".", path))
 
 
+def exec_program(
+    *,
+    username: str, uid: int, gid: int, workdir: str,
+    argv: list[str], env: dict[str, str],
+    stdin_fd: int | None = None, stdout_fd: int | None = None, stderr_fd: int | None = None,
+) -> None:
+    if stdin_fd is not None:
+        os.dup2(stdin_fd, 0)
+
+    if stdout_fd is not None:
+        os.dup2(stdout_fd, 1)
+
+    if stderr_fd is not None:
+        os.dup2(stderr_fd, 2)
+
+    # Switch to the target user and working directory.
+    os.initgroups(username, gid)
+    os.setgid(gid)
+    os.setuid(uid)
+
+    os.chdir(workdir)
+
+    # Close inherited fds and replace the process image.
+    os.closerange(3, os.sysconf("SC_OPEN_MAX"))
+
+    os.execve(argv[0], argv, env)
+
+
 def setup_file_logger(logger: logging.Logger, level: int,
                       fmt: str, path: str) -> logging.Logger:
     formatter = logging.Formatter(fmt=fmt, datefmt="%H:%M:%S")

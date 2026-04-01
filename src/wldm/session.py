@@ -104,21 +104,13 @@ def process_exit_status(status: int) -> int:
 
 def exec_user_program(ttydev: wldm.tty.TTYdevice,
                       username: str, uid: int, gid: int, workdir: str,
-                      prog: str, prog_args: List[str],
+                      prog_args: List[str],
                       env: Dict[str, str]) -> None:
-    # The tty becomes stdin/stdout/stderr
-    os.dup2(ttydev.fd, 0)
-    os.dup2(ttydev.fd, 1)
-    os.dup2(ttydev.fd, 2)
-
-    os.initgroups(username, gid)
-    os.setgid(gid)
-    os.setuid(uid)
-    os.chdir(workdir)
-
-    os.closerange(3, os.sysconf("SC_OPEN_MAX"))
-
-    os.execve(prog, prog_args, env)
+    wldm.exec_program(
+        username=username, uid=uid, gid=gid, workdir=workdir,
+        argv=prog_args, env=env,
+        stdin_fd=ttydev.fd, stdout_fd=ttydev.fd, stderr_fd=ttydev.fd,
+    )
 
 
 def prepare_user_terminal(ttydev: wldm.tty.TTYdevice) -> None:
@@ -190,7 +182,7 @@ def run_user_session(pw: pwd.struct_passwd,
                         try:
                             exec_user_program(ttydev,
                                               pw.pw_name, pw.pw_uid, pw.pw_gid, pw.pw_dir,
-                                              prog_args[0], prog_args, env)
+                                              prog_args, env)
                         except Exception as e:
                             logger.critical("[child] Failed to exec `%s %s': %r",
                                             prog_args[0], prog_args, e)
