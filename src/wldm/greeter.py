@@ -277,13 +277,16 @@ class LoginApp:
             {
                 "name": "main_window",
                 "required": True,
-                "methods": ("set_application", "present")},
+                "methods": ("set_application", "set_default_widget", "present")},
             {
                 "name": "username_entry",
                 "required": True,
                 "methods": ("get_text", "set_text", "connect", "grab_focus"),
                 "editable": True,
-                "signals": (("changed", self.on_username_changed),),
+                "signals": (
+                    ("changed", self.on_username_changed),
+                    ("activate", self.on_username_activate),
+                ),
             },
             {
                 "name": "password_entry",
@@ -633,6 +636,9 @@ class LoginApp:
 
         window.set_application(app)
 
+        if self.login_button is not None and hasattr(window, "set_default_widget"):
+            window.set_default_widget(self.login_button)
+
         if self.hostname_label is not None:
             self.hostname_label.set_text(socket.gethostname())
 
@@ -683,6 +689,11 @@ class LoginApp:
     # pylint: disable-next=unused-argument
     def on_session_changed(self, *args: Any) -> None:
         self.update_session_summary()
+
+    # pylint: disable-next=unused-argument
+    def on_username_activate(self, *args: Any) -> None:
+        if self.password_entry is not None and hasattr(self.password_entry, "grab_focus"):
+            self.password_entry.grab_focus()
 
     # pylint: disable-next=unused-argument
     def on_username_changed(self, *args: Any) -> None:

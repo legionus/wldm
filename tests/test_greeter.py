@@ -1102,10 +1102,14 @@ def test_on_activate_binds_widgets_and_populates_sessions(monkeypatch):
     class FakeWindow:
         def __init__(self):
             self.application = None
+            self.default_widget = None
             self.presented = False
 
         def set_application(self, app):
             self.application = app
+
+        def set_default_widget(self, widget):
+            self.default_widget = widget
 
         def present(self):
             self.presented = True
@@ -1133,6 +1137,8 @@ def test_on_activate_binds_widgets_and_populates_sessions(monkeypatch):
             self.connections = []
             self.visible = None
             self.sensitive = True
+            self.can_default = None
+            self.receives_default = None
 
         def connect(self, signal, callback):
             self.connections.append((signal, callback))
@@ -1142,6 +1148,12 @@ def test_on_activate_binds_widgets_and_populates_sessions(monkeypatch):
 
         def set_sensitive(self, value):
             self.sensitive = value
+
+        def set_can_default(self, value):
+            self.can_default = value
+
+        def set_receives_default(self, value):
+            self.receives_default = value
 
     class FakeSessionsEntry(FakeEntry):
         def __init__(self):
@@ -1221,6 +1233,7 @@ def test_on_activate_binds_widgets_and_populates_sessions(monkeypatch):
     app.on_activate(app.app)
 
     assert window.application is app.app
+    assert window.default_widget is login_button
     assert window.presented is True
     assert sessions_entry.model.items == ["Alpha", "Beta"]
     assert sessions_entry.selected == 0
@@ -1238,8 +1251,29 @@ def test_on_activate_binds_widgets_and_populates_sessions(monkeypatch):
         ("notify::selected-item", app.on_session_changed),
         ("activate", app.on_login_clicked),
     ]
-    assert username_entry.connections == [("changed", app.on_username_changed)]
+    assert username_entry.connections == [
+        ("changed", app.on_username_changed),
+        ("activate", app.on_username_activate),
+    ]
     assert greeter._test_timeout_calls == [(1, app.on_clock_tick)]  # type: ignore[attr-defined]
+
+
+def test_username_activate_moves_focus_to_password(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+
+    class FakeEntry:
+        def __init__(self):
+            self.focused = False
+
+        def grab_focus(self):
+            self.focused = True
+
+    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app.password_entry = FakeEntry()
+
+    greeter.LoginApp.on_username_activate(app)
+
+    assert app.password_entry.focused is True
 
 
 def test_cmd_main_loads_css_when_present(monkeypatch, tmp_path):
