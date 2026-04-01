@@ -597,11 +597,11 @@ class LoginApp:
             if self.username_entry is not None:
                 self.username_entry.set_text("")
 
+                if hasattr(self.username_entry, "grab_focus"):
+                    self.username_entry.grab_focus()
+
             if self.password_entry is not None:
                 self.password_entry.set_text("")
-
-                if hasattr(self.password_entry, "grab_focus"):
-                    self.password_entry.grab_focus()
 
             status_message = str(payload.get("message", _("Session finished.")))
 

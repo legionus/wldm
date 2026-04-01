@@ -674,7 +674,7 @@ def test_on_clock_tick_polls_session_finished_event_and_reenables_inputs(monkeyp
     assert app.auth_in_progress is False
     assert app.username_entry.text == ""
     assert app.password_entry.text == ""
-    assert app.password_entry.focused is True
+    assert app.username_entry.focused is True
     assert app.username_entry.sensitive is True
     assert app.password_entry.sensitive is True
     assert app.status_label.text == "Session finished."
