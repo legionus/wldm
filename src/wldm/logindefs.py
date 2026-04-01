@@ -32,6 +32,7 @@ def read_values() -> None:
 
                 name, value = re.split(r'\s+', line, maxsplit=1)
                 login_defs[name] = value
+
     except (OSError, RuntimeError, OverflowError, UnicodeError):
         return
 
@@ -47,9 +48,12 @@ def get_number(name: str) -> int:
         if name in login_defs:
             if login_defs[name].startswith("0x"):
                 return int(login_defs[name], base=16)
+
             if login_defs[name].startswith("0"):
                 return int(login_defs[name], base=8)
+
             return int(login_defs[name], base=10)
+
     except ValueError:
         pass
     return 0

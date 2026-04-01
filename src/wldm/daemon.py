@@ -41,6 +41,7 @@ class SocketListener:
     def close(self) -> None:
         with suppress(Exception):
             self.sock.close()
+
         with suppress(FileNotFoundError):
             os.unlink(self.path)
 
@@ -55,6 +56,7 @@ class DaemonState:
             self.internal_command = [internal_command]
         else:
             self.internal_command = list(internal_command)
+
         self.greeter_max_restarts = greeter_max_restarts
         self.greeter_uid = greeter_uid
         self.seat = seat
@@ -97,14 +99,17 @@ KEYBOARD_ENV_OPTIONS = {
 def greeter_socket_path(cfg: Optional[wldm.inifile.IniFile] = None) -> str:
     if "WLDM_SOCKET" in os.environ:
         return os.environ["WLDM_SOCKET"]
+
     if cfg is not None:
         return cfg.get_str("daemon", "socket-path")
+
     return "/tmp/wldm/greeter.sock"
 
 
 def create_greeter_listener(user: str, group: str, path: str) -> SocketListener:
     sockdir = os.path.dirname(path)
     basename = os.path.basename(path)
+
     if not basename:
         raise RuntimeError(f"invalid socket path: {path}")
 
@@ -114,6 +119,8 @@ def create_greeter_listener(user: str, group: str, path: str) -> SocketListener:
         except FileNotFoundError:
             pass
         else:
+            # Only stale sockets are safe to replace here. Refusing other file
+            # types keeps the daemon from unlinking an unexpected path.
             if not stat.S_ISSOCK(st.st_mode):
                 raise RuntimeError(f"refusing to replace non-socket path: {path}")
             os.unlink(basename, dir_fd=dir_fd)
@@ -121,8 +128,13 @@ def create_greeter_listener(user: str, group: str, path: str) -> SocketListener:
     listener = SocketListener(path)
     uid = pwd.getpwnam(user).pw_uid
     gid = grp.getgrnam(group).gr_gid
+
+    # The greeter must be the only client that can connect to the daemon
+    # socket, so publish it with the greeter account ownership and no world
+    # access.
     os.chown(path, uid, gid)
     os.chmod(path, 0o600)
+
     return listener
 
 
@@ -132,77 +144,95 @@ def get_peer_uid(writer: asyncio.StreamWriter) -> int:
         raise RuntimeError("unable to get peer socket")
 
     _, uid, _ = struct.unpack("3i", sock.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
+
     return int(uid)
 
 
 def internal_command_prefix() -> list[str]:
     path = os.path.abspath(wldm.command.__file__ or "")
+
     if path.endswith((".pyc", ".pyo")):
         path = path[:-1]
+
     return [sys.executable, path]
 
 
 def greeter_command(cfg: wldm.inifile.IniFile, internal_prefix: list[str]) -> list[str]:
     command = cfg.get_str("greeter", "command")
+
     return shlex.split(command) + internal_prefix + ["greeter"]
 
 
 def configured_power_actions(cfg: wldm.inifile.IniFile) -> list[str]:
     actions = []
+
     for action, option in POWER_ACTION_COMMANDS.items():
         if cfg.get_str("daemon", option):
             actions.append(action)
+
     return actions
 
 
 def control_command(cfg: wldm.inifile.IniFile, action: str) -> list[str]:
     option = POWER_ACTION_COMMANDS.get(action)
+
     if option is None:
         raise ValueError(f"unsupported control action: {action}")
+
     command = cfg.get_str("daemon", option)
+
     if not command:
         raise ValueError(f"control action is disabled: {action}")
+
     return shlex.split(command)
 
 
 def keyboard_environment(cfg: wldm.inifile.IniFile) -> Dict[str, str]:
     env: Dict[str, str] = {}
+
     for option, env_name in KEYBOARD_ENV_OPTIONS.items():
         value = cfg.get_str("keyboard", option)
         if value:
             env[env_name] = value
+
     return env
 
 
 def verify_creds(username: wldm.secret.SecretBytes, password: wldm.secret.SecretBytes) -> bool:
     if not username or not password:
         return False
+
     try:
-        ret = wldm.pam.authenticate(username, password)
-        if ret:
+        if wldm.pam.authenticate(username, password):
             return True
+
     except Exception as e:
         logger.critical("authorization failed: %s", e)
+
     return False
 
 
 def process_request(req: Dict[str, Any], cfg: wldm.inifile.IniFile) -> RequestOutcome:
     if not wldm.protocol.is_request(req):
         return RequestOutcome(
-            response=wldm.protocol.new_error(req, "bad_request", "Malformed request"),
+            response=wldm.protocol.new_error(req, "bad_request", "Malformed request")
         )
 
     if req["action"] == wldm.protocol.ACTION_AUTH:
         payload = req["payload"]
         session_username_bytes = payload["username"].as_bytes()
+
         try:
             response = {"verified": verify_creds(payload["username"], payload["password"])}
+
         finally:
+            # The login path only needs the cleartext credentials for the PAM
+            # check, so scrub them immediately after the auth decision.
             payload["username"].clear()
             payload["password"].clear()
-        outcome = RequestOutcome(
-            response=wldm.protocol.new_response(req, ok=True, payload=response),
-        )
+
+        outcome = RequestOutcome(response=wldm.protocol.new_response(req, ok=True, payload=response))
+
         if response["verified"]:
             outcome.event = wldm.protocol.new_event(
                 wldm.protocol.EVENT_SESSION_STARTING,
@@ -214,19 +244,19 @@ def process_request(req: Dict[str, Any], cfg: wldm.inifile.IniFile) -> RequestOu
             outcome.session_username = session_username_bytes.decode("utf-8", errors="replace")
             outcome.session_command = payload["command"]
             outcome.session_desktop_names = list(payload.get("desktop_names", []))
+
         return outcome
 
     if req["action"] in POWER_ACTION_COMMANDS:
+        # Power actions stay behind explicit config toggles so a greeter theme
+        # cannot offer controls that the local policy meant to disable.
         if req["action"] not in configured_power_actions(cfg):
             return RequestOutcome(
-                response=wldm.protocol.new_error(
-                    req, "action_disabled", f"Action disabled: {req['action']}"
-                ),
+                response=wldm.protocol.new_error(req, "action_disabled", f"Action disabled: {req['action']}")
             )
+
         return RequestOutcome(
-            response=wldm.protocol.new_response(
-                req, ok=True, payload={"accepted": True},
-            ),
+            response=wldm.protocol.new_response(req, ok=True, payload={"accepted": True}),
             control_action=req["action"],
         )
 
@@ -243,23 +273,30 @@ async def send_message(writer: Optional[asyncio.StreamWriter], message: Dict[str
         writer.write(wldm.protocol.encode_message(message))
         await writer.drain()
         return True
+
     except Exception as e:
         logger.critical("unable to send protocol message: %s", e)
+
     return False
 
 
 async def send_session_finished(state: DaemonState,
                                 proc: AsyncProcess) -> None:
     logger.info("user session (pid=%d) finished with return code %d", proc.pid, proc.returncode)
+
     state.active_sessions.pop(proc.pid, None)
     if state.console >= 0 and state.greeter_tty > 0:
         wldm.tty.change(state.console, state.greeter_tty)
+
     returncode = proc.returncode if proc.returncode is not None else wldm.EX_FAILURE
+
     failed = returncode != 0
+
     if failed:
         message = f"Session failed with exit status {returncode}."
     else:
         message = "Session finished."
+
     await send_message(
         state.greeter_writer,
         wldm.protocol.new_event(
@@ -287,6 +324,7 @@ async def terminate_process_tree(proc: AsyncProcess,
         return
 
     logger.info("terminate %s (pid=%d)", name, proc.pid)
+
     try:
         os.killpg(proc.pid, signal.SIGTERM)
     except ProcessLookupError:
@@ -302,6 +340,7 @@ async def terminate_process_tree(proc: AsyncProcess,
 
     with suppress(ProcessLookupError):
         os.killpg(proc.pid, signal.SIGKILL)
+
     with suppress(Exception):
         await proc.wait()
 
@@ -323,17 +362,21 @@ async def wait_for_stop_or_process(proc: AsyncProcess,
                                    stop_event: asyncio.Event) -> bool:
     proc_task = asyncio.create_task(proc.wait())
     stop_task = asyncio.create_task(stop_event.wait())
+
     try:
         done, _ = await asyncio.wait(
             {proc_task, stop_task},
             return_when=asyncio.FIRST_COMPLETED,
         )
         return stop_task in done and stop_event.is_set()
+
     finally:
         for task in [proc_task, stop_task]:
             if task.done():
                 continue
+
             task.cancel()
+
             with suppress(asyncio.CancelledError):
                 await task
 
@@ -346,12 +389,12 @@ async def handle_request_async(state: DaemonState,
 
     if outcome.event is not None:
         await send_message(state.greeter_writer, outcome.event)
+
+        # Sessions are tracked independently from the greeter so the daemon can
+        # notify the UI when they finish and clean them up during shutdown.
         proc = await asyncio.create_subprocess_exec(
-            *state.internal_command,
-            "session",
-            "--",
-            outcome.session_username,
-            *shlex.split(outcome.session_command),
+            *state.internal_command, "session", "--",
+            outcome.session_username, *shlex.split(outcome.session_command),
             env=dict(
                 os.environ,
                 WLDM_SEAT=state.seat,
@@ -359,12 +402,16 @@ async def handle_request_async(state: DaemonState,
             ),
         )
         state.active_sessions[proc.pid] = proc
+
         logger.info("start user session (pid=%d)", proc.pid)
+
         track_session_task(state, asyncio.create_task(monitor_session(state, proc)))
 
     if outcome.control_action:
         command = control_command(cfg, outcome.control_action)
+
         logger.info("execute %s command: %s", outcome.control_action, command)
+
         await asyncio.create_subprocess_exec(*command)
 
 
@@ -374,18 +421,24 @@ async def handle_greeter_client(state: DaemonState,
                                 cfg: wldm.inifile.IniFile) -> None:
     try:
         peer_uid = get_peer_uid(writer)
+
     except Exception as e:
         logger.critical("unable to get greeter peer credentials: %s", e)
+
         writer.close()
         await writer.wait_closed()
         return
 
+    # The daemon only trusts the dedicated greeter account on this socket.
     if state.greeter_uid >= 0 and peer_uid != state.greeter_uid:
         logger.critical("reject greeter connection from unexpected uid %d", peer_uid)
+
         writer.close()
         await writer.wait_closed()
         return
 
+    # A second greeter connection usually means the previous UI is still
+    # connected or a stray process is trying to race the real greeter.
     if state.greeter_writer is not None:
         writer.close()
         await writer.wait_closed()
@@ -397,6 +450,7 @@ async def handle_greeter_client(state: DaemonState,
         while True:
             try:
                 req = await wldm.protocol.read_message_async(reader)
+
             except wldm.protocol.ProtocolError as e:
                 logger.critical("bad protocol message from greeter: %s; raw=%r", e, e.raw)
                 break
@@ -406,10 +460,13 @@ async def handle_greeter_client(state: DaemonState,
 
             state.greeter_ready = True
             await handle_request_async(state, req, cfg)
+
     finally:
         if state.greeter_writer is writer:
             state.greeter_writer = None
+
         writer.close()
+
         with suppress(Exception):
             await writer.wait_closed()
 
@@ -432,32 +489,38 @@ async def start_greeter(state: DaemonState,
         WLDM_GREETER_STDERR_LOG=cfg.get_str("greeter", "log-path"),
         WLDM_GREETER_USER_SESSIONS="yes" if cfg.get_bool("greeter", "user-sessions") else "no",
     )
+
+    # Keep compositor-side keyboard setup in the daemon environment contract so
+    # greeter.command can stay a plain launcher wrapper.
     env.update(keyboard_environment(cfg))
+
     proc = await asyncio.create_subprocess_exec(
-        *state.internal_command,
-        "greeter-session",
-        "--tty",
-        str(greeter_tty),
-        "--pam-service",
-        greeter_pam_service,
-        greeter_user,
-        greeter_group,
+        *state.internal_command, "greeter-session",
+        "--tty", str(greeter_tty),
+        "--pam-service", greeter_pam_service,
+        greeter_user, greeter_group,
         *greeter_command(cfg, state.internal_command),
         env=env,
     )
     state.greeter_proc = proc
     state.greeter_ready = False
+
     logger.info("start the greeter (pid=%d)", proc.pid)
+
     return proc
 
 
 async def cleanup_async(state: DaemonState) -> None:
     if state.greeter_writer is not None:
         state.greeter_writer.close()
+
         with suppress(Exception):
             await state.greeter_writer.wait_closed()
+
         state.greeter_writer = None
 
+    # Stop the greeter before user sessions so the login UI cannot race the
+    # shutdown sequence and start new work while the daemon is tearing down.
     if state.greeter_proc is not None and state.greeter_proc.returncode is None:
         await terminate_process_tree(state.greeter_proc, "the greeter")
 
@@ -476,6 +539,8 @@ async def run_daemon_async(parser: argparse.Namespace, cfg: wldm.inifile.IniFile
     if not greeter_tty:
         greeter_tty = parser.tty
 
+    # The daemon controls VT switching itself so it can always bring the
+    # greeter back to a known console after a session exits.
     console = wldm.tty.open_console()
     if console is None:
         logger.critical("unable to open tty device")
@@ -483,10 +548,12 @@ async def run_daemon_async(parser: argparse.Namespace, cfg: wldm.inifile.IniFile
 
     if not greeter_tty:
         num = wldm.tty.available(console)
+
         if num is None:
             logger.critical("unable to get available tty device for greeter")
             os.close(console)
             return wldm.EX_FAILURE
+
         greeter_tty = num
 
     if not wldm.tty.change(console, greeter_tty):
@@ -499,8 +566,11 @@ async def run_daemon_async(parser: argparse.Namespace, cfg: wldm.inifile.IniFile
     greeter_user = cfg.get_str("greeter", "user")
     greeter_group = cfg.get_str("greeter", "group")
     greeter_uid = pwd.getpwnam(greeter_user).pw_uid
+
     socket_path = greeter_socket_path(cfg)
+
     listener = create_greeter_listener(greeter_user, greeter_group, socket_path)
+
     state = DaemonState(
         internal_command_prefix(),
         greeter_max_restarts,
@@ -509,10 +579,14 @@ async def run_daemon_async(parser: argparse.Namespace, cfg: wldm.inifile.IniFile
     )
     state.console = console
     state.greeter_tty = greeter_tty
+
     exit_code = wldm.EX_SUCCESS
+
     stop_event = asyncio.Event()
     loop = asyncio.get_running_loop()
+
     install_stop_handlers(loop, stop_event)
+
     server = await asyncio.start_unix_server(
         lambda reader, writer: handle_greeter_client(state, reader, writer, cfg),
         sock=listener.sock,
@@ -520,7 +594,10 @@ async def run_daemon_async(parser: argparse.Namespace, cfg: wldm.inifile.IniFile
 
     try:
         while True:
+            # Restart the greeter after ordinary exits, but stop once it never
+            # reaches the ready state repeatedly to avoid a tight crash loop.
             proc = await start_greeter(state, cfg, greeter_tty, listener.path)
+
             if await wait_for_stop_or_process(proc, stop_event):
                 logger.info("stop signal received, shutting down daemon")
                 break
@@ -529,34 +606,42 @@ async def run_daemon_async(parser: argparse.Namespace, cfg: wldm.inifile.IniFile
 
             if state.greeter_writer is not None:
                 state.greeter_writer.close()
+
                 with suppress(Exception):
                     await state.greeter_writer.wait_closed()
+
                 state.greeter_writer = None
 
             if state.greeter_ready:
                 state.greeter_failures = 0
             else:
                 state.greeter_failures += 1
+
                 if state.greeter_failures >= state.greeter_max_restarts:
                     logger.critical("greeter failed %d times in a row, stopping daemon",
                                     state.greeter_failures)
+
                     exit_code = wldm.EX_FAILURE
                     break
 
             await asyncio.sleep(1)
+
     except asyncio.CancelledError:
         await cleanup_async(state)
         raise
+
     except Exception:
         logger.exception("unexpected daemon failure")
         exit_code = wldm.EX_FAILURE
         await cleanup_async(state)
+
     finally:
         remove_stop_handlers(loop)
         await cleanup_async(state)
         server.close()
         await server.wait_closed()
         listener.close()
+
         os.close(console)
 
     logger.debug("daemon finished")
@@ -565,7 +650,9 @@ async def run_daemon_async(parser: argparse.Namespace, cfg: wldm.inifile.IniFile
 
 def cmd_main(parser: argparse.Namespace) -> int:
     cfg = wldm.config.read_config()
+
     log_path = cfg.get_str("daemon", "log-path")
     if log_path:
         wldm.setup_file_logger(logger, level=logger.level, fmt="[%(asctime)s] %(message)s", path=log_path)
+
     return asyncio.run(run_daemon_async(parser, cfg))

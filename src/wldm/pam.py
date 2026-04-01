@@ -59,13 +59,18 @@ def _password_conv(n_messages: int, messages: List[ffi.PamMessage],
     for i in range(n_messages):
         if messages[i].contents.msg_style == ffi.PAM_PROMPT_ECHO_OFF:
             resp = calloc(len(password) + 1, sizeof(c_char))
+
             if not resp:
                 for j in range(i):
                     if arr[j].resp:
                         free(cast(arr[j].resp, c_void_p))
+
                 free(resp_ptr)
-                return PAM_CONV_ERR
+
+                return ffi.PAM_CONV_ERR
+
             ctypes.memmove(resp, c_char_p(password), len(password))
+
             arr[i].resp = resp
             arr[i].resp_retcode = 0
 
@@ -83,7 +88,9 @@ def pam_error_str(pamh: Any, code: int) -> str:
         msg = libpam.pam_strerror(pamh, code)
         if msg is None:
             return f"pam error {code}"
+
         return str(msg.decode())
+
     except Exception:
         return f"PAM error code {code}"
 
@@ -94,6 +101,7 @@ def start_pam(service: str, user: str) -> Any:
 
     rc = libpam.pam_start(service.encode(), user.encode(), byref(conv),
                           byref(pamh))
+
     if rc != ffi.PAM_SUCCESS:
         err = pam_error_str(None, rc)
         raise RuntimeError(f"pam_start failed: {rc} ({err})")
@@ -104,16 +112,19 @@ def start_pam(service: str, user: str) -> Any:
 def open_pam_session(pamh: Any) -> None:
     # check account
     rc = libpam.pam_acct_mgmt(pamh, 0)
+
     if rc != ffi.PAM_SUCCESS:
         err = pam_error_str(pamh, rc)
         raise RuntimeError(f"pam_acct_mgmt failed: {rc} ({err})")
 
     rc = libpam.pam_setcred(pamh, ffi.PAM_ESTABLISH_CRED)
+
     if rc != ffi.PAM_SUCCESS:
         err = pam_error_str(pamh, rc)
         raise RuntimeError(f"pam_setcred: {rc} ({err})")
 
     rc = libpam.pam_open_session(pamh, 0)
+
     if rc != ffi.PAM_SUCCESS:
         err = pam_error_str(pamh, rc)
         raise RuntimeError(f"pam_open_session failed: {rc} ({err})")
@@ -121,6 +132,7 @@ def open_pam_session(pamh: Any) -> None:
 
 def open_pam_session_only(pamh: Any) -> None:
     rc = libpam.pam_open_session(pamh, 0)
+
     if rc != ffi.PAM_SUCCESS:
         err = pam_error_str(pamh, rc)
         raise RuntimeError(f"pam_open_session failed: {rc} ({err})")
@@ -128,6 +140,7 @@ def open_pam_session_only(pamh: Any) -> None:
 
 def set_pam_item(pamh: Any, item_type: int, value: str) -> None:
     rc = libpam.pam_set_item(pamh, item_type, ctypes.cast(c_char_p(value.encode()), c_void_p))
+
     if rc != ffi.PAM_SUCCESS:
         err = pam_error_str(pamh, rc)
         raise RuntimeError(f"pam_set_item failed: {rc} ({err})")
@@ -135,7 +148,9 @@ def set_pam_item(pamh: Any, item_type: int, value: str) -> None:
 
 def putenv(pamh: Any, name: str, value: str) -> None:
     entry = f"{name}={value}".encode()
+
     rc = libpam.pam_putenv(pamh, c_char_p(entry))
+
     if rc != ffi.PAM_SUCCESS:
         err = pam_error_str(pamh, rc)
         raise RuntimeError(f"pam_putenv failed: {rc} ({err})")
@@ -143,11 +158,13 @@ def putenv(pamh: Any, name: str, value: str) -> None:
 
 def close_pam_session(pamh: Any) -> None:
     rc = libpam.pam_setcred(pamh, ffi.PAM_DELETE_CRED)
+
     if rc != ffi.PAM_SUCCESS:
         err = pam_error_str(pamh, rc)
         raise RuntimeError(f"pam_setcred: {rc} ({err})")
 
     rc = libpam.pam_close_session(pamh, 0)
+
     if rc != ffi.PAM_SUCCESS:
         err = pam_error_str(pamh, rc)
         raise RuntimeError(f"pam_close_session failed: {rc} ({err})")
@@ -192,8 +209,10 @@ def getenvlist(pamh: Any, encoding: str = 'utf-8') -> Dict[str, str]:
 
 def authenticate(username: SecretBytes, password: SecretBytes) -> bool:
     service: bytes = b"login"
+
     conv = ffi.PamConv(password_conv, password.as_c_void_p())
     pamh = ffi.pam_handle_t()
+
     rc = ffi.PAM_CONV_ERR
 
     try:
@@ -204,6 +223,7 @@ def authenticate(username: SecretBytes, password: SecretBytes) -> bool:
             raise RuntimeError(f"pam_start failed: {rc} ({err})")
 
         rc = libpam.pam_authenticate(pamh, 0)
+
     finally:
         password.clear()
         username.clear()

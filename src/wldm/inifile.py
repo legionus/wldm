@@ -100,8 +100,7 @@ def parse_ini_file(fileobj: TextIO, *,
     return IniFile(parsed)
 
 
-def read_ini_file(path: str,
-                  *,
+def read_ini_file(path: str, *,
                   allowed: Dict[str, set[str]],
                   max_size: int,
                   ignore_unknown_sections: bool = False,
@@ -111,5 +110,4 @@ def read_ini_file(path: str,
             fileobj,
             allowed=allowed,
             ignore_unknown_sections=ignore_unknown_sections,
-            ignore_unknown_keys=ignore_unknown_keys,
-        )
+            ignore_unknown_keys=ignore_unknown_keys)

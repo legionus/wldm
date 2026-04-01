@@ -21,13 +21,16 @@ def parse_desktop_names(value: str) -> List[str]:
 
 def user_sessions_enabled() -> bool:
     value = os.environ.get("WLDM_GREETER_USER_SESSIONS", "yes").strip().lower()
+
     return value not in ["0", "false", "no", "off"]
 
 
 def configured_system_session_dirs() -> List[str]:
     value = os.environ.get("WLDM_GREETER_SESSION_DIRS", "")
+
     if value:
         return [item for item in value.split(":") if item]
+
     return list(wldm.policy.SYSTEM_WAYLAND_SESSION_DIRS)
 
 
@@ -47,6 +50,7 @@ def session_data_dirs(username: str = "") -> List[str]:
         return datadirs
 
     datadirs.insert(0, os.path.join(pw.pw_dir, configured_user_session_dir()))
+
     return datadirs
 
 
@@ -61,6 +65,7 @@ def desktop_sessions(username: str = "") -> List[Dict[str, Any]]:
                         continue
 
                     path = os.path.join(datadir, entry.name)
+
                     try:
                         desktop = wldm.inifile.read_ini_file(
                             path,
@@ -85,6 +90,7 @@ def desktop_sessions(username: str = "") -> List[Dict[str, Any]]:
                     entry_name = desktop.get("Desktop Entry", "Name")
                     entry_exec = desktop.get("Desktop Entry", "Exec")
                     entry_comment = desktop.get("Desktop Entry", "Comment")
+
                     entry_desktop_names = parse_desktop_names(desktop.get("Desktop Entry", "DesktopNames"))
 
                     if entry_type != 'application' or not entry_name or not entry_exec:

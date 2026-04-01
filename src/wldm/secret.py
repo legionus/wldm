@@ -15,6 +15,7 @@ class SecretBytes:
             raw = data.encode("utf-8")
         else:
             raw = bytes(data)
+
         self._buffer = create_string_buffer(raw)
         self._length = len(raw)
 
@@ -32,6 +33,7 @@ class SecretBytes:
         secret = cls.__new__(cls)
         secret._buffer = buffer
         secret._length = length
+
         return secret
 
     def as_bytes(self) -> bytes:

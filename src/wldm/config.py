@@ -78,23 +78,26 @@ def read_config() -> wldm.inifile.IniFile:
 
     for path in _config_candidates():
         try:
-            parsed = wldm.inifile.read_ini_file(
-                path,
-                allowed=allowed,
-                max_size=wldm.policy.CONFIG_MAX_FILE_SIZE,
-            )
+            parsed = wldm.inifile.read_ini_file(path, allowed=allowed,
+                                                max_size=wldm.policy.CONFIG_MAX_FILE_SIZE)
+
             if source_tree:
                 for key in ["execute", "pre-execute", "post-execute"]:
-                    if parsed.get_str("session", key) != "":
-                        parsed.sections["session"][key] = wldm.resolve_config_path(
+                    if parsed.get_str("session", key) == "":
+                        continue
+
+                    parsed.sections["session"][key] = wldm.resolve_config_path(
                             parsed.get_str("session", key),
-                            base_dir=os.path.dirname(path),
-                        )
+                            base_dir=os.path.dirname(path))
+
             for section, values in parsed.sections.items():
                 cfg[section].update(values)
+
             return wldm.inifile.IniFile(cfg)
+
         except FileNotFoundError:
             continue
+
         except (OSError, RuntimeError, OverflowError, UnicodeError, ValueError) as e:
             wldm.logger.warning("ignoring invalid config file %s: %s", path, e)
 

@@ -45,10 +45,12 @@ _ = gettext.gettext
 def is_valid_widget(spec: Dict[str, Any], widget: Any) -> bool:
     if spec.get("editable", False):
         editable_iface = getattr(Gtk, "Editable", None)
+
         if editable_iface is not None and not isinstance(widget, editable_iface):
             return False
 
     methods = tuple(spec.get("methods", ()))
+
     return all(hasattr(widget, method) for method in methods)
 
 
@@ -78,6 +80,7 @@ def account_service_profile(username: str) -> Dict[str, str]:
 
     profile["display_name"] = data.get("User", "RealName", default=username) or username
     avatar_path = data.get("User", "Icon")
+
     if avatar_path and os.path.isfile(avatar_path):
         profile["avatar_path"] = avatar_path
 
@@ -104,8 +107,10 @@ class SocketClient:
 
 def new_ipc_client() -> Any:
     socket_path = os.environ.get("WLDM_SOCKET", "")
+
     if not socket_path:
         raise RuntimeError("environ variable `WLDM_SOCKET' not specified")
+
     return SocketClient(socket_path)
 
 
@@ -127,6 +132,7 @@ def configured_keyboard_short_names() -> list[str]:
 
 def keyboard_state() -> tuple[list[KeyboardLayout], int]:
     display = Gdk.Display.get_default()
+
     if display is None or not hasattr(display, "get_default_seat"):
         return [], -1
 
@@ -144,6 +150,7 @@ def keyboard_state() -> tuple[list[KeyboardLayout], int]:
     try:
         layout_names = keyboard.get_layout_names()
         active_index = keyboard.get_active_layout_index()
+
     except Exception:
         return [], -1
 
@@ -188,6 +195,7 @@ def greeter_locale_path() -> str:
         return os.path.abspath(os.environ["WLDM_LOCALE_PATH"])
 
     theme_locale = os.path.join(resource_path, "locale")
+
     if os.path.isdir(theme_locale):
         return theme_locale
 
@@ -197,6 +205,7 @@ def greeter_locale_path() -> str:
 def setup_greeter_i18n() -> None:
     try:
         locale.setlocale(locale.LC_ALL, "")
+
     except locale.Error:
         pass
 
@@ -207,6 +216,7 @@ def setup_greeter_i18n() -> None:
 def default_resource_path() -> str:
     if "WLDM_RESOURCES_PATH" in os.environ:
         return os.path.abspath(os.environ["WLDM_RESOURCES_PATH"])
+
     return os.path.join(sys.prefix, "share", "wldm", "resources")
 
 
@@ -222,6 +232,7 @@ def themed_resource_path() -> str:
         return base
 
     themed = os.path.join(os.path.dirname(base), "themes", theme)
+
     if os.path.isdir(themed):
         return themed
 
@@ -408,6 +419,7 @@ class LoginApp:
         item = "Default shell"
         command = self.get_session_command()
         description = ""
+
         if command:
             item = command
             entry = self.get_selected_session()
@@ -423,6 +435,7 @@ class LoginApp:
     def refresh_sessions(self, username: str = "") -> None:
         current_name = ""
         entry = self.get_selected_session()
+
         if entry is not None:
             current_name = str(entry["name"])
 
@@ -438,16 +451,19 @@ class LoginApp:
 
             if self.sessions:
                 selected = 0
+
                 for index, session in enumerate(self.sessions):
                     if session["name"] == current_name:
                         selected = index
                         break
+
                 self.sessions_entry.set_selected(selected)
 
         self.update_session_summary()
 
     def update_identity_preview(self) -> None:
         username = ""
+
         if self.username_entry is not None:
             username = self.username_entry.get_text().strip()
 
@@ -457,6 +473,7 @@ class LoginApp:
 
         if self.identity_label is not None:
             self.identity_label.set_text(display_name)
+
         if self.avatar_label is not None:
             self.avatar_label.set_text(avatar_text)
 
@@ -475,11 +492,13 @@ class LoginApp:
     def update_clock(self) -> None:
         if self.date_label is not None:
             self.date_label.set_text(time.strftime("%A, %d %B"))
+
         if self.time_label is not None:
             self.time_label.set_text(time.strftime("%H:%M"))
 
     def update_keyboard_indicator(self) -> None:
         keyboard_label = getattr(self, "keyboard_label", None)
+
         if keyboard_label is None:
             return
 
@@ -503,6 +522,7 @@ class LoginApp:
         self.poll_events()
         self.update_clock()
         self.update_keyboard_indicator()
+
         return not self.quit
 
     def poll_events(self) -> None:
@@ -517,6 +537,7 @@ class LoginApp:
             while hasattr(self.client, "can_read") and self.client.can_read():
                 try:
                     message = self.client.read_message()
+
                 except wldm.protocol.ProtocolError as e:
                     self.log_protocol_error("bad greeter event message", e.raw, e)
                     connection_lost = True
@@ -535,6 +556,7 @@ class LoginApp:
         except Exception as e:
             logger.critical("unexpected polling error: %r", e)
             connection_lost = True
+
         finally:
             if acquired:
                 lock.release()
@@ -558,13 +580,18 @@ class LoginApp:
 
         if event_name == wldm.protocol.EVENT_SESSION_FINISHED:
             self.set_auth_state(False)
+
             if self.username_entry is not None:
                 self.username_entry.set_text("")
+
             if self.password_entry is not None:
                 self.password_entry.set_text("")
+
                 if hasattr(self.password_entry, "grab_focus"):
                     self.password_entry.grab_focus()
+
             status_message = str(payload.get("message", _("Session finished.")))
+
             self.set_status(status_message)
             return
 
@@ -598,6 +625,7 @@ class LoginApp:
 
         self.update_clock()
         self.update_keyboard_indicator()
+
         GLib.timeout_add_seconds(1, self.on_clock_tick)
 
         self.refresh_sessions()
@@ -615,6 +643,7 @@ class LoginApp:
             return ""
 
         item = self.sessions_entry.get_selected_item()
+
         if item is None:
             return ""
 
@@ -622,6 +651,7 @@ class LoginApp:
 
     def get_selected_session(self) -> Optional[Dict[str, Any]]:
         name = self.get_selected_session_name()
+
         if not name:
             return None
 
@@ -644,8 +674,10 @@ class LoginApp:
     # pylint: disable-next=unused-argument
     def on_username_changed(self, *args: Any) -> None:
         username = ""
+
         if self.username_entry is not None:
             username = self.username_entry.get_text().strip()
+
         self.refresh_sessions(username)
         self.update_identity_preview()
 
@@ -660,6 +692,7 @@ class LoginApp:
             while True:
                 try:
                     message = self.client.read_message()
+
                 except wldm.protocol.ProtocolError as e:
                     self.log_protocol_error("bad greeter response message", e.raw, e)
                     connection_lost = True
@@ -693,6 +726,7 @@ class LoginApp:
     def on_login_clicked(self, *args: Any) -> None:
         if self.username_entry is None or self.password_entry is None:
             return
+
         if self.auth_in_progress:
             return
 
@@ -708,6 +742,7 @@ class LoginApp:
                 "desktop_names": [],
                 }
         session_entry = self.get_selected_session()
+
         if session_entry is not None:
             data["desktop_names"] = list(session_entry.get("desktop_names", []))
 
@@ -717,18 +752,24 @@ class LoginApp:
 
         if len(data["password"]) == 0:
             self.set_status(_("Enter a password."))
+
             if hasattr(self.password_entry, "grab_focus"):
                 self.password_entry.grab_focus()
+
             data["password"].clear()
             return
 
         self.password_entry.set_text("")
         self.set_auth_state(True)
+
         request = wldm.protocol.new_request(wldm.protocol.ACTION_AUTH, data)
+
         try:
             answer = self.send_recv_answer(request)
+
         finally:
             request["payload"]["password"].clear()
+
         logger.debug("client answer: %s", answer)
 
         if answer.get("ok") and answer.get("payload", {}).get("verified"):
@@ -749,6 +790,7 @@ class LoginApp:
 
     def request_system_action(self, action: str, status_message: str) -> None:
         self.set_status(status_message)
+
         answer = self.send_recv_answer(wldm.protocol.new_request(action, {}))
         logger.debug("client %s answer: %s", action, answer)
 
