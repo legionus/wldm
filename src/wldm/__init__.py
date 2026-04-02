@@ -164,6 +164,7 @@ def exec_program(
     username: str, uid: int, gid: int, workdir: str,
     argv: list[str], env: dict[str, str],
     stdin_fd: int | None = None, stdout_fd: int | None = None, stderr_fd: int | None = None,
+    keep_fds: tuple[int, ...] = (),
 ) -> None:
     if stdin_fd is not None:
         os.dup2(stdin_fd, 0)
@@ -182,7 +183,13 @@ def exec_program(
     os.chdir(workdir)
 
     # Close inherited fds and replace the process image.
-    os.closerange(3, os.sysconf("SC_OPEN_MAX"))
+    close_from = 3
+    max_fd = os.sysconf("SC_OPEN_MAX")
+    sorted_keep_fds = sorted(fd for fd in keep_fds if fd >= close_from)
+    bounds = [close_from] + [x for fd in sorted_keep_fds for x in (fd, fd + 1)] + [max_fd]
+
+    for i in range(0, len(bounds), 2):
+        os.closerange(bounds[i], bounds[i + 1])
 
     os.execve(argv[0], argv, env)
 

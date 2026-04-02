@@ -256,6 +256,45 @@ def test_finish_user_session_ends_pam_even_on_close_error(monkeypatch):
     assert calls == [("close", "handle"), ("end", "handle")]
 
 
+def test_exec_program_preserves_keep_fds(monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(wldm.user_session.os, "dup2", lambda src, dst: calls.append(("dup2", src, dst)))
+    monkeypatch.setattr(wldm.user_session.os, "initgroups", lambda username, gid: calls.append(("initgroups", username, gid)))
+    monkeypatch.setattr(wldm.user_session.os, "setgid", lambda gid: calls.append(("setgid", gid)))
+    monkeypatch.setattr(wldm.user_session.os, "setuid", lambda uid: calls.append(("setuid", uid)))
+    monkeypatch.setattr(wldm.user_session.os, "chdir", lambda path: calls.append(("chdir", path)))
+    monkeypatch.setattr(wldm.user_session.os, "sysconf", lambda name: 16)
+    monkeypatch.setattr(wldm.user_session.os, "closerange", lambda start, end: calls.append(("closerange", start, end)))
+    monkeypatch.setattr(wldm.user_session.os, "execve", lambda prog, argv, env: calls.append(("execve", prog, argv, env)))
+
+    wldm.exec_program(
+        username="alice",
+        uid=1001,
+        gid=1001,
+        workdir="/home/alice",
+        argv=["/usr/bin/sway", "--debug"],
+        env={"HOME": "/home/alice"},
+        stdin_fd=9,
+        stdout_fd=9,
+        stderr_fd=9,
+        keep_fds=[7],
+    )
+
+    assert calls == [
+        ("dup2", 9, 0),
+        ("dup2", 9, 1),
+        ("dup2", 9, 2),
+        ("initgroups", "alice", 1001),
+        ("setgid", 1001),
+        ("setuid", 1001),
+        ("chdir", "/home/alice"),
+        ("closerange", 3, 7),
+        ("closerange", 8, 16),
+        ("execve", "/usr/bin/sway", ["/usr/bin/sway", "--debug"], {"HOME": "/home/alice"}),
+    ]
+
+
 def test_cmd_main_fails_for_unknown_user(monkeypatch):
     monkeypatch.setattr(
         wldm.user_session.pwd,
