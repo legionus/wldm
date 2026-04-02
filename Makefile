@@ -11,7 +11,7 @@ LOCALEDIR ?= $(PREFIX)/share/locale
 
 WLDM_DATADIR := $(DATADIR)/wldm
 CONFIG_TEMPLATE := config/wldm.ini.in
-SERVICE_TEMPLATE := systemd/wldm.service.in
+SERVICE_TEMPLATE := data/systemd/wldm.service.in
 
 .PHONY: all install install-python install-data install-config install-systemd uninstall
 
@@ -24,10 +24,10 @@ install-python:
 
 install-data:
 	install -d $(DESTDIR)$(WLDM_DATADIR)/resources
-	install -m 0644 resources/greeter.ui $(DESTDIR)$(WLDM_DATADIR)/resources/greeter.ui
-	install -m 0644 resources/style.css $(DESTDIR)$(WLDM_DATADIR)/resources/style.css
+	install -m 0644 data/resources/greeter.ui $(DESTDIR)$(WLDM_DATADIR)/resources/greeter.ui
+	install -m 0644 data/resources/style.css $(DESTDIR)$(WLDM_DATADIR)/resources/style.css
 	install -d $(DESTDIR)$(WLDM_DATADIR)/scripts
-	install -m 0755 scripts/wayland-session $(DESTDIR)$(WLDM_DATADIR)/scripts/wayland-session
+	install -m 0755 data/scripts/wayland-session $(DESTDIR)$(WLDM_DATADIR)/scripts/wayland-session
 
 install-config:
 	install -d $(DESTDIR)$(SYSCONFDIR)

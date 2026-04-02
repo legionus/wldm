@@ -7,7 +7,7 @@ SCRIPT_TOP="${SCRIPT_TOP:-$(dirname ${REAL_SCRIPT})}"
 
 export PYTHONPATH="${SCRIPT_TOP}/src"
 export WLDM_SOURCE_TREE=1
-export WLDM_DATA_DIR="${SCRIPT_TOP}"
+export WLDM_DATA_DIR="${SCRIPT_TOP}/data"
 export WLDM_CONFIG="${WLDM_CONFIG:-${SCRIPT_TOP}/config/wldm-devel.ini}"
 
 exec python3 "${SCRIPT_TOP}/src/wldm/command.py" "${@}"
