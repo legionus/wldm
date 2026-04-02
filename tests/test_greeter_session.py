@@ -5,6 +5,8 @@ from types import SimpleNamespace
 import pwd
 
 import wldm.greeter_session
+import wldm.pam
+import wldm.tty
 
 
 def test_new_greeter_environ_preserves_safe_base_env_and_adds_runtime_dir(monkeypatch):
@@ -21,7 +23,7 @@ def test_new_greeter_environ_preserves_safe_base_env_and_adds_runtime_dir(monkey
         },
     )
     monkeypatch.setattr(
-        wldm.greeter_session.wldm.pam,
+        wldm.pam,
         "getenvlist",
         lambda pamh: {"XDG_RUNTIME_DIR": "/run/user/1001", "LANG": "C.UTF-8"},
     )
@@ -42,7 +44,7 @@ def test_new_greeter_environ_preserves_safe_base_env_and_adds_runtime_dir(monkey
 
 def test_new_greeter_environ_falls_back_to_user_runtime_dir(monkeypatch):
     monkeypatch.setattr(wldm.greeter_session.os, "environ", {"PATH": "/usr/bin"})
-    monkeypatch.setattr(wldm.greeter_session.wldm.pam, "getenvlist", lambda pamh: {})
+    monkeypatch.setattr(wldm.pam, "getenvlist", lambda pamh: {})
     pw = pwd.struct_passwd(("gdm", "x", 32, 32, "", "/var/lib/gdm", "/bin/false"))
 
     env = wldm.greeter_session.new_greeter_environ(object(), pw)
@@ -102,7 +104,7 @@ def test_prepare_greeter_terminal_switches_and_sets_controlling_tty(monkeypatch)
 
     monkeypatch.setattr(wldm.greeter_session.os, "setsid", lambda: calls.append(("setsid",)))
     monkeypatch.setattr(
-        wldm.greeter_session.wldm.tty,
+        wldm.tty,
         "make_control_tty",
         lambda fd: calls.append(("make_control_tty", fd)) or True,
     )
@@ -125,7 +127,7 @@ def test_prepare_greeter_terminal_fails_when_tty_cannot_become_controlling(monke
             return None
 
     monkeypatch.setattr(wldm.greeter_session.os, "setsid", lambda: None)
-    monkeypatch.setattr(wldm.greeter_session.wldm.tty, "make_control_tty", lambda fd: False)
+    monkeypatch.setattr(wldm.tty, "make_control_tty", lambda fd: False)
 
     try:
         wldm.greeter_session.prepare_greeter_terminal(DummyTTY())

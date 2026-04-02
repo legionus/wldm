@@ -7,10 +7,13 @@ import stat
 from types import SimpleNamespace
 
 import wldm.daemon
+import wldm.config
 import wldm.inifile
+import wldm.pam
 import wldm.protocol
 import wldm.secret
 import wldm.state
+import wldm.tty
 
 
 class DummyReader:
@@ -133,7 +136,7 @@ def make_config(user="gdm",
 
 
 def test_verify_creds_requires_username_and_password(monkeypatch):
-    monkeypatch.setattr(wldm.daemon.wldm.pam, "authenticate", lambda username, password: True)
+    monkeypatch.setattr(wldm.pam, "authenticate", lambda username, password: True)
 
     assert wldm.daemon.verify_creds(wldm.secret.SecretBytes(b"alice"), wldm.secret.SecretBytes(b"secret")) is True
     assert wldm.daemon.verify_creds(wldm.secret.SecretBytes(b"alice"), wldm.secret.SecretBytes()) is False
@@ -141,7 +144,7 @@ def test_verify_creds_requires_username_and_password(monkeypatch):
 
 def test_verify_creds_returns_false_on_auth_exception(monkeypatch):
     monkeypatch.setattr(
-        wldm.daemon.wldm.pam,
+        wldm.pam,
         "authenticate",
         lambda username, password: (_ for _ in ()).throw(RuntimeError("boom")),
     )
@@ -496,7 +499,7 @@ def test_send_session_finished_switches_back_to_greeter_tty(monkeypatch):
     state.active_sessions[333] = wldm.daemon.SessionState(proc=proc, username="alice", command="sway")
     changes = []
 
-    monkeypatch.setattr(wldm.daemon.wldm.tty, "change", lambda console, tty: changes.append((console, tty)) or True)
+    monkeypatch.setattr(wldm.tty, "change", lambda console, tty: changes.append((console, tty)) or True)
 
     asyncio.run(wldm.daemon.send_session_finished(state, state.active_sessions[333]))
 
@@ -516,7 +519,7 @@ def test_send_session_finished_saves_last_successful_session(tmp_path, monkeypat
     session = wldm.daemon.SessionState(proc=proc, username="alice", command="sway --debug")
     state.active_sessions[555] = session
 
-    monkeypatch.setattr(wldm.daemon.wldm.tty, "change", lambda console, tty: True)
+    monkeypatch.setattr(wldm.tty, "change", lambda console, tty: True)
 
     asyncio.run(wldm.daemon.send_session_finished(state, session))
 
@@ -533,7 +536,7 @@ def test_send_session_finished_reports_failed_session(monkeypatch):
     proc = DummyAsyncProc(pid=444, returncode=7)
     state.active_sessions[444] = wldm.daemon.SessionState(proc=proc, username="alice", command="sway")
 
-    monkeypatch.setattr(wldm.daemon.wldm.tty, "change", lambda console, tty: True)
+    monkeypatch.setattr(wldm.tty, "change", lambda console, tty: True)
 
     asyncio.run(wldm.daemon.send_session_finished(state, state.active_sessions[444]))
 
@@ -693,7 +696,7 @@ def test_wait_for_stop_or_process_returns_false_when_process_exits():
 
 
 def test_run_daemon_async_fails_when_console_is_unavailable(monkeypatch):
-    monkeypatch.setattr(wldm.daemon.wldm.tty, "open_console", lambda: None)
+    monkeypatch.setattr(wldm.tty, "open_console", lambda: None)
 
     result = asyncio.run(wldm.daemon.run_daemon_async(SimpleNamespace(tty=None), make_config()))
 
@@ -703,8 +706,8 @@ def test_run_daemon_async_fails_when_console_is_unavailable(monkeypatch):
 def test_run_daemon_async_fails_when_tty_switch_fails(monkeypatch):
     closed = []
 
-    monkeypatch.setattr(wldm.daemon.wldm.tty, "open_console", lambda: 88)
-    monkeypatch.setattr(wldm.daemon.wldm.tty, "change", lambda console, tty: False)
+    monkeypatch.setattr(wldm.tty, "open_console", lambda: 88)
+    monkeypatch.setattr(wldm.tty, "change", lambda console, tty: False)
     monkeypatch.setattr(wldm.daemon.os, "close", lambda fd: closed.append(fd))
 
     result = asyncio.run(wldm.daemon.run_daemon_async(SimpleNamespace(tty=None), make_config(tty="7")))
@@ -731,8 +734,8 @@ def test_run_daemon_async_stops_after_configured_failed_greeter_starts(monkeypat
     async def fake_sleep(seconds):
         sleeps.append(seconds)
 
-    monkeypatch.setattr(wldm.daemon.wldm.tty, "open_console", lambda: 88)
-    monkeypatch.setattr(wldm.daemon.wldm.tty, "change", lambda console, tty: True)
+    monkeypatch.setattr(wldm.tty, "open_console", lambda: 88)
+    monkeypatch.setattr(wldm.tty, "change", lambda console, tty: True)
     monkeypatch.setattr(wldm.daemon.pwd, "getpwnam", lambda user: SimpleNamespace(pw_uid=32))
     monkeypatch.setattr(wldm.daemon, "create_greeter_listener", lambda user, group, path: listener)
     monkeypatch.setattr(wldm.daemon.asyncio, "start_unix_server", fake_start_unix_server)
@@ -773,8 +776,8 @@ def test_run_daemon_async_cleans_up_after_stop_signal(monkeypatch):
     async def fake_cleanup_async(state):
         cleanup_calls.append(state)
 
-    monkeypatch.setattr(wldm.daemon.wldm.tty, "open_console", lambda: 88)
-    monkeypatch.setattr(wldm.daemon.wldm.tty, "change", lambda console, tty: True)
+    monkeypatch.setattr(wldm.tty, "open_console", lambda: 88)
+    monkeypatch.setattr(wldm.tty, "change", lambda console, tty: True)
     monkeypatch.setattr(wldm.daemon.pwd, "getpwnam", lambda user: SimpleNamespace(pw_uid=32))
     monkeypatch.setattr(wldm.daemon, "create_greeter_listener", lambda user, group, path: listener)
     monkeypatch.setattr(wldm.daemon.asyncio, "start_unix_server", fake_start_unix_server)
@@ -811,8 +814,8 @@ def test_run_daemon_async_cleans_up_on_cancellation(monkeypatch):
     async def fake_cleanup_async(state):
         cleanup_calls.append(state)
 
-    monkeypatch.setattr(wldm.daemon.wldm.tty, "open_console", lambda: 88)
-    monkeypatch.setattr(wldm.daemon.wldm.tty, "change", lambda console, tty: True)
+    monkeypatch.setattr(wldm.tty, "open_console", lambda: 88)
+    monkeypatch.setattr(wldm.tty, "change", lambda console, tty: True)
     monkeypatch.setattr(wldm.daemon.pwd, "getpwnam", lambda user: SimpleNamespace(pw_uid=32))
     monkeypatch.setattr(wldm.daemon, "create_greeter_listener", lambda user, group, path: listener)
     monkeypatch.setattr(wldm.daemon.asyncio, "start_unix_server", fake_start_unix_server)
@@ -838,7 +841,7 @@ def test_cmd_main_enables_daemon_file_log_when_configured(monkeypatch):
     cfg = make_config(daemon_log="/tmp/wldm/daemon.log")
     calls = []
 
-    monkeypatch.setattr(wldm.daemon.wldm.config, "read_config", lambda: cfg)
+    monkeypatch.setattr(wldm.config, "read_config", lambda: cfg)
     monkeypatch.setattr(
         wldm.daemon.wldm,
         "setup_file_logger",
