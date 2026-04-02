@@ -16,7 +16,7 @@ The main pieces are:
 - `wldm` daemon: root-owned supervisor
 - `wldm greeter-session`: PAM-backed launcher for the greeter compositor
 - `wldm greeter`: GTK login UI
-- `wldm session`: PAM-backed launcher for the selected user session
+- `wldm user-session`: PAM-backed launcher for the selected user session
 
 ## Process Model
 
@@ -38,7 +38,7 @@ systemd
    ├─ wldm greeter-session
    │  └─ cage
    │     └─ wldm greeter
-   └─ wldm session
+   └─ wldm user-session
       └─ user program / shell / compositor
 ```
 
@@ -95,7 +95,7 @@ the daemon after successful authentication.
 
 ### User Session Wrapper
 
-[`src/wldm/session.py`](../src/wldm/session.py) creates the final user session.
+[`src/wldm/user_session.py`](../src/wldm/user_session.py) creates the final user session.
 Like the greeter wrapper, it performs session setup before `execve()`-ing the
 selected user program.
 

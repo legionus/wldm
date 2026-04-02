@@ -101,7 +101,7 @@ baking those paths into the main config.
 
   Relative paths are resolved against the directory that contains the loaded
   `wldm.ini` only in source-tree mode (`WLDM_SOURCE_TREE=1`), so the in-tree
-  development config can use `../scripts/wayland-session`.
+  development config can use `../data/scripts/wayland-session`.
 - `pre-execute`
   Optional executable run after the user PAM session is opened and the session
   environment is prepared, but before the final user program is executed.
@@ -149,7 +149,7 @@ Instead, it exposes the configured values to `greeter.command`, which lets
 
 ## Verbosity
 
-`wldm`, `wldm greeter`, `wldm session`, and `wldm greeter-session` all accept
+`wldm`, `wldm greeter`, `wldm user-session`, and `wldm greeter-session` all accept
 the common CLI flags:
 
 - `-v`

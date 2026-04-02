@@ -19,9 +19,9 @@ def cmd_greeter(cmdargs: argparse.Namespace) -> int:
     return wldm.greeter.cmd_main(cmdargs)
 
 
-def cmd_session(cmdargs: argparse.Namespace) -> int:
-    import wldm.session
-    return wldm.session.cmd_main(cmdargs)
+def cmd_user_session(cmdargs: argparse.Namespace) -> int:
+    import wldm.user_session
+    return wldm.user_session.cmd_main(cmdargs)
 
 
 def cmd_greeter_session(cmdargs: argparse.Namespace) -> int:
@@ -64,16 +64,16 @@ allows selection of which application to start at login.
     sp.set_defaults(func=cmd_greeter)
     wldm.add_common_arguments(sp)
 
-    # command: session
+    # command: user-session
     sp_description = """\
 opens a session for the user.
 
 """
-    sp = subparsers.add_parser("session",
+    sp = subparsers.add_parser("user-session",
                                formatter_class=argparse.RawTextHelpFormatter,
                                description=sp_description, help=sp_description,
                                epilog=epilog, add_help=False)
-    sp.set_defaults(func=cmd_session)
+    sp.set_defaults(func=cmd_user_session)
     wldm.add_common_arguments(sp)
     sp.add_argument("username", help="user to login")
     sp.add_argument("prog", nargs='?', default="", help="script when booting into custom rootfs")

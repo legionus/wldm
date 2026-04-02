@@ -439,7 +439,7 @@ def test_handle_request_async_starts_session_after_auth(monkeypatch):
         assert cmd == (
             "/usr/bin/python3",
             "/srv/wldm/src/wldm/command.py",
-            "session",
+            "user-session",
             "--",
             "alice",
             "startplasma-wayland",

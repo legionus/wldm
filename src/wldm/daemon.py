@@ -415,7 +415,7 @@ async def handle_request_async(state: DaemonState,
         # Sessions are tracked independently from the greeter so the daemon can
         # notify the UI when they finish and clean them up during shutdown.
         proc = await asyncio.create_subprocess_exec(
-            *state.internal_command, "session", "--",
+            *state.internal_command, "user-session", "--",
             outcome.session_username, *shlex.split(outcome.session_command),
             env=dict(
                 os.environ,
