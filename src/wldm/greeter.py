@@ -210,15 +210,15 @@ def setup_greeter_logging() -> None:
 
 
 def greeter_locale_path() -> str:
-    if "WLDM_LOCALE_PATH" in os.environ:
-        return os.path.abspath(os.environ["WLDM_LOCALE_PATH"])
+    if "WLDM_LOCALE_DIR" in os.environ:
+        return os.path.abspath(os.environ["WLDM_LOCALE_DIR"])
 
     theme_locale = os.path.join(resource_path, "locale")
 
     if os.path.isdir(theme_locale):
         return theme_locale
 
-    return os.path.join(sys.prefix, "share", "locale")
+    return ""
 
 
 def setup_greeter_i18n() -> None:
@@ -233,10 +233,12 @@ def setup_greeter_i18n() -> None:
 
 
 def default_resource_path() -> str:
-    if "WLDM_RESOURCES_PATH" in os.environ:
-        return os.path.abspath(os.environ["WLDM_RESOURCES_PATH"])
+    data_dir = os.environ.get("WLDM_DATA_DIR", "").strip()
 
-    return os.path.join(sys.prefix, "share", "wldm", "resources")
+    if not data_dir:
+        return ""
+
+    return os.path.join(os.path.abspath(data_dir), "resources")
 
 
 def greeter_theme() -> str:

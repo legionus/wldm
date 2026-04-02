@@ -7,16 +7,15 @@ This document describes the runtime configuration options understood by `wldm`.
 `wldm` reads configuration from the first file that exists in this order:
 
 1. `WLDM_CONFIG`
-2. `config/wldm.ini` next to the launcher script
-3. `sys.prefix/share/wldm/config/wldm.ini`
-4. `/etc/wldm.ini`
+2. `/etc/wldm.ini`
 
 The production-oriented repository default file is
 [`config/wldm.ini`](../config/wldm.ini).
 
 For source-tree development, [`wldm.sh`](../wldm.sh) sets `WLDM_CONFIG` to
 [`config/wldm-devel.ini`](../config/wldm-devel.ini), which keeps runtime
-artifacts under `/tmp/wldm/` without baking those paths into the main config.
+artifacts under `/tmp/wldm/` and points the greeter at in-tree assets without
+baking those paths into the main config.
 
 ## `[daemon]`
 
@@ -26,8 +25,9 @@ artifacts under `/tmp/wldm/` without baking those paths into the main config.
   UNIX socket used for daemon/greeter IPC. Default: `/run/wldm/greeter.sock`.
 - `state-dir`
   Optional directory used for small daemon-managed runtime state. When set,
-  `wldm` stores the last successfully completed session command there and uses
-  it as the greeter's default session selection on the next login screen.
+  `wldm` stores the last successfully completed username and session command in
+  a bounded `last-session` state file there and uses them to restore the
+  greeter state on the next login screen.
 - `log-path`
   Daemon log file. Default: empty, which keeps logging on stderr/journal.
 - `poweroff-command`
@@ -49,14 +49,21 @@ artifacts under `/tmp/wldm/` without baking those paths into the main config.
   Primary group for the greeter account.
 - `tty`
   Virtual terminal reserved for the greeter. Default: `7`.
+- `data-dir`
+  Directory that contains greeter assets such as `resources/` and optional
+  `themes/`. The installed config points this at `/usr/share/wldm`.
+- `locale-dir`
+  Directory that contains gettext catalogs for the greeter. The installed
+  config points this at `/usr/share/locale`.
 - `theme`
-  Greeter theme name. `default` uses the built-in `resources/` directory.
-  Any other value makes the greeter look for `themes/<name>/` next to the
-  resource base path and fall back to `default` if it does not exist.
+  Greeter theme name. `default` uses `data-dir/resources`. Any other value
+  makes the greeter look for `themes/<name>/` next to that resource base path
+  and fall back to `default` if it does not exist.
+
   Themes may also ship `locale/<lang>/LC_MESSAGES/wldm.mo` under their theme
   directory. When present, the greeter uses that locale tree for GtkBuilder
   labels, tooltips, and other gettext-backed greeter strings while the theme
-  is active.
+  is active before falling back to `locale-dir`.
 - `session-dirs`
   Colon-separated list of system directories scanned for session `.desktop`
   files. Default: `/usr/share/wayland-sessions`.
@@ -81,26 +88,29 @@ artifacts under `/tmp/wldm/` without baking those paths into the main config.
 - `pam-service`
   PAM service used for the final user session. Default: `login`.
 - `execute`
-  Session startup wrapper used to run the selected user session. Default:
-  `/usr/share/wldm/scripts/wayland-session`.
-  Set this to an empty value to execute the selected session command directly
-  without a wrapper.
+  Session startup wrapper used to run the selected user session. The installed
+  `/etc/wldm.ini` sets this to `data-dir/scripts/wayland-session`. Set this to
+  an empty value to execute the selected session command directly without a
+  wrapper.
+
   This is useful when the session needs extra preparation before the compositor
   starts, for example running it through the user's login shell so
   `/etc/profile` and `~/.profile` are loaded, or replacing the default wrapper
   with a site-local script that does additional setup such as
   `dbus-update-activation-environment --systemd`.
+
   Relative paths are resolved against the directory that contains the loaded
   `wldm.ini` only in source-tree mode (`WLDM_SOURCE_TREE=1`), so the in-tree
-  development config can use
-  `../scripts/wayland-session`.
+  development config can use `../scripts/wayland-session`.
 - `pre-execute`
   Optional executable run after the user PAM session is opened and the session
   environment is prepared, but before the final user program is executed.
-  A non-zero exit status aborts the session start.
+  `wldm` invokes it as `pre-execute <session-command> [args...]`. A non-zero
+  exit status aborts the session start.
 - `post-execute`
-  Optional executable run after the user session exits and before the PAM session
-  is closed. A non-zero exit status is logged but does not interrupt cleanup.
+  Optional executable run after the user session exits and before the PAM
+  session is closed. `wldm` invokes it as `post-execute <session-command>
+  [args...]`. A non-zero exit status is logged but does not interrupt cleanup.
 
 Session hooks are executed as the target user, not as `root`. They inherit the
 session environment assembled by `wldm`, including `XDG_RUNTIME_DIR`,
@@ -111,10 +121,10 @@ metadata is available.
 `wldm` also adds:
 
 - `WLDM_TTY`
-- `WLDM_SESSION_COMMAND`
 
-These values are executable paths, not shell command lines. Relative paths are
-resolved against the directory that contains the loaded `wldm.ini`.
+The hook paths themselves are executable paths, not shell command lines.
+Relative paths are resolved against the directory that contains the loaded
+`wldm.ini`.
 
 ## `[keyboard]`
 
@@ -180,6 +190,8 @@ hibernate-command = systemctl hibernate
 user = gdm
 group = gdm
 tty = 7
+data-dir = /usr/share/wldm
+locale-dir = /usr/share/locale
 theme = default
 session-dirs = /usr/share/wayland-sessions
 user-session-dir = .local/share/wayland-sessions

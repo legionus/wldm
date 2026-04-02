@@ -38,6 +38,12 @@ group = gdm
 # Virtual terminal reserved for the greeter.
 tty = 7
 
+# Directory that contains wldm runtime assets such as resources/ and themes/.
+data-dir = @datadir@
+
+# Directory that contains locale catalogs used by the greeter.
+locale-dir = @localedir@
+
 # Theme name. "default" uses the built-in resources directory.
 theme = default
 
@@ -73,8 +79,9 @@ log-path =
 pam-service = login
 
 # Optional wrapper executable used to launch the chosen session command.
-# Leave empty to exec the session command directly.
-execute = /usr/share/wldm/scripts/wayland-session
+# Packaging rewrites this path to match the installation prefix.
+# Set an empty value to exec the session command directly.
+execute = @datadir@/scripts/wayland-session
 
 # Optional helper executable run after PAM/session setup but before the final
 # session command starts. A non-zero exit status aborts startup.

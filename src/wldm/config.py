@@ -4,7 +4,6 @@
 
 import os
 import os.path
-import sys
 import pwd
 import grp
 
@@ -19,7 +18,6 @@ def _config_candidates() -> list[str]:
     if "WLDM_CONFIG" in os.environ:
         candidates.append(os.environ["WLDM_CONFIG"])
 
-    candidates.append(os.path.join(sys.prefix, "share", "wldm", "config", "wldm.ini"))
     candidates.append("/etc/wldm.ini")
 
     return candidates
@@ -44,6 +42,8 @@ def read_config() -> wldm.inifile.IniFile:
             "user": ent_pw.pw_name,
             "group": ent_gr.gr_name,
             "tty": "7",
+            "data-dir": "",
+            "locale-dir": "",
             "theme": "default",
             "session-dirs": ":".join(wldm.policy.SYSTEM_WAYLAND_SESSION_DIRS),
             "user-session-dir": wldm.policy.USER_WAYLAND_SESSION_DIR,
@@ -55,7 +55,7 @@ def read_config() -> wldm.inifile.IniFile:
         },
         "session": {
             "pam-service": "login",
-            "execute": "/usr/share/wldm/scripts/wayland-session",
+            "execute": "",
             "pre-execute": "",
             "post-execute": "",
         },
@@ -83,6 +83,16 @@ def read_config() -> wldm.inifile.IniFile:
                                                 max_size=wldm.policy.CONFIG_MAX_FILE_SIZE)
 
             if source_tree:
+                if parsed.get_str("greeter", "data-dir") != "":
+                    parsed.sections["greeter"]["data-dir"] = wldm.resolve_config_path(
+                            parsed.get_str("greeter", "data-dir"),
+                            base_dir=os.path.dirname(path))
+
+                if parsed.get_str("greeter", "locale-dir") != "":
+                    parsed.sections["greeter"]["locale-dir"] = wldm.resolve_config_path(
+                            parsed.get_str("greeter", "locale-dir"),
+                            base_dir=os.path.dirname(path))
+
                 for key in ["execute", "pre-execute", "post-execute"]:
                     if parsed.get_str("session", key) == "":
                         continue

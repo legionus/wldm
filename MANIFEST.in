@@ -1,0 +1,9 @@
+include Makefile
+include config/wldm.ini
+include config/wldm.ini.in
+include config/wldm-devel.ini
+include resources/greeter.ui
+include resources/style.css
+include scripts/wayland-session
+include systemd/wldm.service
+include systemd/wldm.service.in

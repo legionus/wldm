@@ -1043,13 +1043,12 @@ def test_on_login_clicked_sets_success_message_and_clears_username(monkeypatch):
 def test_cmd_main_validates_resources_path(monkeypatch, tmp_path):
     greeter = load_greeter_module(monkeypatch)
 
-    monkeypatch.delenv("WLDM_RESOURCES_PATH", raising=False)
-    monkeypatch.setattr(greeter.sys, "prefix", str(tmp_path / "missing"))
+    monkeypatch.delenv("WLDM_DATA_DIR", raising=False)
     assert greeter.cmd_main(types.SimpleNamespace()) == greeter.wldm.EX_FAILURE
 
-    resource_dir = tmp_path / "resources"
-    resource_dir.mkdir()
-    monkeypatch.setenv("WLDM_RESOURCES_PATH", str(resource_dir))
+    data_dir = tmp_path
+    (data_dir / "resources").mkdir()
+    monkeypatch.setenv("WLDM_DATA_DIR", str(data_dir))
     monkeypatch.setenv("WLDM_SOCKET", "/tmp/wldm/greeter.sock")
     monkeypatch.setattr(greeter.os.path, "isfile", lambda path: False)
 
@@ -1071,16 +1070,23 @@ def test_cmd_main_validates_resources_path(monkeypatch, tmp_path):
 def test_default_resource_path_uses_installed_share_when_env_is_missing(monkeypatch, tmp_path):
     greeter = load_greeter_module(monkeypatch)
 
-    monkeypatch.delenv("WLDM_RESOURCES_PATH", raising=False)
-    monkeypatch.setattr(greeter.sys, "prefix", str(tmp_path))
+    monkeypatch.setenv("WLDM_DATA_DIR", str(tmp_path / "share" / "wldm"))
 
     assert greeter.default_resource_path() == str(tmp_path / "share" / "wldm" / "resources")
+
+
+def test_default_resource_path_is_empty_without_resource_env_or_data_dir(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+
+    monkeypatch.delenv("WLDM_DATA_DIR", raising=False)
+
+    assert greeter.default_resource_path() == ""
 
 
 def test_themed_resource_path_uses_default_theme(monkeypatch, tmp_path):
     greeter = load_greeter_module(monkeypatch)
 
-    monkeypatch.setenv("WLDM_RESOURCES_PATH", str(tmp_path / "resources"))
+    monkeypatch.setenv("WLDM_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("WLDM_THEME", "default")
 
     assert greeter.themed_resource_path() == str(tmp_path / "resources")
@@ -1093,7 +1099,7 @@ def test_themed_resource_path_uses_named_theme_when_present(monkeypatch, tmp_pat
     base.mkdir()
     theme_dir.mkdir(parents=True)
 
-    monkeypatch.setenv("WLDM_RESOURCES_PATH", str(base))
+    monkeypatch.setenv("WLDM_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("WLDM_THEME", "retro")
 
     assert greeter.themed_resource_path() == str(theme_dir)
@@ -1105,7 +1111,7 @@ def test_themed_resource_path_falls_back_to_default_when_theme_is_missing(monkey
     base.mkdir()
     warnings = []
 
-    monkeypatch.setenv("WLDM_RESOURCES_PATH", str(base))
+    monkeypatch.setenv("WLDM_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("WLDM_THEME", "missing")
     monkeypatch.setattr(greeter.logger, "warning", lambda msg, *args: warnings.append(msg % args if args else msg))
 
@@ -1119,15 +1125,15 @@ def test_greeter_locale_path_prefers_theme_locale(monkeypatch, tmp_path):
     locale_dir = theme_dir / "locale"
     locale_dir.mkdir(parents=True)
     greeter.resource_path = str(theme_dir)
-    monkeypatch.delenv("WLDM_LOCALE_PATH", raising=False)
+    monkeypatch.delenv("WLDM_LOCALE_DIR", raising=False)
 
     assert greeter.greeter_locale_path() == str(locale_dir)
 
 
-def test_greeter_locale_path_prefers_explicit_env(monkeypatch, tmp_path):
+def test_greeter_locale_path_prefers_locale_dir(monkeypatch, tmp_path):
     greeter = load_greeter_module(monkeypatch)
     greeter.resource_path = str(tmp_path / "resources")
-    monkeypatch.setenv("WLDM_LOCALE_PATH", str(tmp_path / "locale"))
+    monkeypatch.setenv("WLDM_LOCALE_DIR", str(tmp_path / "locale"))
 
     assert greeter.greeter_locale_path() == str(tmp_path / "locale")
 
@@ -1413,7 +1419,7 @@ def test_cmd_main_loads_css_when_present(monkeypatch, tmp_path):
     css_path = resource_dir / "style.css"
     css_path.write_text("label {}", encoding="utf-8")
 
-    monkeypatch.setenv("WLDM_RESOURCES_PATH", str(resource_dir))
+    monkeypatch.setenv("WLDM_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("WLDM_SOCKET", "/tmp/wldm/greeter.sock")
     monkeypatch.setattr(greeter.os.path, "isdir", lambda path: True)
     monkeypatch.setattr(greeter.os.path, "isfile", lambda path: path == str(css_path))

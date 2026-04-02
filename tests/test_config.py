@@ -29,6 +29,8 @@ def test_read_config_uses_explicit_repo_config(monkeypatch):
     assert cfg["greeter"]["user"] == "gdm"
     assert cfg["greeter"]["group"] == "gdm"
     assert cfg["greeter"]["tty"] == "7"
+    assert cfg["greeter"]["data-dir"] == "/usr/share/wldm"
+    assert cfg["greeter"]["locale-dir"] == "/usr/share/locale"
     assert cfg["greeter"]["theme"] == "default"
     assert cfg["greeter"]["session-dirs"] == "/usr/share/wayland-sessions"
     assert cfg["greeter"]["user-session-dir"] == ".local/share/wayland-sessions"
@@ -78,13 +80,15 @@ def test_read_config_sets_default_runtime_greeter_values(monkeypatch):
     assert cfg["daemon"]["hibernate-command"] == ""
     assert cfg["greeter"]["user"] == "fallback-user"
     assert cfg["greeter"]["group"] == "fallback-group"
+    assert cfg["greeter"]["data-dir"] == ""
+    assert cfg["greeter"]["locale-dir"] == ""
     assert cfg["greeter"]["theme"] == "default"
     assert cfg["greeter"]["session-dirs"] == "/usr/share/wayland-sessions"
     assert cfg["greeter"]["user-session-dir"] == ".local/share/wayland-sessions"
     assert cfg["greeter"]["user-sessions"] == "yes"
     assert cfg["greeter"]["log-path"] == ""
     assert cfg["session"]["pam-service"] == "login"
-    assert cfg["session"]["execute"] == "/usr/share/wldm/scripts/wayland-session"
+    assert cfg["session"]["execute"] == ""
     assert cfg["session"]["pre-execute"] == ""
     assert cfg["session"]["post-execute"] == ""
     assert cfg["keyboard"]["rules"] == ""
@@ -122,6 +126,8 @@ def test_read_config_loads_devel_overrides_when_selected_explicitly(monkeypatch)
     assert cfg["daemon"]["state-dir"] == "/tmp/wldm/state"
     assert cfg["daemon"]["log-path"] == "/tmp/wldm/daemon.log"
     assert cfg["greeter"]["log-path"] == "/tmp/wldm/greeter.log"
+    assert cfg["greeter"]["data-dir"] == str(repo_root)
+    assert cfg["greeter"]["locale-dir"] == str(repo_root / "locale")
     assert cfg["session"]["execute"] == str(repo_root / "scripts" / "wayland-session")
 
 
@@ -138,20 +144,6 @@ def test_read_config_keeps_relative_session_paths_outside_source_tree(monkeypatc
     cfg = wldm.config.read_config()
 
     assert cfg["session"]["execute"] == "../scripts/wayland-session"
-
-
-def test_read_config_uses_installed_share_default(monkeypatch, tmp_path):
-    config_dir = tmp_path / "share" / "wldm" / "config"
-    config_dir.mkdir(parents=True)
-    config_file = config_dir / "wldm.ini"
-    config_file.write_text("[greeter]\nuser = share-user\n", encoding="utf-8")
-
-    monkeypatch.delenv("WLDM_CONFIG", raising=False)
-    monkeypatch.setattr(wldm.config.sys, "prefix", str(tmp_path))
-
-    cfg = wldm.config.read_config()
-
-    assert cfg["greeter"]["user"] == "share-user"
 
 
 def test_read_config_ignores_invalid_explicit_file(monkeypatch, tmp_path):
