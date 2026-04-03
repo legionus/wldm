@@ -13,10 +13,13 @@ whole login flow in one privileged address space.
 
 The main pieces are:
 
-- `wldm` daemon: root-owned supervisor
-- `wldm greeter-session`: PAM-backed launcher for the greeter compositor
+- `wldm` daemon: root-owned supervisor and source of truth
+- `wldm greeter-session`: PAM-backed launcher and supervisor for the greeter
+  compositor
 - `wldm greeter`: GTK login UI
 - `wldm user-session`: PAM-backed launcher for the selected user session
+- `wldm dbus-adapter`: optional unprivileged bridge from daemon state to
+  `org.freedesktop.DisplayManager`
 
 ## Process Model
 
@@ -30,6 +33,17 @@ systemd
          └─ wldm greeter
 ```
 
+When D-Bus integration is enabled, the daemon also starts the adapter:
+
+```text
+systemd
+└─ wldm                 (root daemon)
+   ├─ wldm greeter-session
+   │  └─ cage
+   │     └─ wldm greeter
+   └─ wldm dbus-adapter
+```
+
 After successful authentication, the daemon also starts a user session:
 
 ```text
@@ -38,6 +52,7 @@ systemd
    ├─ wldm greeter-session
    │  └─ cage
    │     └─ wldm greeter
+   ├─ wldm dbus-adapter
    └─ wldm user-session
       └─ user program / shell / compositor
 ```
@@ -50,11 +65,11 @@ The daemon in [`src/wldm/daemon.py`](../src/wldm/daemon.py):
 
 - reads configuration
 - opens and switches virtual terminals
-- creates the greeter UNIX socket
-- verifies greeter peer credentials with `SO_PEERCRED`
 - authenticates users through PAM
-- starts greeter and user session wrappers
+- starts greeter, user-session, and optional D-Bus adapter subprocesses
 - supervises child processes and restart limits
+- tracks persistent login state such as the last successful username/session
+- exposes a small read-only state snapshot to internal clients
 - handles power actions such as reboot and poweroff
 
 The daemon is the only process expected to run as `root`.
@@ -70,9 +85,11 @@ It is responsible for:
 - switching to the configured greeter TTY
 - calling `setsid()` and acquiring the controlling TTY
 - opening a PAM session for the greeter user
-- setting session metadata such as `XDG_SESSION_TYPE`, `XDG_SEAT`, and `XDG_VTNR`
-- dropping privileges to the greeter user
-- `execve()`-ing the configured greeter compositor command
+- setting session metadata such as `XDG_SESSION_TYPE`, `XDG_SEAT`, and
+  `XDG_VTNR`
+- forking the final compositor/greeter child
+- keeping the greeter PAM session open until that child exits
+- dropping privileges to the greeter user before the final `execve()` path
 
 ### Greeter UI
 
@@ -86,7 +103,7 @@ It is responsible for:
 - enumerating available Wayland sessions from `/usr/share/wayland-sessions`
 - optionally extending that list with `~/.local/share/wayland-sessions` for the
   username currently typed into the greeter
-- sending structured requests to the daemon over a UNIX socket
+- sending structured requests to the daemon over an inherited IPC socket fd
 - reacting to daemon events such as `session-starting` and `session-finished`
 
 The greeter does not execute anything from these entries before login. It only
@@ -95,9 +112,9 @@ the daemon after successful authentication.
 
 ### User Session Wrapper
 
-[`src/wldm/user_session.py`](../src/wldm/user_session.py) creates the final user session.
-Like the greeter wrapper, it performs session setup before `execve()`-ing the
-selected user program.
+[`src/wldm/user_session.py`](../src/wldm/user_session.py) creates the final
+user session. Like the greeter wrapper, it performs session setup before
+`execve()`-ing the selected user program.
 
 It is responsible for:
 
@@ -109,29 +126,54 @@ It is responsible for:
 - dropping privileges to the target user
 - starting the selected shell, compositor, or session command
 
+### D-Bus Adapter
+
+[`src/wldm/dbus_adapter.py`](../src/wldm/dbus_adapter.py) is an optional
+unprivileged helper. The daemon starts it only when `[dbus].enabled = yes`.
+
+It is responsible for:
+
+- connecting to the daemon over an inherited IPC fd
+- fetching the initial daemon state snapshot with `get-state`
+- consuming daemon state-change events
+- exporting a small read-only `org.freedesktop.DisplayManager` object tree on
+  the system bus
+
+The adapter is not part of the login-critical path. If it fails to start or
+loses the bus name, the daemon keeps running and login still works.
+
 ## IPC
 
-Daemon and greeter communicate over a local UNIX socket. The protocol is
-implemented in [`src/wldm/protocol.py`](../src/wldm/protocol.py).
+The daemon and its internal clients communicate over inherited `socketpair()`
+file descriptors. The protocol is implemented in
+[`src/wldm/protocol.py`](../src/wldm/protocol.py).
 
 Properties of the current transport:
 
-- daemon creates the socket
-- greeter learns the socket path from `WLDM_SOCKET`
-- daemon validates the connecting UID with `SO_PEERCRED`
+- the daemon creates one private connected socket pair per internal client
+- the client end is inherited through `WLDM_SOCKET_FD`
+- there is no pathname listener for the greeter or D-Bus adapter path
 - messages are newline-delimited JSON envelopes
 - the protocol supports request/response messages and asynchronous events
 
 Current actions include:
 
 - `auth`
+- `get-state`
 - `poweroff`
 - `reboot`
+- `suspend`
+- `hibernate`
 
 Current events include:
 
 - `session-starting`
 - `session-finished`
+- `state-changed`
+
+The read-only `get-state` / `state-changed` surface exists so auxiliary
+internal clients such as the D-Bus adapter can observe daemon state without
+depending on greeter-specific request flow.
 
 ## Security Split
 
@@ -140,24 +182,26 @@ The design tries to minimize how much code runs with full privileges:
 - root-only work stays in the daemon and session wrappers
 - the visible greeter UI runs as the greeter user
 - the final desktop session runs as the target user
+- optional D-Bus integration runs in a separate unprivileged adapter process
 - the greeter never talks to PAM directly for authentication
 
 This split is important because PAM, TTY switching, seat control, and power
-actions are privileged operations, while the UI and compositor should stay as
-unprivileged as practical.
+actions are privileged operations, while the UI, compositor, and D-Bus glue
+should stay as unprivileged as practical.
 
 ## Shutdown Model
 
 The daemon installs signal handlers for `SIGTERM` and `SIGINT`. On shutdown it:
 
-- stops accepting greeter traffic
-- closes the active greeter connection
+- closes active internal client channels
 - terminates the greeter process group
-- terminates active user session wrappers it started
-- closes the greeter socket and console file descriptors
+- terminates the optional D-Bus adapter if it is running
+- terminates active user-session wrappers it started
+- closes console file descriptors
 
 This is what allows `systemctl stop wldm.service` to tear down the display
-manager cleanly instead of leaving `cage` or greeter processes behind.
+manager cleanly instead of leaving `cage`, adapter, or user-session processes
+behind.
 
 ## Why systemd Matters
 
@@ -166,5 +210,5 @@ interactive shell session. `systemd-logind` uses real service and session
 ownership, not just environment variables, when deciding which process may take
 control of a seat.
 
-For development, [`systemd-wldm.sh`](../systemd-wldm.sh) exists to reproduce the
-service-style launch model from the source tree.
+For development, [`systemd-wldm.sh`](../systemd-wldm.sh) exists to reproduce
+the service-style launch model from the source tree.

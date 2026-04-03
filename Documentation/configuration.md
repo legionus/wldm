@@ -10,7 +10,8 @@ This document describes the runtime configuration options understood by `wldm`.
 2. `/etc/wldm.ini`
 
 The production-oriented repository default file is
-[`config/wldm.ini`](../config/wldm.ini).
+[`config/wldm.ini.in`](../config/wldm.ini.in), which is turned into the
+installed `/etc/wldm.ini` by `make install`.
 
 For source-tree development, [`wldm.sh`](../wldm.sh) sets `WLDM_CONFIG` to
 [`config/wldm-devel.ini`](../config/wldm-devel.ini), which keeps runtime
@@ -22,7 +23,10 @@ baking those paths into the main config.
 - `seat`
   Seat identifier passed into session metadata. Default: `seat0`.
 - `socket-path`
-  UNIX socket used for daemon/greeter IPC. Default: `/run/wldm/greeter.sock`.
+  Legacy daemon socket path setting. Default: `/run/wldm/greeter.sock`. The
+  current greeter and D-Bus adapter paths use inherited socket pairs instead of
+  pathname listeners, so this option is currently reserved and not used by the
+  internal helpers.
 - `state-dir`
   Optional directory used for small daemon-managed runtime state. When set,
   `wldm` stores the last successfully completed username and session command in
@@ -126,6 +130,26 @@ The hook paths themselves are executable paths, not shell command lines.
 Relative paths are resolved against the directory that contains the loaded
 `wldm.ini`.
 
+## `[dbus]`
+
+- `enabled`
+  Enable the optional `wldm dbus-adapter` subprocess. Default: `no`.
+- `user`
+  User account used to run the adapter process. This must stay aligned with the
+  installed system bus policy file. If you change it in `/etc/wldm.ini`, update
+  `/usr/share/dbus-1/system.d/wldm-dbus.conf` as well.
+- `service`
+  Well-known system-bus name exported by the adapter. Default:
+  `org.freedesktop.DisplayManager`.
+- `log-path`
+  Optional log file for the adapter process. Default: empty, which keeps
+  logging on stderr/journal.
+
+When enabled, the adapter connects back to the daemon over an inherited IPC fd
+and exports a small read-only `org.freedesktop.DisplayManager` API on the
+system bus. The adapter is not login-critical: if it fails to start, the daemon
+logs a warning and continues.
+
 ## `[keyboard]`
 
 - `rules`
@@ -149,8 +173,8 @@ Instead, it exposes the configured values to `greeter.command`, which lets
 
 ## Verbosity
 
-`wldm`, `wldm greeter`, `wldm user-session`, and `wldm greeter-session` all accept
-the common CLI flags:
+`wldm`, `wldm greeter`, `wldm user-session`, `wldm greeter-session`, and
+`wldm dbus-adapter` all accept the common CLI flags:
 
 - `-v`
   Set log level to `INFO`.
@@ -161,7 +185,7 @@ the common CLI flags:
 
 The effective verbosity is also exported through `WLDM_VERBOSITY`. Child
 processes inherit it, so starting the main daemon with `-vv` also enables
-debug logging in the greeter and session helpers it launches.
+debug logging in the greeter, D-Bus adapter, and session helpers it launches.
 
 Examples:
 
@@ -206,6 +230,12 @@ pam-service = login
 execute = /usr/share/wldm/scripts/wayland-session
 pre-execute = /usr/libexec/wldm-session-pre
 post-execute = /usr/libexec/wldm-session-post
+
+[dbus]
+enabled = no
+user = gdm
+service = org.freedesktop.DisplayManager
+log-path =
 
 [keyboard]
 rules = evdev
