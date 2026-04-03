@@ -118,6 +118,7 @@ def make_config(user="gdm",
         "dbus": {
             "enabled": "no",
             "user": user,
+            "service": "org.freedesktop.DisplayManager",
         },
     })
 
@@ -642,6 +643,7 @@ def test_start_dbus_adapter_starts_internal_client(monkeypatch):
     cfg = make_config(user="adapter-user")
     cfg["dbus"]["enabled"] = "yes"
     cfg["dbus"]["user"] = "adapter-user"
+    cfg["dbus"]["service"] = "org.example.DisplayManager"
     proc = DummyAsyncProc(pid=5555, returncode=0)
     calls = {}
 
@@ -666,6 +668,7 @@ def test_start_dbus_adapter_starts_internal_client(monkeypatch):
         "/srv/wldm/src/wldm/command.py",
         "dbus-adapter",
         "adapter-user",
+        "org.example.DisplayManager",
     ]
     assert isinstance(calls["env"], dict)
 

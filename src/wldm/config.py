@@ -62,6 +62,7 @@ def read_config() -> wldm.inifile.IniFile:
         "dbus": {
             "enabled": "no",
             "user": ent_pw.pw_name,
+            "service": "org.freedesktop.DisplayManager",
         },
         "keyboard": {
             "rules": "",

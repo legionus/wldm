@@ -118,6 +118,7 @@ bridges daemon state to an external D-Bus adapter.
     sp.set_defaults(func=cmd_dbus_adapter)
     wldm.add_common_arguments(sp)
     sp.add_argument("username", help="adapter user")
+    sp.add_argument("service", help="D-Bus service name")
 
     return parser
 

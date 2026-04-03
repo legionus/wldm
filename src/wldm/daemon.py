@@ -674,13 +674,14 @@ async def start_dbus_adapter(state: DaemonState,
         return None
 
     user = cfg.get_str("dbus", "user")
+    service = cfg.get_str("dbus", "service")
 
     try:
         return await start_client(
             state,
             "dbus-adapter",
             cfg,
-            [*state.internal_command, "dbus-adapter", user],
+            [*state.internal_command, "dbus-adapter", user, service],
             dict(os.environ),
         )
 
