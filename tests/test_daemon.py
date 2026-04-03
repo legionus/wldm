@@ -119,6 +119,7 @@ def make_config(user="gdm",
             "enabled": "no",
             "user": user,
             "service": "org.freedesktop.DisplayManager",
+            "log-path": "",
         },
     })
 
@@ -644,6 +645,7 @@ def test_start_dbus_adapter_starts_internal_client(monkeypatch):
     cfg["dbus"]["enabled"] = "yes"
     cfg["dbus"]["user"] = "adapter-user"
     cfg["dbus"]["service"] = "org.example.DisplayManager"
+    cfg["dbus"]["log-path"] = "/tmp/wldm/dbus.log"
     proc = DummyAsyncProc(pid=5555, returncode=0)
     calls = {}
 
@@ -671,6 +673,7 @@ def test_start_dbus_adapter_starts_internal_client(monkeypatch):
         "org.example.DisplayManager",
     ]
     assert isinstance(calls["env"], dict)
+    assert calls["env"]["WLDM_DBUS_LOG_PATH"] == "/tmp/wldm/dbus.log"
 
 
 def test_terminate_process_tree_sends_signals_to_process_group(monkeypatch):

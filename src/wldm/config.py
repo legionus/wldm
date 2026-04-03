@@ -63,6 +63,7 @@ def read_config() -> wldm.inifile.IniFile:
             "enabled": "no",
             "user": ent_pw.pw_name,
             "service": "org.freedesktop.DisplayManager",
+            "log-path": "",
         },
         "keyboard": {
             "rules": "",

@@ -45,6 +45,7 @@ def test_read_config_uses_explicit_repo_config(monkeypatch):
     assert cfg["dbus"]["enabled"] == "no"
     assert cfg["dbus"]["user"] == "gdm"
     assert cfg["dbus"]["service"] == "org.freedesktop.DisplayManager"
+    assert cfg["dbus"]["log-path"] == ""
     assert cfg["keyboard"]["rules"] == ""
     assert cfg["keyboard"]["model"] == ""
     assert cfg["keyboard"]["layout"] == ""
@@ -97,6 +98,7 @@ def test_read_config_sets_default_runtime_greeter_values(monkeypatch):
     assert cfg["dbus"]["enabled"] == "no"
     assert cfg["dbus"]["user"] == "fallback-user"
     assert cfg["dbus"]["service"] == "org.freedesktop.DisplayManager"
+    assert cfg["dbus"]["log-path"] == ""
     assert cfg["keyboard"]["rules"] == ""
     assert cfg["keyboard"]["model"] == ""
     assert cfg["keyboard"]["layout"] == ""
@@ -132,6 +134,7 @@ def test_read_config_loads_devel_overrides_when_selected_explicitly(monkeypatch)
     assert cfg["daemon"]["state-dir"] == "/tmp/wldm/state"
     assert cfg["daemon"]["log-path"] == "/tmp/wldm/daemon.log"
     assert cfg["greeter"]["log-path"] == "/tmp/wldm/greeter.log"
+    assert cfg["dbus"]["log-path"] == "/tmp/wldm/dbus-adapter.log"
     assert cfg["greeter"]["data-dir"] == str(repo_root / "data")
     assert cfg["greeter"]["locale-dir"] == str(repo_root / "locale")
     assert cfg["session"]["execute"] == str(repo_root / "data" / "scripts" / "wayland-session")

@@ -220,7 +220,13 @@ def test_cmd_main_runs_adapter(monkeypatch):
     pw = pwd.struct_passwd(("gdm", "x", 32, 32, "", "/var/lib/gdm", "/bin/false"))
     calls = {}
 
+    monkeypatch.setenv("WLDM_DBUS_LOG_PATH", "/tmp/wldm/dbus.log")
     monkeypatch.setattr(wldm.dbus_adapter.pwd, "getpwnam", lambda username: pw)
+    monkeypatch.setattr(
+        wldm.dbus_adapter.wldm,
+        "setup_file_logger",
+        lambda logger_arg, level, fmt, path: calls.update({"logger": (logger_arg, level, fmt, path)}) or logger_arg,
+    )
     monkeypatch.setattr(
         wldm.dbus_adapter,
         "run_adapter",
@@ -234,4 +240,5 @@ def test_cmd_main_runs_adapter(monkeypatch):
     )
 
     assert result == wldm.dbus_adapter.wldm.EX_SUCCESS
+    assert calls["logger"][3] == "/tmp/wldm/dbus.log"
     assert calls["adapter"] == ("gdm", 32, 32, "/var/lib/gdm", "org.freedesktop.DisplayManager")

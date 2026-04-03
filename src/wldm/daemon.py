@@ -675,6 +675,7 @@ async def start_dbus_adapter(state: DaemonState,
 
     user = cfg.get_str("dbus", "user")
     service = cfg.get_str("dbus", "service")
+    log_path = cfg.get_str("dbus", "log-path")
 
     try:
         return await start_client(
@@ -682,7 +683,7 @@ async def start_dbus_adapter(state: DaemonState,
             "dbus-adapter",
             cfg,
             [*state.internal_command, "dbus-adapter", user, service],
-            dict(os.environ),
+            dict(os.environ, WLDM_DBUS_LOG_PATH=log_path),
         )
 
     except Exception as e:

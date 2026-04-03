@@ -571,6 +571,10 @@ def run_adapter(username: str, uid: int, gid: int, workdir: str, service_name: s
 
 
 def cmd_main(parser: argparse.Namespace) -> int:
+    log_path = os.environ.get("WLDM_DBUS_LOG_PATH", "").strip()
+    if log_path:
+        wldm.setup_file_logger(logger, level=logger.level, fmt="[%(asctime)s] %(message)s", path=log_path)
+
     try:
         pw = pwd.getpwnam(parser.username)
 
