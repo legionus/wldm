@@ -15,6 +15,7 @@ from wldm.secret import SecretBytes
 PROTOCOL_VERSION = 1
 
 ACTION_AUTH = "auth"
+ACTION_GET_STATE = "get-state"
 ACTION_POWEROFF = "poweroff"
 ACTION_REBOOT = "reboot"
 ACTION_SUSPEND = "suspend"
@@ -28,6 +29,7 @@ CONTROL_ACTIONS = {
 
 EVENT_SESSION_STARTING = "session-starting"
 EVENT_SESSION_FINISHED = "session-finished"
+EVENT_STATE_CHANGED = "state-changed"
 
 FRAME_HEADER = struct.Struct("!I")
 SIGNED_INT = struct.Struct("!i")
@@ -187,6 +189,20 @@ def _encode_response_payload(body: bytearray, action: str, payload: Dict[str, An
     if action == ACTION_AUTH:
         body.extend(_encode_bool(bool(payload.get("verified", False))))
 
+    elif action == ACTION_GET_STATE:
+        body.extend(_encode_text(str(payload.get("seat", ""))))
+        body.extend(_encode_bool(bool(payload.get("greeter_ready", False))))
+        body.extend(_encode_text(str(payload.get("last_username", ""))))
+        body.extend(_encode_text(str(payload.get("last_session_command", ""))))
+
+        sessions = list(payload.get("active_sessions", []))
+        body.extend(FRAME_HEADER.pack(len(sessions)))
+
+        for session in sessions:
+            body.extend(_encode_signed_int(int(session.get("pid", 0))))
+            body.extend(_encode_text(str(session.get("username", ""))))
+            body.extend(_encode_text(str(session.get("command", ""))))
+
     elif action in CONTROL_ACTIONS:
         body.extend(_encode_bool(bool(payload.get("accepted", False))))
 
@@ -195,6 +211,34 @@ def _decode_response_payload(action: str, payload: memoryview, offset: int) -> t
     if action == ACTION_AUTH:
         verified, offset = _decode_bool(payload, offset)
         return {"verified": verified}, offset
+
+    if action == ACTION_GET_STATE:
+        seat, offset = _decode_text(payload, offset)
+        greeter_ready, offset = _decode_bool(payload, offset)
+        last_username, offset = _decode_text(payload, offset)
+        last_session_command, offset = _decode_text(payload, offset)
+
+        if offset + FRAME_HEADER.size > len(payload):
+            raise ProtocolError("truncated active session list length", payload.tobytes())
+
+        count = FRAME_HEADER.unpack(payload[offset:offset + FRAME_HEADER.size])[0]
+        offset += FRAME_HEADER.size
+
+        sessions = []
+
+        for _ in range(count):
+            pid, offset = _decode_signed_int(payload, offset)
+            username, offset = _decode_text(payload, offset)
+            command, offset = _decode_text(payload, offset)
+            sessions.append({"pid": pid, "username": username, "command": command})
+
+        return {
+            "seat": seat,
+            "greeter_ready": greeter_ready,
+            "last_username": last_username,
+            "last_session_command": last_session_command,
+            "active_sessions": sessions,
+        }, offset
 
     if action in CONTROL_ACTIONS:
         accepted, offset = _decode_bool(payload, offset)
@@ -272,6 +316,9 @@ def encode_message(message: Dict[str, Any]) -> bytes:
             body.extend(_encode_signed_int(int(payload.get("returncode", 0))))
             body.extend(_encode_bool(bool(payload.get("failed", False))))
             body.extend(_encode_text(str(payload.get("message", ""))))
+
+        elif message.get("event") == EVENT_STATE_CHANGED:
+            _encode_response_payload(body, ACTION_GET_STATE, payload)
     else:
         raise ProtocolError("unknown protocol message type")
 
@@ -382,6 +429,9 @@ def decode_message(raw: bytes | str) -> Dict[str, Any]:
                 "failed": failed,
                 "message": message,
             }
+
+        elif event_name == EVENT_STATE_CHANGED:
+            decoded["payload"], offset = _decode_response_payload(ACTION_GET_STATE, payload, offset)
 
         return decoded
 

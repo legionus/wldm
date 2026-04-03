@@ -142,10 +142,11 @@ def test_process_request_accepts_poweroff_and_reboot():
     cfg["daemon"]["suspend-command"] = "do-suspend"
     cfg["daemon"]["hibernate-command"] = "do-hibernate"
 
-    poweroff = wldm.daemon.process_request(wldm.protocol.new_request(wldm.protocol.ACTION_POWEROFF, {}), cfg)
-    reboot = wldm.daemon.process_request(wldm.protocol.new_request(wldm.protocol.ACTION_REBOOT, {}), cfg)
-    suspend = wldm.daemon.process_request(wldm.protocol.new_request(wldm.protocol.ACTION_SUSPEND, {}), cfg)
-    hibernate = wldm.daemon.process_request(wldm.protocol.new_request(wldm.protocol.ACTION_HIBERNATE, {}), cfg)
+    state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
+    poweroff = wldm.daemon.process_request(state, wldm.protocol.new_request(wldm.protocol.ACTION_POWEROFF, {}), cfg)
+    reboot = wldm.daemon.process_request(state, wldm.protocol.new_request(wldm.protocol.ACTION_REBOOT, {}), cfg)
+    suspend = wldm.daemon.process_request(state, wldm.protocol.new_request(wldm.protocol.ACTION_SUSPEND, {}), cfg)
+    hibernate = wldm.daemon.process_request(state, wldm.protocol.new_request(wldm.protocol.ACTION_HIBERNATE, {}), cfg)
 
     assert poweroff.response["payload"] == {"accepted": True}
     assert poweroff.control_action == wldm.protocol.ACTION_POWEROFF
@@ -159,14 +160,15 @@ def test_process_request_accepts_poweroff_and_reboot():
 
 def test_process_request_rejects_disabled_control_actions():
     cfg = make_config()
+    state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
 
-    outcome = wldm.daemon.process_request(wldm.protocol.new_request(wldm.protocol.ACTION_SUSPEND, {}), cfg)
+    outcome = wldm.daemon.process_request(state, wldm.protocol.new_request(wldm.protocol.ACTION_SUSPEND, {}), cfg)
 
     assert outcome.response["error"]["code"] == "action_disabled"
 
 
 def test_process_request_replies_with_bad_request_for_unknown_payload():
-    outcome = wldm.daemon.process_request({}, make_config())
+    outcome = wldm.daemon.process_request(wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3), {}, make_config())
 
     assert outcome.response == {
         "v": 1,
@@ -180,6 +182,7 @@ def test_process_request_replies_with_bad_request_for_unknown_payload():
 
 
 def test_process_request_does_not_start_session_for_failed_auth(monkeypatch):
+    state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
     req = wldm.protocol.new_request(
         wldm.protocol.ACTION_AUTH,
         {
@@ -192,7 +195,7 @@ def test_process_request_does_not_start_session_for_failed_auth(monkeypatch):
 
     monkeypatch.setattr(wldm.daemon, "verify_creds", lambda username, password: False)
 
-    outcome = wldm.daemon.process_request(req, make_config())
+    outcome = wldm.daemon.process_request(state, req, make_config())
 
     assert outcome.response["payload"] == {"verified": False}
     assert isinstance(req["payload"]["username"], wldm.secret.SecretBytes)
@@ -204,6 +207,7 @@ def test_process_request_does_not_start_session_for_failed_auth(monkeypatch):
 
 
 def test_process_request_starts_session_after_successful_auth(monkeypatch):
+    state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
     req = wldm.protocol.new_request(
         wldm.protocol.ACTION_AUTH,
         {
@@ -216,7 +220,7 @@ def test_process_request_starts_session_after_successful_auth(monkeypatch):
 
     monkeypatch.setattr(wldm.daemon, "verify_creds", lambda username, password: True)
 
-    outcome = wldm.daemon.process_request(req, make_config())
+    outcome = wldm.daemon.process_request(state, req, make_config())
 
     assert outcome.response["payload"] == {"verified": True}
     assert isinstance(req["payload"]["username"], wldm.secret.SecretBytes)
@@ -235,6 +239,7 @@ def test_process_request_starts_session_after_successful_auth(monkeypatch):
 
 
 def test_process_request_preserves_username_when_auth_clears_secret(monkeypatch):
+    state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
     req = wldm.protocol.new_request(
         wldm.protocol.ACTION_AUTH,
         {
@@ -252,15 +257,16 @@ def test_process_request_preserves_username_when_auth_clears_secret(monkeypatch)
 
     monkeypatch.setattr(wldm.daemon, "verify_creds", fake_verify_creds)
 
-    outcome = wldm.daemon.process_request(req, make_config())
+    outcome = wldm.daemon.process_request(state, req, make_config())
 
     assert outcome.session_username == "alice"
 
 
 def test_process_request_replies_with_unknown_action_error():
     req = wldm.protocol.new_request("mystery", {})
+    state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
 
-    outcome = wldm.daemon.process_request(req, make_config())
+    outcome = wldm.daemon.process_request(state, req, make_config())
 
     assert outcome.response["error"]["code"] == "unknown_action"
 
@@ -333,6 +339,32 @@ def test_send_message_writes_encoded_line():
     assert writer.lines == [wldm.protocol.encode_message(message)]
 
 
+def test_process_request_returns_state_snapshot():
+    state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3, seat="seat9")
+    state.clients["greeter"].ready = True
+    state.last_username = "alice"
+    state.last_session_command = "sway"
+    state.active_sessions[42] = wldm.daemon.SessionState(
+        proc=DummyAsyncProc(pid=42, returncode=None),
+        username="alice",
+        command="sway",
+    )
+
+    outcome = wldm.daemon.process_request(
+        state,
+        wldm.protocol.new_request(wldm.protocol.ACTION_GET_STATE, {}),
+        make_config(seat="seat9"),
+    )
+
+    assert outcome.response["payload"] == {
+        "seat": "seat9",
+        "greeter_ready": True,
+        "last_username": "alice",
+        "last_session_command": "sway",
+        "active_sessions": [{"pid": 42, "username": "alice", "command": "sway"}],
+    }
+
+
 def test_handle_request_async_starts_session_after_auth(monkeypatch):
     state = wldm.daemon.DaemonState(["/usr/bin/python3", "/srv/wldm/src/wldm/command.py"], 3)
     state.clients["greeter"].writer = DummyWriter()
@@ -371,7 +403,7 @@ def test_handle_request_async_starts_session_after_auth(monkeypatch):
     monkeypatch.setattr(wldm.daemon.asyncio, "create_subprocess_exec", fake_exec)
     monkeypatch.setattr(wldm.daemon, "track_session_task", lambda state, task: task_calls.append((state, task)))
 
-    asyncio.run(wldm.daemon.handle_request_async(state, req, make_config()))
+    asyncio.run(wldm.daemon.handle_request_async(state, "greeter", req, make_config()))
 
     assert 777 in state.active_sessions or task_calls
     assert any(
@@ -396,10 +428,37 @@ def test_handle_request_async_runs_control_command(monkeypatch):
     cfg["daemon"]["poweroff-command"] = "do-poweroff --now"
     monkeypatch.setattr(wldm.daemon.asyncio, "create_subprocess_exec", fake_create_subprocess_exec)
 
-    asyncio.run(wldm.daemon.handle_request_async(state, req, cfg))
+    asyncio.run(wldm.daemon.handle_request_async(state, "greeter", req, cfg))
 
     assert calls["cmd"] == ("do-poweroff", "--now")
     assert wldm.protocol.decode_message(state.clients["greeter"].writer.lines[0])["payload"] == {"accepted": True}
+
+
+def test_handle_request_async_returns_get_state_to_requesting_client(monkeypatch):
+    state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
+    state.clients["greeter"].writer = DummyWriter()
+    state.clients["adapter"] = wldm.daemon.ClientState(writer=DummyWriter())
+    req = wldm.protocol.new_request(wldm.protocol.ACTION_GET_STATE, {})
+
+    asyncio.run(wldm.daemon.handle_request_async(state, "adapter", req, make_config()))
+
+    assert len(state.clients["adapter"].writer.lines) == 1
+    assert wldm.protocol.decode_message(state.clients["adapter"].writer.lines[0])["action"] == (
+        wldm.protocol.ACTION_GET_STATE
+    )
+
+
+def test_broadcast_state_changed_sends_snapshot_to_all_clients():
+    state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3, seat="seat9")
+    state.clients["greeter"].writer = DummyWriter()
+    state.clients["adapter"] = wldm.daemon.ClientState(writer=DummyWriter())
+
+    asyncio.run(wldm.daemon.broadcast_state_changed(state))
+
+    for name in ["greeter", "adapter"]:
+        message = wldm.protocol.decode_message(state.clients[name].writer.lines[0])
+        assert message["event"] == wldm.protocol.EVENT_STATE_CHANGED
+        assert message["payload"]["seat"] == "seat9"
 
 
 def test_send_session_finished_switches_back_to_greeter_tty(monkeypatch):
@@ -457,7 +516,7 @@ def test_send_session_finished_reports_failed_session(monkeypatch):
     assert event["payload"]["message"] == "Session failed with exit status 7."
 
 
-def test_handle_greeter_client_marks_greeter_ready(monkeypatch):
+def test_handle_client_marks_client_ready(monkeypatch):
     state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
     writer = DummyWriter()
     req = wldm.protocol.new_request(wldm.protocol.ACTION_REBOOT, {})
@@ -465,17 +524,18 @@ def test_handle_greeter_client_marks_greeter_ready(monkeypatch):
     reader = DummyReader([encoded[:4], encoded[4:], b""])
     calls = []
 
-    async def fake_handle_request_async(state_arg, req_arg, cfg_arg):
-        calls.append((state_arg, req_arg, cfg_arg))
+    async def fake_handle_request_async(state_arg, name_arg, req_arg, cfg_arg):
+        calls.append((state_arg, name_arg, req_arg, cfg_arg))
 
     monkeypatch.setattr(wldm.daemon, "handle_request_async", fake_handle_request_async)
 
     cfg = make_config()
-    asyncio.run(wldm.daemon.handle_greeter_client(state, reader, writer, cfg))
+    asyncio.run(wldm.daemon.handle_client(state, "greeter", reader, writer, cfg))
 
     assert state.clients["greeter"].ready is True
-    assert calls[0][1]["action"] == wldm.protocol.ACTION_REBOOT
-    assert calls[0][2] is cfg
+    assert calls[0][1] == "greeter"
+    assert calls[0][2]["action"] == wldm.protocol.ACTION_REBOOT
+    assert calls[0][3] is cfg
     assert writer.closed is True
 
 
@@ -518,12 +578,12 @@ def test_start_greeter_passes_socket_env(monkeypatch):
         calls["sock"] = sock
         return SimpleNamespace(), DummyWriter()
 
-    async def fake_handle_greeter_client(state, reader, writer, cfg):
+    async def fake_handle_client(state, name, reader, writer, cfg):
         return None
 
     monkeypatch.setattr(wldm.daemon, "create_greeter_socketpair", lambda: (DummySocket(10), DummySocket(11)))
     monkeypatch.setattr(wldm.daemon.asyncio, "open_connection", fake_open_connection)
-    monkeypatch.setattr(wldm.daemon, "handle_greeter_client", fake_handle_greeter_client)
+    monkeypatch.setattr(wldm.daemon, "handle_client", fake_handle_client)
 
     result = asyncio.run(wldm.daemon.start_greeter(state, cfg, 7))
 

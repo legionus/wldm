@@ -108,6 +108,19 @@ def client_state(state: DaemonState, name: str) -> ClientState:
     return state.clients[name]
 
 
+def state_snapshot(state: DaemonState) -> Dict[str, Any]:
+    return {
+        "seat": state.seat,
+        "greeter_ready": client_state(state, "greeter").ready,
+        "last_username": state.last_username,
+        "last_session_command": state.last_session_command,
+        "active_sessions": [
+            {"pid": session.proc.pid, "username": session.username, "command": session.command}
+            for session in state.active_sessions.values()
+        ],
+    }
+
+
 def greeter_command(cfg: wldm.inifile.IniFile, internal_prefix: list[str]) -> list[str]:
     command = cfg.get_str("greeter", "command")
 
@@ -163,10 +176,17 @@ def verify_creds(username: wldm.secret.SecretBytes, password: wldm.secret.Secret
     return False
 
 
-def process_request(req: Dict[str, Any], cfg: wldm.inifile.IniFile) -> RequestOutcome:
+def process_request(state: DaemonState,
+                    req: Dict[str, Any],
+                    cfg: wldm.inifile.IniFile) -> RequestOutcome:
     if not wldm.protocol.is_request(req):
         return RequestOutcome(
             response=wldm.protocol.new_error(req, "bad_request", "Malformed request")
+        )
+
+    if req["action"] == wldm.protocol.ACTION_GET_STATE:
+        return RequestOutcome(
+            response=wldm.protocol.new_response(req, ok=True, payload=state_snapshot(state))
         )
 
     if req["action"] == wldm.protocol.ACTION_AUTH:
@@ -231,10 +251,21 @@ async def send_message(writer: Optional[asyncio.StreamWriter], message: Dict[str
     return False
 
 
+async def broadcast_message(state: DaemonState, message: Dict[str, Any]) -> None:
+    for client in state.clients.values():
+        await send_message(client.writer, message)
+
+
+async def broadcast_state_changed(state: DaemonState) -> None:
+    await broadcast_message(
+        state,
+        wldm.protocol.new_event(wldm.protocol.EVENT_STATE_CHANGED, state_snapshot(state)),
+    )
+
+
 async def send_session_finished(state: DaemonState,
                                 session: SessionState) -> None:
     proc = session.proc
-    greeter = client_state(state, "greeter")
     logger.info("user session (pid=%d) finished with return code %d", proc.pid, proc.returncode)
 
     state.active_sessions.pop(proc.pid, None)
@@ -260,13 +291,14 @@ async def send_session_finished(state: DaemonState,
     else:
         message = "Session finished."
 
-    await send_message(
-        greeter.writer,
+    await broadcast_message(
+        state,
         wldm.protocol.new_event(
             wldm.protocol.EVENT_SESSION_FINISHED,
             {"pid": proc.pid, "returncode": returncode, "failed": failed, "message": message},
         ),
     )
+    await broadcast_state_changed(state)
 
 
 async def monitor_session(state: DaemonState,
@@ -345,14 +377,15 @@ async def wait_for_stop_or_process(proc: AsyncProcess,
 
 
 async def handle_request_async(state: DaemonState,
+                               client_name: str,
                                req: Dict[str, Any],
                                cfg: wldm.inifile.IniFile) -> None:
-    greeter = client_state(state, "greeter")
-    outcome = process_request(req, cfg)
-    await send_message(greeter.writer, outcome.response)
+    client = client_state(state, client_name)
+    outcome = process_request(state, req, cfg)
+    await send_message(client.writer, outcome.response)
 
     if outcome.event is not None:
-        await send_message(greeter.writer, outcome.event)
+        await broadcast_message(state, outcome.event)
 
         # Sessions are tracked independently from the greeter so the daemon can
         # notify the UI when they finish and clean them up during shutdown.
@@ -371,6 +404,7 @@ async def handle_request_async(state: DaemonState,
         logger.info("start user session (pid=%d)", proc.pid)
 
         track_session_task(state, asyncio.create_task(monitor_session(state, session)))
+        await broadcast_state_changed(state)
 
     if outcome.control_action:
         command = control_command(cfg, outcome.control_action)
@@ -380,12 +414,13 @@ async def handle_request_async(state: DaemonState,
         await asyncio.create_subprocess_exec(*command)
 
 
-async def handle_greeter_client(state: DaemonState,
-                                reader: asyncio.StreamReader,
-                                writer: asyncio.StreamWriter,
-                                cfg: wldm.inifile.IniFile) -> None:
-    greeter = client_state(state, "greeter")
-    greeter.writer = writer
+async def handle_client(state: DaemonState,
+                        name: str,
+                        reader: asyncio.StreamReader,
+                        writer: asyncio.StreamWriter,
+                        cfg: wldm.inifile.IniFile) -> None:
+    client = client_state(state, name)
+    client.writer = writer
 
     try:
         while True:
@@ -393,18 +428,18 @@ async def handle_greeter_client(state: DaemonState,
                 req = await wldm.protocol.read_message_async(reader)
 
             except wldm.protocol.ProtocolError as e:
-                logger.critical("bad protocol message from greeter: %s; raw=%r", e, e.raw)
+                logger.critical("bad protocol message from %s: %s; raw=%r", name, e, e.raw)
                 break
 
             if req is None:
                 break
 
-            greeter.ready = True
-            await handle_request_async(state, req, cfg)
+            client.ready = True
+            await handle_request_async(state, name, req, cfg)
 
     finally:
-        if greeter.writer is writer:
-            greeter.writer = None
+        if client.writer is writer:
+            client.writer = None
 
         writer.close()
 
@@ -412,22 +447,26 @@ async def handle_greeter_client(state: DaemonState,
             await writer.wait_closed()
 
 
+async def close_client_channel(state: DaemonState, name: str) -> None:
+    client = client_state(state, name)
+
+    if client.writer is not None:
+        client.writer.close()
+
+        with suppress(Exception):
+            await client.writer.wait_closed()
+
+        client.writer = None
+
+    if client.task is not None:
+        with suppress(Exception):
+            await client.task
+
+        client.task = None
+
+
 async def close_greeter_channel(state: DaemonState) -> None:
-    greeter = client_state(state, "greeter")
-
-    if greeter.writer is not None:
-        greeter.writer.close()
-
-        with suppress(Exception):
-            await greeter.writer.wait_closed()
-
-        greeter.writer = None
-
-    if greeter.task is not None:
-        with suppress(Exception):
-            await greeter.task
-
-        greeter.task = None
+    await close_client_channel(state, "greeter")
 
 
 async def start_greeter(state: DaemonState,
@@ -475,7 +514,7 @@ async def start_greeter(state: DaemonState,
 
     reader, writer = await asyncio.open_connection(sock=daemon_sock)
     greeter.proc = proc
-    greeter.task = asyncio.create_task(handle_greeter_client(state, reader, writer, cfg))
+    greeter.task = asyncio.create_task(handle_client(state, "greeter", reader, writer, cfg))
     greeter.ready = False
 
     logger.info("start the greeter (pid=%d)", proc.pid)

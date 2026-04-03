@@ -97,3 +97,45 @@ def test_new_request_supports_control_actions():
     assert reboot["action"] == wldm.protocol.ACTION_REBOOT
     assert suspend["action"] == wldm.protocol.ACTION_SUSPEND
     assert hibernate["action"] == wldm.protocol.ACTION_HIBERNATE
+
+
+def test_encode_and_decode_get_state_response():
+    req = wldm.protocol.new_request(wldm.protocol.ACTION_GET_STATE, {})
+    msg = wldm.protocol.new_response(
+        req,
+        ok=True,
+        payload={
+            "seat": "seat0",
+            "greeter_ready": True,
+            "last_username": "alice",
+            "last_session_command": "sway",
+            "active_sessions": [{"pid": 42, "username": "alice", "command": "sway"}],
+        },
+    )
+
+    decoded = wldm.protocol.decode_message(wldm.protocol.encode_message(msg))
+
+    assert decoded["payload"] == {
+        "seat": "seat0",
+        "greeter_ready": True,
+        "last_username": "alice",
+        "last_session_command": "sway",
+        "active_sessions": [{"pid": 42, "username": "alice", "command": "sway"}],
+    }
+
+
+def test_encode_and_decode_state_changed_event():
+    msg = wldm.protocol.new_event(
+        wldm.protocol.EVENT_STATE_CHANGED,
+        {
+            "seat": "seat0",
+            "greeter_ready": False,
+            "last_username": "",
+            "last_session_command": "",
+            "active_sessions": [],
+        },
+    )
+
+    decoded = wldm.protocol.decode_message(wldm.protocol.encode_message(msg))
+
+    assert decoded == msg
