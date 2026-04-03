@@ -3,7 +3,6 @@
 
 import asyncio
 import signal
-import stat
 from types import SimpleNamespace
 
 import wldm.daemon
@@ -29,11 +28,13 @@ class DummyReader:
 
 
 class DummyWriter:
-    def __init__(self, peer_uid=32):
+    def __init__(self, peer_pid=200, peer_uid=32, peer_gid=32):
         self.lines = []
         self.closed = False
         self.waited = False
+        self.peer_pid = peer_pid
         self.peer_uid = peer_uid
+        self.peer_gid = peer_gid
 
     def write(self, data):
         self.lines.append(data)
@@ -55,7 +56,11 @@ class DummyWriter:
 
         class DummySocket:
             def getsockopt(self, level, optname, buflen):
-                return (0).to_bytes(4, "little") + writer.peer_uid.to_bytes(4, "little") + (0).to_bytes(4, "little")
+                return (
+                    writer.peer_pid.to_bytes(4, "little")
+                    + writer.peer_uid.to_bytes(4, "little")
+                    + writer.peer_gid.to_bytes(4, "little")
+                )
 
         return DummySocket()
 
@@ -69,28 +74,6 @@ class DummyAsyncProc:
     async def wait(self):
         self.wait_calls += 1
         return self.returncode
-
-
-class DummyServer:
-    def __init__(self):
-        self.closed = False
-        self.waited = False
-
-    def close(self):
-        self.closed = True
-
-    async def wait_closed(self):
-        self.waited = True
-
-
-class DummyListener:
-    def __init__(self, path="/tmp/wldm-test.sock"):
-        self.path = path
-        self.sock = object()
-        self.closed = False
-
-    def close(self):
-        self.closed = True
 
 
 def make_config(user="gdm",
@@ -282,18 +265,6 @@ def test_process_request_replies_with_unknown_action_error():
     assert outcome.response["error"]["code"] == "unknown_action"
 
 
-def test_greeter_socket_path_uses_env(monkeypatch):
-    monkeypatch.setenv("WLDM_SOCKET", "/tmp/custom.sock")
-
-    assert wldm.daemon.greeter_socket_path() == "/tmp/custom.sock"
-
-
-def test_greeter_socket_path_uses_config_when_env_is_not_set(monkeypatch):
-    monkeypatch.delenv("WLDM_SOCKET", raising=False)
-
-    assert wldm.daemon.greeter_socket_path(make_config(socket_path="/tmp/from-config.sock")) == "/tmp/from-config.sock"
-
-
 def test_load_last_session_reads_state_file(tmp_path):
     state_dir = tmp_path / "state"
     state_dir.mkdir()
@@ -313,65 +284,6 @@ def test_save_last_session_writes_state_file(tmp_path):
     assert (state_dir / wldm.state.LAST_SESSION_FILE).read_text(encoding="utf-8") == (
         "[session]\nusername = alice\ncommand = labwc\n"
     )
-
-
-def test_create_greeter_listener_applies_permissions(monkeypatch):
-    calls = []
-
-    class FakeSocketListener:
-        def __init__(self, path):
-            self.path = path
-            self.sock = object()
-
-    class DummyContext:
-        def __enter__(self):
-            calls.append(("open_dir", "/tmp/wldm"))
-            return 11
-
-        def __exit__(self, exc_type, exc, tb):
-            return False
-
-    monkeypatch.setattr(wldm.daemon, "SocketListener", FakeSocketListener)
-    monkeypatch.setattr(wldm.daemon.wldm, "open_secure_directory", lambda path, mode=0o755: DummyContext())
-    monkeypatch.setattr(wldm.daemon.os, "chown", lambda path, uid, gid: calls.append(("chown", path, uid, gid)))
-    monkeypatch.setattr(wldm.daemon.os, "chmod", lambda path, mode: calls.append(("chmod", path, mode)))
-    monkeypatch.setattr(
-        wldm.daemon.os,
-        "stat",
-        lambda path, dir_fd=None, follow_symlinks=False: (_ for _ in ()).throw(FileNotFoundError()),
-    )
-    monkeypatch.setattr(wldm.daemon.pwd, "getpwnam", lambda user: SimpleNamespace(pw_uid=32))
-    monkeypatch.setattr(wldm.daemon.grp, "getgrnam", lambda group: SimpleNamespace(gr_gid=32))
-
-    listener = wldm.daemon.create_greeter_listener("gdm", "gdm", "/tmp/wldm/greeter.sock")
-
-    assert listener.path == "/tmp/wldm/greeter.sock"
-    assert ("open_dir", "/tmp/wldm") in calls
-    assert ("chown", "/tmp/wldm/greeter.sock", 32, 32) in calls
-    assert ("chmod", "/tmp/wldm/greeter.sock", 0o600) in calls
-
-
-def test_create_greeter_listener_rejects_symlink(monkeypatch):
-    class DummyContext:
-        def __enter__(self):
-            return 11
-
-        def __exit__(self, exc_type, exc, tb):
-            return False
-
-    monkeypatch.setattr(wldm.daemon.wldm, "open_secure_directory", lambda path, mode=0o755: DummyContext())
-    monkeypatch.setattr(
-        wldm.daemon.os,
-        "stat",
-        lambda path, dir_fd=None, follow_symlinks=False: SimpleNamespace(st_mode=stat.S_IFLNK),
-    )
-
-    try:
-        wldm.daemon.create_greeter_listener("gdm", "gdm", "/tmp/wldm/greeter.sock")
-    except RuntimeError as exc:
-        assert "non-socket" in str(exc)
-    else:
-        raise AssertionError("create_greeter_listener() should reject symlinks")
 
 
 def test_greeter_command_uses_configured_launcher():
@@ -423,7 +335,7 @@ def test_send_message_writes_encoded_line():
 
 def test_handle_request_async_starts_session_after_auth(monkeypatch):
     state = wldm.daemon.DaemonState(["/usr/bin/python3", "/srv/wldm/src/wldm/command.py"], 3)
-    state.greeter_writer = DummyWriter()
+    state.clients["greeter"].writer = DummyWriter()
     req = wldm.protocol.new_request(
         wldm.protocol.ACTION_AUTH,
         {
@@ -464,13 +376,13 @@ def test_handle_request_async_starts_session_after_auth(monkeypatch):
     assert 777 in state.active_sessions or task_calls
     assert any(
         wldm.protocol.decode_message(line).get("event") == wldm.protocol.EVENT_SESSION_STARTING
-        for line in state.greeter_writer.lines
+        for line in state.clients["greeter"].writer.lines
     )
 
 
 def test_handle_request_async_runs_control_command(monkeypatch):
     state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
-    state.greeter_writer = DummyWriter()
+    state.clients["greeter"].writer = DummyWriter()
     req = wldm.protocol.new_request(wldm.protocol.ACTION_POWEROFF, {})
     calls = {}
     proc = DummyAsyncProc(pid=888, returncode=0)
@@ -487,12 +399,12 @@ def test_handle_request_async_runs_control_command(monkeypatch):
     asyncio.run(wldm.daemon.handle_request_async(state, req, cfg))
 
     assert calls["cmd"] == ("do-poweroff", "--now")
-    assert wldm.protocol.decode_message(state.greeter_writer.lines[0])["payload"] == {"accepted": True}
+    assert wldm.protocol.decode_message(state.clients["greeter"].writer.lines[0])["payload"] == {"accepted": True}
 
 
 def test_send_session_finished_switches_back_to_greeter_tty(monkeypatch):
     state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
-    state.greeter_writer = DummyWriter()
+    state.clients["greeter"].writer = DummyWriter()
     state.console = 77
     state.greeter_tty = 7
     proc = DummyAsyncProc(pid=333, returncode=0)
@@ -505,7 +417,7 @@ def test_send_session_finished_switches_back_to_greeter_tty(monkeypatch):
 
     assert changes == [(77, 7)]
     assert 333 not in state.active_sessions
-    events = [wldm.protocol.decode_message(line) for line in state.greeter_writer.lines]
+    events = [wldm.protocol.decode_message(line) for line in state.clients["greeter"].writer.lines]
     assert any(event.get("event") == wldm.protocol.EVENT_SESSION_FINISHED for event in events)
     finished = next(event for event in events if event.get("event") == wldm.protocol.EVENT_SESSION_FINISHED)
     assert finished["payload"]["failed"] is False
@@ -514,7 +426,7 @@ def test_send_session_finished_switches_back_to_greeter_tty(monkeypatch):
 
 def test_send_session_finished_saves_last_successful_session(tmp_path, monkeypatch):
     state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3, state_dir=str(tmp_path))
-    state.greeter_writer = DummyWriter()
+    state.clients["greeter"].writer = DummyWriter()
     proc = DummyAsyncProc(pid=555, returncode=0)
     session = wldm.daemon.SessionState(proc=proc, username="alice", command="sway --debug")
     state.active_sessions[555] = session
@@ -532,7 +444,7 @@ def test_send_session_finished_saves_last_successful_session(tmp_path, monkeypat
 
 def test_send_session_finished_reports_failed_session(monkeypatch):
     state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
-    state.greeter_writer = DummyWriter()
+    state.clients["greeter"].writer = DummyWriter()
     proc = DummyAsyncProc(pid=444, returncode=7)
     state.active_sessions[444] = wldm.daemon.SessionState(proc=proc, username="alice", command="sway")
 
@@ -540,13 +452,13 @@ def test_send_session_finished_reports_failed_session(monkeypatch):
 
     asyncio.run(wldm.daemon.send_session_finished(state, state.active_sessions[444]))
 
-    event = next(wldm.protocol.decode_message(line) for line in state.greeter_writer.lines)
+    event = next(wldm.protocol.decode_message(line) for line in state.clients["greeter"].writer.lines)
     assert event["payload"]["failed"] is True
     assert event["payload"]["message"] == "Session failed with exit status 7."
 
 
 def test_handle_greeter_client_marks_greeter_ready(monkeypatch):
-    state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3, greeter_uid=32)
+    state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
     writer = DummyWriter()
     req = wldm.protocol.new_request(wldm.protocol.ACTION_REBOOT, {})
     encoded = wldm.protocol.encode_message(req)
@@ -561,26 +473,10 @@ def test_handle_greeter_client_marks_greeter_ready(monkeypatch):
     cfg = make_config()
     asyncio.run(wldm.daemon.handle_greeter_client(state, reader, writer, cfg))
 
-    assert state.greeter_ready is True
+    assert state.clients["greeter"].ready is True
     assert calls[0][1]["action"] == wldm.protocol.ACTION_REBOOT
     assert calls[0][2] is cfg
     assert writer.closed is True
-
-
-def test_handle_greeter_client_rejects_unexpected_peer_uid(monkeypatch):
-    state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3, greeter_uid=32)
-    writer = DummyWriter(peer_uid=0)
-    reader = DummyReader([b""])
-    criticals = []
-
-    monkeypatch.setattr(wldm.daemon.logger, "critical",
-                        lambda msg, *args: criticals.append(msg % args if args else msg))
-
-    asyncio.run(wldm.daemon.handle_greeter_client(state, reader, writer, make_config()))
-
-    assert state.greeter_writer is None
-    assert writer.closed is True
-    assert any("unexpected uid 0" in message for message in criticals)
 
 
 def test_start_greeter_passes_socket_env(monkeypatch):
@@ -599,16 +495,40 @@ def test_start_greeter_passes_socket_env(monkeypatch):
     calls = {}
     proc = DummyAsyncProc(pid=4321, returncode=0)
 
-    async def fake_create_subprocess_exec(*cmd, env=None, start_new_session=False):
+    async def fake_create_subprocess_exec(*cmd, env=None, start_new_session=False, **kwargs):
         calls["cmd"] = cmd
         calls["env"] = env
+        calls["kwargs"] = kwargs
         return proc
 
     monkeypatch.setattr(wldm.daemon.asyncio, "create_subprocess_exec", fake_create_subprocess_exec)
 
-    result = asyncio.run(wldm.daemon.start_greeter(state, cfg, 7, "/tmp/wldm/greeter.sock"))
+    class DummySocket:
+        def __init__(self, fileno):
+            self._fileno = fileno
+            self.closed = False
+
+        def fileno(self):
+            return self._fileno
+
+        def close(self):
+            self.closed = True
+
+    async def fake_open_connection(sock=None):
+        calls["sock"] = sock
+        return SimpleNamespace(), DummyWriter()
+
+    async def fake_handle_greeter_client(state, reader, writer, cfg):
+        return None
+
+    monkeypatch.setattr(wldm.daemon, "create_greeter_socketpair", lambda: (DummySocket(10), DummySocket(11)))
+    monkeypatch.setattr(wldm.daemon.asyncio, "open_connection", fake_open_connection)
+    monkeypatch.setattr(wldm.daemon, "handle_greeter_client", fake_handle_greeter_client)
+
+    result = asyncio.run(wldm.daemon.start_greeter(state, cfg, 7))
 
     assert result is proc
+    assert state.clients["greeter"].task is not None
     assert calls["cmd"][:9] == (
         "/usr/bin/python3",
         "/srv/wldm/src/wldm/command.py",
@@ -627,7 +547,7 @@ def test_start_greeter_passes_socket_env(monkeypatch):
         "/srv/wldm/src/wldm/command.py",
         "greeter",
     )
-    assert calls["env"]["WLDM_SOCKET"] == "/tmp/wldm/greeter.sock"
+    assert calls["env"]["WLDM_SOCKET_FD"] == "11"
     assert calls["env"]["WLDM_SEAT"] == "seat9"
     assert calls["env"]["WLDM_THEME"] == "retro"
     assert calls["env"]["WLDM_GREETER_SESSION_DIRS"] == "/usr/share/wayland-sessions"
@@ -641,6 +561,8 @@ def test_start_greeter_passes_socket_env(monkeypatch):
     assert calls["env"]["XKB_DEFAULT_MODEL"] == "pc105"
     assert calls["env"]["XKB_DEFAULT_LAYOUT"] == "us,ru"
     assert calls["env"]["XKB_DEFAULT_OPTIONS"] == "grp:alt_shift_toggle"
+    assert calls["sock"].fileno() == 10
+    assert calls["kwargs"]["pass_fds"] == (11,)
 
 
 def test_terminate_process_tree_sends_signals_to_process_group(monkeypatch):
@@ -659,14 +581,18 @@ def test_cleanup_async_terminates_greeter_and_sessions(monkeypatch):
     greeter = DummyAsyncProc(pid=11, returncode=None)
     session = DummyAsyncProc(pid=22, returncode=None)
     state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
-    state.greeter_proc = greeter
+    state.clients["greeter"].proc = greeter
     state.active_sessions = {22: wldm.daemon.SessionState(proc=session, username="alice", command="sway")}
     calls = []
 
     async def fake_terminate(proc, name, timeout=5.0):
         calls.append((proc.pid, name, timeout))
 
+    async def fake_close_channel(state):
+        return None
+
     monkeypatch.setattr(wldm.daemon, "terminate_process_tree", fake_terminate)
+    monkeypatch.setattr(wldm.daemon, "close_greeter_channel", fake_close_channel)
 
     asyncio.run(wldm.daemon.cleanup_async(state))
 
@@ -717,15 +643,10 @@ def test_run_daemon_async_fails_when_tty_switch_fails(monkeypatch):
 
 
 def test_run_daemon_async_stops_after_configured_failed_greeter_starts(monkeypatch):
-    listener = DummyListener()
-    server = DummyServer()
     greeters = [DummyAsyncProc(pid=1, returncode=5), DummyAsyncProc(pid=2, returncode=6)]
     sleeps = []
 
-    async def fake_start_unix_server(handler, sock=None):
-        return server
-
-    async def fake_start_greeter(state, cfg, greeter_tty, socket_path):
+    async def fake_start_greeter(state, cfg, greeter_tty):
         return greeters.pop(0)
 
     async def fake_cleanup_async(state):
@@ -736,9 +657,6 @@ def test_run_daemon_async_stops_after_configured_failed_greeter_starts(monkeypat
 
     monkeypatch.setattr(wldm.tty, "open_console", lambda: 88)
     monkeypatch.setattr(wldm.tty, "change", lambda console, tty: True)
-    monkeypatch.setattr(wldm.daemon.pwd, "getpwnam", lambda user: SimpleNamespace(pw_uid=32))
-    monkeypatch.setattr(wldm.daemon, "create_greeter_listener", lambda user, group, path: listener)
-    monkeypatch.setattr(wldm.daemon.asyncio, "start_unix_server", fake_start_unix_server)
     monkeypatch.setattr(wldm.daemon, "start_greeter", fake_start_greeter)
     monkeypatch.setattr(wldm.daemon, "cleanup_async", fake_cleanup_async)
     monkeypatch.setattr(wldm.daemon.asyncio, "sleep", fake_sleep)
@@ -750,22 +668,14 @@ def test_run_daemon_async_stops_after_configured_failed_greeter_starts(monkeypat
 
     assert result == wldm.daemon.wldm.EX_FAILURE
     assert sleeps == [1]
-    assert server.closed is True
-    assert server.waited is True
-    assert listener.closed is True
 
 
 def test_run_daemon_async_cleans_up_after_stop_signal(monkeypatch):
-    listener = DummyListener()
-    server = DummyServer()
     cleanup_calls = []
     closed = []
     stop_event = asyncio.Event()
 
-    async def fake_start_unix_server(handler, sock=None):
-        return server
-
-    async def fake_start_greeter(state, cfg, greeter_tty, socket_path):
+    async def fake_start_greeter(state, cfg, greeter_tty):
         return DummyAsyncProc(pid=1, returncode=None)
 
     async def fake_wait_for_stop_or_process(proc, event):
@@ -778,9 +688,6 @@ def test_run_daemon_async_cleans_up_after_stop_signal(monkeypatch):
 
     monkeypatch.setattr(wldm.tty, "open_console", lambda: 88)
     monkeypatch.setattr(wldm.tty, "change", lambda console, tty: True)
-    monkeypatch.setattr(wldm.daemon.pwd, "getpwnam", lambda user: SimpleNamespace(pw_uid=32))
-    monkeypatch.setattr(wldm.daemon, "create_greeter_listener", lambda user, group, path: listener)
-    monkeypatch.setattr(wldm.daemon.asyncio, "start_unix_server", fake_start_unix_server)
     monkeypatch.setattr(wldm.daemon, "start_greeter", fake_start_greeter)
     monkeypatch.setattr(wldm.daemon, "wait_for_stop_or_process", fake_wait_for_stop_or_process)
     monkeypatch.setattr(wldm.daemon, "cleanup_async", fake_cleanup_async)
@@ -793,22 +700,14 @@ def test_run_daemon_async_cleans_up_after_stop_signal(monkeypatch):
 
     assert result == wldm.daemon.wldm.EX_SUCCESS
     assert len(cleanup_calls) == 1
-    assert server.closed is True
-    assert server.waited is True
-    assert listener.closed is True
     assert closed == [88]
 
 
 def test_run_daemon_async_cleans_up_on_cancellation(monkeypatch):
-    listener = DummyListener()
-    server = DummyServer()
     cleanup_calls = []
     closed = []
 
-    async def fake_start_unix_server(handler, sock=None):
-        return server
-
-    async def fake_start_greeter(state, cfg, greeter_tty, socket_path):
+    async def fake_start_greeter(state, cfg, greeter_tty):
         raise asyncio.CancelledError()
 
     async def fake_cleanup_async(state):
@@ -816,9 +715,6 @@ def test_run_daemon_async_cleans_up_on_cancellation(monkeypatch):
 
     monkeypatch.setattr(wldm.tty, "open_console", lambda: 88)
     monkeypatch.setattr(wldm.tty, "change", lambda console, tty: True)
-    monkeypatch.setattr(wldm.daemon.pwd, "getpwnam", lambda user: SimpleNamespace(pw_uid=32))
-    monkeypatch.setattr(wldm.daemon, "create_greeter_listener", lambda user, group, path: listener)
-    monkeypatch.setattr(wldm.daemon.asyncio, "start_unix_server", fake_start_unix_server)
     monkeypatch.setattr(wldm.daemon, "start_greeter", fake_start_greeter)
     monkeypatch.setattr(wldm.daemon, "cleanup_async", fake_cleanup_async)
     monkeypatch.setattr(wldm.daemon.os, "close", lambda fd: closed.append(fd))
@@ -831,9 +727,6 @@ def test_run_daemon_async_cleans_up_on_cancellation(monkeypatch):
         raise AssertionError("run_daemon_async() must propagate CancelledError")
 
     assert len(cleanup_calls) == 2
-    assert server.closed is True
-    assert server.waited is True
-    assert listener.closed is True
     assert closed == [88]
 
 

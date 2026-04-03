@@ -159,6 +159,27 @@ def resolve_config_path(path: str, *,
     return os.path.realpath(os.path.join(base_dir or ".", path))
 
 
+def drop_privileges(username: str, uid: int, gid: int, workdir: str) -> None:
+    # Switch to the target user and working directory.
+    os.initgroups(username, gid)
+    os.setgid(gid)
+    os.setuid(uid)
+
+    os.chdir(workdir)
+
+
+def close_inherited_fds(keep_fds: tuple[int, ...] = ()) -> None:
+    # Close inherited fds while preserving the descriptors the next exec path
+    # is expected to keep alive explicitly.
+    close_from = 3
+    max_fd = os.sysconf("SC_OPEN_MAX")
+    sorted_keep_fds = sorted(fd for fd in keep_fds if fd >= close_from)
+    bounds = [close_from] + [x for fd in sorted_keep_fds for x in (fd, fd + 1)] + [max_fd]
+
+    for i in range(0, len(bounds), 2):
+        os.closerange(bounds[i], bounds[i + 1])
+
+
 def exec_program(
     *,
     username: str, uid: int, gid: int, workdir: str,
@@ -175,21 +196,8 @@ def exec_program(
     if stderr_fd is not None:
         os.dup2(stderr_fd, 2)
 
-    # Switch to the target user and working directory.
-    os.initgroups(username, gid)
-    os.setgid(gid)
-    os.setuid(uid)
-
-    os.chdir(workdir)
-
-    # Close inherited fds and replace the process image.
-    close_from = 3
-    max_fd = os.sysconf("SC_OPEN_MAX")
-    sorted_keep_fds = sorted(fd for fd in keep_fds if fd >= close_from)
-    bounds = [close_from] + [x for fd in sorted_keep_fds for x in (fd, fd + 1)] + [max_fd]
-
-    for i in range(0, len(bounds), 2):
-        os.closerange(bounds[i], bounds[i + 1])
+    drop_privileges(username, uid, gid, workdir)
+    close_inherited_fds(keep_fds)
 
     os.execve(argv[0], argv, env)
 

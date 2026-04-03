@@ -907,17 +907,33 @@ def test_send_recv_answer_treats_bad_protocol_as_connection_loss(monkeypatch):
     assert any(item[0] == "log" and "raw=b'\\x00\\x01bad'" in item[1] for item in events)
 
 
-def test_new_ipc_client_requires_socket_env(monkeypatch):
+def test_new_ipc_client_requires_socket_fd_env(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
 
-    monkeypatch.delenv("WLDM_SOCKET", raising=False)
+    monkeypatch.delenv("WLDM_SOCKET_FD", raising=False)
 
     try:
         greeter.new_ipc_client()
     except RuntimeError as exc:
-        assert "WLDM_SOCKET" in str(exc)
+        assert "WLDM_SOCKET_FD" in str(exc)
     else:
         raise AssertionError("new_ipc_client() should have failed")
+
+
+def test_new_ipc_client_uses_socket_fd(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+    calls = []
+
+    class FakeSocketClient:
+        def __init__(self, fd):
+            calls.append(fd)
+
+    monkeypatch.setenv("WLDM_SOCKET_FD", "11")
+    monkeypatch.setattr(greeter, "SocketClient", FakeSocketClient)
+
+    greeter.new_ipc_client()
+
+    assert calls == [11]
 
 
 def test_on_login_clicked_sets_failure_and_clears_password(monkeypatch):
@@ -1049,7 +1065,7 @@ def test_cmd_main_validates_resources_path(monkeypatch, tmp_path):
     data_dir = tmp_path
     (data_dir / "resources").mkdir()
     monkeypatch.setenv("WLDM_DATA_DIR", str(data_dir))
-    monkeypatch.setenv("WLDM_SOCKET", "/tmp/wldm/greeter.sock")
+    monkeypatch.setenv("WLDM_SOCKET_FD", "9")
     monkeypatch.setattr(greeter.os.path, "isfile", lambda path: False)
 
     run_calls = []
@@ -1420,7 +1436,7 @@ def test_cmd_main_loads_css_when_present(monkeypatch, tmp_path):
     css_path.write_text("label {}", encoding="utf-8")
 
     monkeypatch.setenv("WLDM_DATA_DIR", str(tmp_path))
-    monkeypatch.setenv("WLDM_SOCKET", "/tmp/wldm/greeter.sock")
+    monkeypatch.setenv("WLDM_SOCKET_FD", "9")
     monkeypatch.setattr(greeter.os.path, "isdir", lambda path: True)
     monkeypatch.setattr(greeter.os.path, "isfile", lambda path: path == str(css_path))
 

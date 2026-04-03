@@ -88,9 +88,8 @@ def account_service_profile(username: str) -> Dict[str, str] | None:
     }
 
 class SocketClient:
-    def __init__(self, path: str) -> None:
-        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        self.sock.connect(path)
+    def __init__(self, fd: int) -> None:
+        self.sock = socket.socket(fileno=fd)
 
     def write_message(self, message: Dict[str, Any]) -> None:
         self.sock.sendall(wldm.protocol.encode_message(message))
@@ -107,12 +106,11 @@ class SocketClient:
 
 
 def new_ipc_client() -> Any:
-    socket_path = os.environ.get("WLDM_SOCKET", "")
+    socket_fd = os.environ.get("WLDM_SOCKET_FD", "").strip()
+    if socket_fd:
+        return SocketClient(fd=int(socket_fd))
 
-    if not socket_path:
-        raise RuntimeError("environ variable `WLDM_SOCKET' not specified")
-
-    return SocketClient(socket_path)
+    raise RuntimeError("environ variable `WLDM_SOCKET_FD' not specified")
 
 
 def available_actions() -> set[str]:
@@ -910,8 +908,8 @@ def cmd_main(_parser: argparse.Namespace) -> int:
 
     setup_greeter_i18n()
 
-    if "WLDM_SOCKET" not in os.environ:
-        logger.critical("environ variable `WLDM_SOCKET' not specified")
+    if "WLDM_SOCKET_FD" not in os.environ:
+        logger.critical("environ variable `WLDM_SOCKET_FD' not specified")
         return wldm.EX_FAILURE
 
     logger.debug("Resource path: %s", resource_path)

@@ -55,22 +55,42 @@ def test_new_greeter_environ_falls_back_to_user_runtime_dir(monkeypatch):
 def test_cmd_main_runs_greeter_session(monkeypatch):
     pw = pwd.struct_passwd(("gdm", "x", 1001, 1001, "", "/var/lib/gdm", "/bin/false"))
     calls = {}
+    ttydev = SimpleNamespace(fd=55, filename="/dev/tty7", number=7)
+
+    class DummyContext:
+        def __init__(self, value):
+            self.value = value
+
+        def __enter__(self):
+            return self.value
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
 
     monkeypatch.setattr(wldm.greeter_session.pwd, "getpwnam", lambda username: pw)
     monkeypatch.setattr(wldm.greeter_session.grp, "getgrnam", lambda group: SimpleNamespace(gr_gid=1001))
     monkeypatch.setattr(wldm.greeter_session.os, "access", lambda path, mode: True)
+    monkeypatch.setattr(wldm.greeter_session, "redirect_greeter_stderr", lambda: calls.update({"redirected": True}))
+    monkeypatch.setattr(wldm.greeter_session, "open_console_fd", lambda: DummyContext(88))
+    monkeypatch.setattr(wldm.greeter_session.wldm.tty, "TTYdevice", lambda console, uid, number=0: ttydev)
+    monkeypatch.setattr(wldm.greeter_session, "prepare_greeter_terminal", lambda tty: calls.update({"tty": tty.number}))
     monkeypatch.setattr(
         wldm.greeter_session,
-        "run_greeter_session",
-        lambda pw_arg, gid, tty, pam_service, prog, prog_args:
+        "open_greeter_pam_session", lambda pam_service, pw_arg, tty: DummyContext("pamh"),
+    )
+    monkeypatch.setattr(wldm.greeter_session, "new_greeter_environ", lambda pamh, pw_arg: {"HOME": pw_arg.pw_dir})
+    monkeypatch.setattr(
+        wldm.greeter_session,
+        "exec_greeter_program",
+        lambda username, uid, gid, workdir, prog_args, env:
             calls.update({
-                "pw": pw_arg,
+                "username": username,
+                "uid": uid,
                 "gid": gid,
-                "tty": tty,
-                "pam_service": pam_service,
-                "prog": prog,
+                "workdir": workdir,
                 "prog_args": prog_args,
-            }) or wldm.greeter_session.wldm.EX_SUCCESS,
+                "env": env,
+            }),
     )
 
     result = wldm.greeter_session.cmd_main(
@@ -85,11 +105,14 @@ def test_cmd_main_runs_greeter_session(monkeypatch):
     )
 
     assert result == wldm.greeter_session.wldm.EX_SUCCESS
+    assert calls["redirected"] is True
+    assert calls["username"] == "gdm"
+    assert calls["uid"] == 1001
     assert calls["gid"] == 1001
     assert calls["tty"] == 7
-    assert calls["pam_service"] == "system-login"
-    assert calls["prog"] == "cage"
+    assert calls["workdir"] == "/var/lib/gdm"
     assert calls["prog_args"] == ["cage", "-s", "-m", "last"]
+    assert calls["env"] == {"HOME": "/var/lib/gdm"}
 
 
 def test_prepare_greeter_terminal_switches_and_sets_controlling_tty(monkeypatch):
@@ -169,3 +192,62 @@ def test_redirect_greeter_stderr_replaces_fd_2(monkeypatch):
         ("dup2", 9, 2),
         ("close_file",),
     ]
+
+
+def test_greeter_ipc_fd_marks_inherited_fd_inheritable(monkeypatch):
+    calls = []
+    monkeypatch.setenv("WLDM_SOCKET_FD", "13")
+    monkeypatch.setattr(wldm.greeter_session.os, "set_inheritable", lambda fd, value: calls.append((fd, value)))
+
+    assert wldm.greeter_session.greeter_ipc_fd() == 13
+    assert calls == [(13, True)]
+
+
+def test_exec_greeter_program_preserves_passed_socket_fd(monkeypatch):
+    calls = {}
+
+    class DummyLogFile:
+        def fileno(self):
+            return 9
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(wldm.greeter_session.wldm, "open_secure_append_file", lambda path, mode=0o600: DummyLogFile())
+    monkeypatch.setattr(wldm.greeter_session, "log_exec_environment", lambda env, uid, gid, fd=2: None)
+    monkeypatch.setattr(wldm.greeter_session.os, "dup2", lambda src, dst: calls.setdefault("dup2", []).append((src, dst)))
+    monkeypatch.setattr(wldm.greeter_session, "greeter_ipc_fd", lambda: 13)
+    monkeypatch.setattr(
+        wldm.greeter_session.wldm,
+        "drop_privileges",
+        lambda username, uid, gid, workdir: calls.update(
+            {"drop_privileges": (username, uid, gid, workdir)}
+        ),
+    )
+    monkeypatch.setattr(
+        wldm.greeter_session.wldm,
+        "close_inherited_fds",
+        lambda keep_fds=(): calls.update({"keep_fds": keep_fds}),
+    )
+    monkeypatch.setattr(
+        wldm.greeter_session.os,
+        "execve",
+        lambda prog, argv, env: calls.update({"execve": (prog, argv, dict(env))}),
+    )
+    monkeypatch.setattr(wldm.greeter_session.os, "close", lambda fd: calls.update({"closed_fd": fd}))
+
+    wldm.greeter_session.exec_greeter_program(
+        "gdm", 32, 32, "/var/lib/gdm",
+        ["cage", "--", "greeter"],
+        {"PATH": "/usr/bin"},
+    )
+
+    assert calls["dup2"] == [(9, 2)]
+    assert calls["drop_privileges"] == ("gdm", 32, 32, "/var/lib/gdm")
+    assert calls["keep_fds"] == (13,)
+    assert calls["execve"] == (
+        "cage",
+        ["cage", "--", "greeter"],
+        {"PATH": "/usr/bin", "WLDM_SOCKET_FD": "13"},
+    )
+    assert calls["closed_fd"] == 13

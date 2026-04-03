@@ -4,14 +4,10 @@
 
 import argparse
 import asyncio
-import grp
 import os
-import pwd
 import shlex
 import signal
 import socket
-import stat
-import struct
 import sys
 from contextlib import suppress
 from dataclasses import dataclass
@@ -31,27 +27,10 @@ import wldm.tty
 
 logger = wldm.logger
 
-
-class SocketListener:
-    def __init__(self, path: str) -> None:
-        self.path = path
-        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        self.sock.bind(path)
-        self.sock.listen(1)
-
-    def close(self) -> None:
-        with suppress(Exception):
-            self.sock.close()
-
-        with suppress(FileNotFoundError):
-            os.unlink(self.path)
-
-
 class DaemonState:
     def __init__(self,
                  internal_command: str | list[str],
                  greeter_max_restarts: int,
-                 greeter_uid: int = -1,
                  seat: str = wldm.policy.DEFAULT_SEAT,
                  state_dir: str = "") -> None:
         if isinstance(internal_command, str):
@@ -60,15 +39,11 @@ class DaemonState:
             self.internal_command = list(internal_command)
 
         self.greeter_max_restarts = greeter_max_restarts
-        self.greeter_uid = greeter_uid
         self.seat = seat
         self.state_dir = state_dir
         self.last_username = ""
         self.last_session_command = ""
-        self.greeter_proc: Optional[AsyncProcess] = None
-        self.greeter_writer: Optional[asyncio.StreamWriter] = None
-        self.greeter_failures = 0
-        self.greeter_ready = False
+        self.clients: dict[str, "ClientState"] = {"greeter": ClientState()}
         self.console: int = -1
         self.greeter_tty: int = 0
         self.active_sessions: dict[int, "SessionState"] = {}
@@ -92,6 +67,15 @@ class SessionState:
     command: str
 
 
+@dataclass
+class ClientState:
+    proc: Optional[AsyncProcess] = None
+    writer: Optional[asyncio.StreamWriter] = None
+    task: Optional[asyncio.Task[None]] = None
+    failures: int = 0
+    ready: bool = False
+
+
 POWER_ACTION_COMMANDS = {
     wldm.protocol.ACTION_POWEROFF: "poweroff-command",
     wldm.protocol.ACTION_REBOOT: "reboot-command",
@@ -107,58 +91,6 @@ KEYBOARD_ENV_OPTIONS = {
     "options": "XKB_DEFAULT_OPTIONS",
 }
 
-def greeter_socket_path(cfg: Optional[wldm.inifile.IniFile] = None) -> str:
-    if "WLDM_SOCKET" in os.environ:
-        return os.environ["WLDM_SOCKET"]
-
-    if cfg is not None:
-        return cfg.get_str("daemon", "socket-path")
-
-    return "/tmp/wldm/greeter.sock"
-
-
-def create_greeter_listener(user: str, group: str, path: str) -> SocketListener:
-    sockdir = os.path.dirname(path)
-    basename = os.path.basename(path)
-
-    if not basename:
-        raise RuntimeError(f"invalid socket path: {path}")
-
-    with wldm.open_secure_directory(sockdir or ".", mode=0o755) as dir_fd:
-        try:
-            st = os.stat(basename, dir_fd=dir_fd, follow_symlinks=False)
-        except FileNotFoundError:
-            pass
-        else:
-            # Only stale sockets are safe to replace here. Refusing other file
-            # types keeps the daemon from unlinking an unexpected path.
-            if not stat.S_ISSOCK(st.st_mode):
-                raise RuntimeError(f"refusing to replace non-socket path: {path}")
-            os.unlink(basename, dir_fd=dir_fd)
-
-    listener = SocketListener(path)
-    uid = pwd.getpwnam(user).pw_uid
-    gid = grp.getgrnam(group).gr_gid
-
-    # The greeter must be the only client that can connect to the daemon
-    # socket, so publish it with the greeter account ownership and no world
-    # access.
-    os.chown(path, uid, gid)
-    os.chmod(path, 0o600)
-
-    return listener
-
-
-def get_peer_uid(writer: asyncio.StreamWriter) -> int:
-    sock = writer.get_extra_info("socket")
-    if sock is None:
-        raise RuntimeError("unable to get peer socket")
-
-    _, uid, _ = struct.unpack("3i", sock.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
-
-    return int(uid)
-
-
 def internal_command_prefix() -> list[str]:
     path = os.path.abspath(wldm.command.__file__ or "")
 
@@ -166,6 +98,14 @@ def internal_command_prefix() -> list[str]:
         path = path[:-1]
 
     return [sys.executable, path]
+
+
+def create_greeter_socketpair() -> tuple[socket.socket, socket.socket]:
+    return socket.socketpair()
+
+
+def client_state(state: DaemonState, name: str) -> ClientState:
+    return state.clients[name]
 
 
 def greeter_command(cfg: wldm.inifile.IniFile, internal_prefix: list[str]) -> list[str]:
@@ -294,6 +234,7 @@ async def send_message(writer: Optional[asyncio.StreamWriter], message: Dict[str
 async def send_session_finished(state: DaemonState,
                                 session: SessionState) -> None:
     proc = session.proc
+    greeter = client_state(state, "greeter")
     logger.info("user session (pid=%d) finished with return code %d", proc.pid, proc.returncode)
 
     state.active_sessions.pop(proc.pid, None)
@@ -320,7 +261,7 @@ async def send_session_finished(state: DaemonState,
         message = "Session finished."
 
     await send_message(
-        state.greeter_writer,
+        greeter.writer,
         wldm.protocol.new_event(
             wldm.protocol.EVENT_SESSION_FINISHED,
             {"pid": proc.pid, "returncode": returncode, "failed": failed, "message": message},
@@ -406,11 +347,12 @@ async def wait_for_stop_or_process(proc: AsyncProcess,
 async def handle_request_async(state: DaemonState,
                                req: Dict[str, Any],
                                cfg: wldm.inifile.IniFile) -> None:
+    greeter = client_state(state, "greeter")
     outcome = process_request(req, cfg)
-    await send_message(state.greeter_writer, outcome.response)
+    await send_message(greeter.writer, outcome.response)
 
     if outcome.event is not None:
-        await send_message(state.greeter_writer, outcome.event)
+        await send_message(greeter.writer, outcome.event)
 
         # Sessions are tracked independently from the greeter so the daemon can
         # notify the UI when they finish and clean them up during shutdown.
@@ -442,32 +384,8 @@ async def handle_greeter_client(state: DaemonState,
                                 reader: asyncio.StreamReader,
                                 writer: asyncio.StreamWriter,
                                 cfg: wldm.inifile.IniFile) -> None:
-    try:
-        peer_uid = get_peer_uid(writer)
-
-    except Exception as e:
-        logger.critical("unable to get greeter peer credentials: %s", e)
-
-        writer.close()
-        await writer.wait_closed()
-        return
-
-    # The daemon only trusts the dedicated greeter account on this socket.
-    if state.greeter_uid >= 0 and peer_uid != state.greeter_uid:
-        logger.critical("reject greeter connection from unexpected uid %d", peer_uid)
-
-        writer.close()
-        await writer.wait_closed()
-        return
-
-    # A second greeter connection usually means the previous UI is still
-    # connected or a stray process is trying to race the real greeter.
-    if state.greeter_writer is not None:
-        writer.close()
-        await writer.wait_closed()
-        return
-
-    state.greeter_writer = writer
+    greeter = client_state(state, "greeter")
+    greeter.writer = writer
 
     try:
         while True:
@@ -481,12 +399,12 @@ async def handle_greeter_client(state: DaemonState,
             if req is None:
                 break
 
-            state.greeter_ready = True
+            greeter.ready = True
             await handle_request_async(state, req, cfg)
 
     finally:
-        if state.greeter_writer is writer:
-            state.greeter_writer = None
+        if greeter.writer is writer:
+            greeter.writer = None
 
         writer.close()
 
@@ -494,16 +412,35 @@ async def handle_greeter_client(state: DaemonState,
             await writer.wait_closed()
 
 
+async def close_greeter_channel(state: DaemonState) -> None:
+    greeter = client_state(state, "greeter")
+
+    if greeter.writer is not None:
+        greeter.writer.close()
+
+        with suppress(Exception):
+            await greeter.writer.wait_closed()
+
+        greeter.writer = None
+
+    if greeter.task is not None:
+        with suppress(Exception):
+            await greeter.task
+
+        greeter.task = None
+
+
 async def start_greeter(state: DaemonState,
                         cfg: wldm.inifile.IniFile,
-                        greeter_tty: int,
-                        socket_path: str) -> AsyncProcess:
+                        greeter_tty: int) -> AsyncProcess:
+    greeter = client_state(state, "greeter")
     greeter_pam_service = cfg.get_str("greeter", "pam-service")
     greeter_user = cfg.get_str("greeter", "user")
     greeter_group = cfg.get_str("greeter", "group")
+    daemon_sock, child_sock = create_greeter_socketpair()
     env = dict(
         os.environ,
-        WLDM_SOCKET=socket_path,
+        WLDM_SOCKET_FD=str(child_sock.fileno()),
         WLDM_SEAT=state.seat,
         WLDM_DATA_DIR=cfg.get_str("greeter", "data-dir"),
         WLDM_LOCALE_DIR=cfg.get_str("greeter", "locale-dir"),
@@ -532,9 +469,14 @@ async def start_greeter(state: DaemonState,
         greeter_user, greeter_group,
         *greeter_command(cfg, state.internal_command),
         env=env,
+        pass_fds=(child_sock.fileno(),),
     )
-    state.greeter_proc = proc
-    state.greeter_ready = False
+    child_sock.close()
+
+    reader, writer = await asyncio.open_connection(sock=daemon_sock)
+    greeter.proc = proc
+    greeter.task = asyncio.create_task(handle_greeter_client(state, reader, writer, cfg))
+    greeter.ready = False
 
     logger.info("start the greeter (pid=%d)", proc.pid)
 
@@ -542,18 +484,13 @@ async def start_greeter(state: DaemonState,
 
 
 async def cleanup_async(state: DaemonState) -> None:
-    if state.greeter_writer is not None:
-        state.greeter_writer.close()
-
-        with suppress(Exception):
-            await state.greeter_writer.wait_closed()
-
-        state.greeter_writer = None
+    greeter = client_state(state, "greeter")
+    await close_greeter_channel(state)
 
     # Stop the greeter before user sessions so the login UI cannot race the
     # shutdown sequence and start new work while the daemon is tearing down.
-    if state.greeter_proc is not None and state.greeter_proc.returncode is None:
-        await terminate_process_tree(state.greeter_proc, "the greeter")
+    if greeter.proc is not None and greeter.proc.returncode is None:
+        await terminate_process_tree(greeter.proc, "the greeter")
 
     for session in list(state.active_sessions.values()):
         with suppress(Exception):
@@ -594,18 +531,9 @@ async def run_daemon_async(parser: argparse.Namespace, cfg: wldm.inifile.IniFile
 
     logger.debug("daemon start")
 
-    greeter_user = cfg.get_str("greeter", "user")
-    greeter_group = cfg.get_str("greeter", "group")
-    greeter_uid = pwd.getpwnam(greeter_user).pw_uid
-
-    socket_path = greeter_socket_path(cfg)
-
-    listener = create_greeter_listener(greeter_user, greeter_group, socket_path)
-
     state = DaemonState(
         internal_command_prefix(),
         greeter_max_restarts,
-        greeter_uid=greeter_uid,
         seat=cfg.get_str("daemon", "seat"),
         state_dir=cfg.get_str("daemon", "state-dir"),
     )
@@ -619,17 +547,13 @@ async def run_daemon_async(parser: argparse.Namespace, cfg: wldm.inifile.IniFile
     loop = asyncio.get_running_loop()
 
     install_stop_handlers(loop, stop_event)
-
-    server = await asyncio.start_unix_server(
-        lambda reader, writer: handle_greeter_client(state, reader, writer, cfg),
-        sock=listener.sock,
-    )
+    greeter = client_state(state, "greeter")
 
     try:
         while True:
             # Restart the greeter after ordinary exits, but stop once it never
             # reaches the ready state repeatedly to avoid a tight crash loop.
-            proc = await start_greeter(state, cfg, greeter_tty, listener.path)
+            proc = await start_greeter(state, cfg, greeter_tty)
 
             if await wait_for_stop_or_process(proc, stop_event):
                 logger.info("stop signal received, shutting down daemon")
@@ -637,22 +561,16 @@ async def run_daemon_async(parser: argparse.Namespace, cfg: wldm.inifile.IniFile
 
             logger.info("greeter (pid=%d) finished with return code %d", proc.pid, proc.returncode)
 
-            if state.greeter_writer is not None:
-                state.greeter_writer.close()
+            await close_greeter_channel(state)
 
-                with suppress(Exception):
-                    await state.greeter_writer.wait_closed()
-
-                state.greeter_writer = None
-
-            if state.greeter_ready:
-                state.greeter_failures = 0
+            if greeter.ready:
+                greeter.failures = 0
             else:
-                state.greeter_failures += 1
+                greeter.failures += 1
 
-                if state.greeter_failures >= state.greeter_max_restarts:
+                if greeter.failures >= state.greeter_max_restarts:
                     logger.critical("greeter failed %d times in a row, stopping daemon",
-                                    state.greeter_failures)
+                                    greeter.failures)
 
                     exit_code = wldm.EX_FAILURE
                     break
@@ -671,10 +589,6 @@ async def run_daemon_async(parser: argparse.Namespace, cfg: wldm.inifile.IniFile
     finally:
         remove_stop_handlers(loop)
         await cleanup_async(state)
-        server.close()
-        await server.wait_closed()
-        listener.close()
-
         os.close(console)
 
     logger.debug("daemon finished")
