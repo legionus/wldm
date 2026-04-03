@@ -62,22 +62,6 @@ def redirect_greeter_stderr(log_path: Optional[str] = None) -> None:
 
     logfile.close()
 
-
-def log_greeter_diag(message: str, *args: Any, fd: int = 2) -> None:
-    text = message % args if args else message
-    print(f"[wldm] {text}", file=os.fdopen(os.dup(fd), "w", encoding="utf-8", buffering=1))
-
-
-def log_exec_environment(env: Dict[str, str], uid: int, gid: int, *, fd: int = 2) -> None:
-    log_greeter_diag("target uid=%d gid=%d", uid, gid, fd=fd)
-
-    for name in ["XDG_SEAT", "XDG_VTNR", "XDG_SESSION_TYPE", "XDG_SESSION_CLASS"]:
-        if name in env:
-            log_greeter_diag("exec env %s=%s", name, env[name], fd=fd)
-        else:
-            log_greeter_diag("exec env %s is unset", name, fd=fd)
-
-
 def greeter_ipc_fd() -> int:
     socket_fd = os.environ.get("WLDM_SOCKET_FD", "").strip()
     if not socket_fd:
@@ -88,31 +72,12 @@ def greeter_ipc_fd() -> int:
     return fd
 
 
-def exec_greeter_program(username: str, uid: int, gid: int, workdir: str,
-                         prog_args: List[str], env: Dict[str, str]) -> None:
-    log_path = os.environ.get("WLDM_GREETER_STDERR_LOG", "/tmp/wldm/greeter.log")
-    logfile = wldm.open_secure_append_file(log_path, mode=0o600)
-    ipc_fd: Optional[int] = None
-
-    try:
-        logfd = logfile.fileno()
-        log_exec_environment(env, uid, gid, fd=logfd)
-        os.dup2(logfd, 2)
-
-        wldm.drop_privileges(username, uid, gid, workdir)
-
-        ipc_fd = greeter_ipc_fd()
-        env["WLDM_SOCKET_FD"] = str(ipc_fd)
-
-        wldm.close_inherited_fds((ipc_fd,))
-
-        os.execve(prog_args[0], prog_args, env)
-
-    finally:
-        if ipc_fd is not None:
-            os.close(ipc_fd)
-
-        logfile.close()
+def process_exit_status(status: int) -> int:
+    if os.WIFEXITED(status):
+        return os.WEXITSTATUS(status)
+    if os.WIFSIGNALED(status):
+        return 128 + os.WTERMSIG(status)
+    return wldm.EX_FAILURE
 
 
 def prepare_greeter_terminal(ttydev: wldm.tty.TTYdevice) -> None:
@@ -155,8 +120,8 @@ def open_greeter_pam_session(pam_service: str,
 
         wldm.pam.open_pam_session_only(pamh)
 
-        log_greeter_diag("opened PAM session for user=%s service=%s tty=%s",
-                         pw.pw_name, pam_service, ttydev.filename)
+        logger.info("opened PAM session for user=%s service=%s tty=%s",
+                    pw.pw_name, pam_service, ttydev.filename)
 
         yield pamh
 
@@ -179,6 +144,58 @@ def finish_greeter_session(pamh: Optional[Any]) -> None:
 
     finally:
         wldm.pam.end_pam(pamh)
+
+
+def run_greeter_session(pw: pwd.struct_passwd,
+                        gid: int,
+                        pam_service: str,
+                        tty_number: int,
+                        prog_args: List[str]) -> int:
+    ipc_fd = greeter_ipc_fd()
+
+    try:
+        with open_console_fd() as console:
+            ttydev = wldm.tty.TTYdevice(console, pw.pw_uid, number=tty_number)
+
+            try:
+                prepare_greeter_terminal(ttydev)
+
+                with open_greeter_pam_session(pam_service, pw, ttydev) as pamh:
+                    env = new_greeter_environ(pamh, pw)
+
+                    pid = os.fork()
+
+                    if pid == 0:
+                        try:
+                            wldm.exec_program(
+                                username=pw.pw_name, uid=pw.pw_uid, gid=gid, workdir=pw.pw_dir,
+                                argv=prog_args, env=env,
+                                keep_fds=(ipc_fd,),
+                            )
+
+                        except Exception as e:
+                            logger.critical("Failed to exec `%s %s': %r", prog_args[0], prog_args, e)
+                            os._exit(1)
+
+                    os.close(ipc_fd)
+                    ipc_fd = -1
+
+                    _, status = os.waitpid(pid, 0)
+
+                    return process_exit_status(status)
+
+            finally:
+                ttydev.close()
+
+    except RuntimeError as e:
+        logger.critical("[!] %s", e)
+        return wldm.EX_FAILURE
+
+    finally:
+        if ipc_fd >= 0:
+            os.close(ipc_fd)
+
+    return wldm.EX_FAILURE
 
 
 def cmd_main(parser: argparse.Namespace) -> int:
@@ -214,26 +231,7 @@ def cmd_main(parser: argparse.Namespace) -> int:
     redirect_greeter_stderr()
 
     try:
-        with open_console_fd() as console:
-            ttydev = wldm.tty.TTYdevice(console, pw.pw_uid, number=parser.tty)
-            prepare_greeter_terminal(ttydev)
-
-            with open_greeter_pam_session(parser.pam_service, pw, ttydev) as pamh:
-                try:
-                    exec_greeter_program(
-                        pw.pw_name, pw.pw_uid, gid, pw.pw_dir,
-                        [prog] + args,
-                        new_greeter_environ(pamh, pw),
-                    )
-                except Exception as e:
-                    logger.critical("Failed to exec `%s %s': %r", prog, [prog] + args, e)
-                    return wldm.EX_FAILURE
-
-            return wldm.EX_SUCCESS
-
-    except RuntimeError as e:
-        logger.critical("[!] %s", e)
-        return wldm.EX_FAILURE
+        return run_greeter_session(pw, gid, parser.pam_service, parser.tty, [prog] + args)
 
     except Exception:
         logger.exception("unexpected greeter session failure")
