@@ -150,6 +150,15 @@ and exports a small read-only `org.freedesktop.DisplayManager` API on the
 system bus. The adapter is not login-critical: if it fails to start, the daemon
 logs a warning and continues.
 
+`make install` also installs the matching system-bus policy file at:
+
+```text
+/usr/share/dbus-1/system.d/wldm-dbus.conf
+```
+
+The exported D-Bus object tree and properties are documented in
+[`dbus.md`](dbus.md).
+
 ## `[keyboard]`
 
 - `rules`
