@@ -59,6 +59,10 @@ def read_config() -> wldm.inifile.IniFile:
             "pre-execute": "",
             "post-execute": "",
         },
+        "dbus": {
+            "enabled": "no",
+            "user": ent_pw.pw_name,
+        },
         "keyboard": {
             "rules": "",
             "model": "",
@@ -72,6 +76,7 @@ def read_config() -> wldm.inifile.IniFile:
         "daemon": set(cfg["daemon"]),
         "greeter": set(cfg["greeter"]),
         "session": set(cfg["session"]),
+        "dbus": set(cfg["dbus"]),
         "keyboard": set(cfg["keyboard"]),
     }
 

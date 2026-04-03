@@ -115,6 +115,10 @@ def make_config(user="gdm",
             "user-sessions": user_sessions,
             "log-path": greeter_log,
         },
+        "dbus": {
+            "enabled": "no",
+            "user": user,
+        },
     })
 
 
@@ -581,7 +585,7 @@ def test_start_greeter_passes_socket_env(monkeypatch):
     async def fake_handle_client(state, name, reader, writer, cfg):
         return None
 
-    monkeypatch.setattr(wldm.daemon, "create_greeter_socketpair", lambda: (DummySocket(10), DummySocket(11)))
+    monkeypatch.setattr(wldm.daemon, "create_client_socketpair", lambda: (DummySocket(10), DummySocket(11)))
     monkeypatch.setattr(wldm.daemon.asyncio, "open_connection", fake_open_connection)
     monkeypatch.setattr(wldm.daemon, "handle_client", fake_handle_client)
 
@@ -623,6 +627,47 @@ def test_start_greeter_passes_socket_env(monkeypatch):
     assert calls["env"]["XKB_DEFAULT_OPTIONS"] == "grp:alt_shift_toggle"
     assert calls["sock"].fileno() == 10
     assert calls["kwargs"]["pass_fds"] == (11,)
+
+
+def test_start_dbus_adapter_is_optional():
+    state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
+
+    result = asyncio.run(wldm.daemon.start_dbus_adapter(state, make_config()))
+
+    assert result is None
+
+
+def test_start_dbus_adapter_starts_internal_client(monkeypatch):
+    state = wldm.daemon.DaemonState(["/usr/bin/python3", "/srv/wldm/src/wldm/command.py"], 3)
+    cfg = make_config(user="adapter-user")
+    cfg["dbus"]["enabled"] = "yes"
+    cfg["dbus"]["user"] = "adapter-user"
+    proc = DummyAsyncProc(pid=5555, returncode=0)
+    calls = {}
+
+    async def fake_start_client(state_arg, name_arg, cfg_arg, argv_arg, env_arg):
+        calls["state"] = state_arg
+        calls["name"] = name_arg
+        calls["cfg"] = cfg_arg
+        calls["argv"] = argv_arg
+        calls["env"] = env_arg
+        return proc
+
+    monkeypatch.setattr(wldm.daemon, "start_client", fake_start_client)
+
+    result = asyncio.run(wldm.daemon.start_dbus_adapter(state, cfg))
+
+    assert result is proc
+    assert calls["state"] is state
+    assert calls["name"] == "dbus-adapter"
+    assert calls["cfg"] is cfg
+    assert calls["argv"] == [
+        "/usr/bin/python3",
+        "/srv/wldm/src/wldm/command.py",
+        "dbus-adapter",
+        "adapter-user",
+    ]
+    assert isinstance(calls["env"], dict)
 
 
 def test_terminate_process_tree_sends_signals_to_process_group(monkeypatch):
@@ -728,6 +773,55 @@ def test_run_daemon_async_stops_after_configured_failed_greeter_starts(monkeypat
 
     assert result == wldm.daemon.wldm.EX_FAILURE
     assert sleeps == [1]
+
+
+def test_run_daemon_async_restarts_dbus_adapter_without_stopping(monkeypatch):
+    waits = iter([(False, "dbus-adapter"), (True, "")])
+    starts = {"greeter": 0, "dbus-adapter": 0}
+    stop_event = asyncio.Event()
+
+    async def fake_start_greeter(state, cfg, greeter_tty):
+        starts["greeter"] += 1
+        proc = DummyAsyncProc(pid=100 + starts["greeter"], returncode=None)
+        state.clients["greeter"].proc = proc
+        state.clients["greeter"].ready = True
+        return proc
+
+    async def fake_start_dbus_adapter(state, cfg):
+        starts["dbus-adapter"] += 1
+        proc = DummyAsyncProc(pid=200 + starts["dbus-adapter"], returncode=1)
+        state.clients.setdefault("dbus-adapter", wldm.daemon.ClientState()).proc = proc
+        return proc
+
+    async def fake_wait_for_stop_or_client(state, client_names, event):
+        return next(waits)
+
+    async def fake_close_client_channel(state, name):
+        return None
+
+    async def fake_cleanup_async(state):
+        return None
+
+    monkeypatch.setattr(wldm.tty, "open_console", lambda: 88)
+    monkeypatch.setattr(wldm.tty, "change", lambda console, tty: True)
+    monkeypatch.setattr(wldm.daemon, "start_greeter", fake_start_greeter)
+    monkeypatch.setattr(wldm.daemon, "start_dbus_adapter", fake_start_dbus_adapter)
+    monkeypatch.setattr(wldm.daemon, "wait_for_stop_or_client", fake_wait_for_stop_or_client)
+    monkeypatch.setattr(wldm.daemon, "close_client_channel", fake_close_client_channel)
+    monkeypatch.setattr(wldm.daemon, "cleanup_async", fake_cleanup_async)
+    monkeypatch.setattr(wldm.daemon, "install_stop_handlers", lambda loop, event: stop_event.set() if event is stop_event else None)
+    monkeypatch.setattr(wldm.daemon, "remove_stop_handlers", lambda loop: None)
+    monkeypatch.setattr(wldm.daemon.os, "close", lambda fd: None)
+    monkeypatch.setattr(wldm.daemon.asyncio, "Event", lambda: stop_event)
+
+    cfg = make_config()
+    cfg["dbus"]["enabled"] = "yes"
+
+    result = asyncio.run(wldm.daemon.run_daemon_async(SimpleNamespace(tty=None), cfg))
+
+    assert result == wldm.daemon.wldm.EX_SUCCESS
+    assert starts["greeter"] == 1
+    assert starts["dbus-adapter"] == 2
 
 
 def test_run_daemon_async_cleans_up_after_stop_signal(monkeypatch):

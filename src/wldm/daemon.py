@@ -100,15 +100,26 @@ def internal_command_prefix() -> list[str]:
     return [sys.executable, path]
 
 
-def create_greeter_socketpair() -> tuple[socket.socket, socket.socket]:
+def create_client_socketpair() -> tuple[socket.socket, socket.socket]:
+    """Create a private connected socket pair for one internal client."""
     return socket.socketpair()
 
 
 def client_state(state: DaemonState, name: str) -> ClientState:
+    """Return the tracked runtime state for a named internal client."""
     return state.clients[name]
 
 
 def state_snapshot(state: DaemonState) -> Dict[str, Any]:
+    """Build the read-only daemon state exposed to internal observers.
+
+    Args:
+        state: Current daemon runtime state.
+
+    Returns:
+        A protocol payload with the configured seat, current greeter readiness,
+        remembered login choice, and the list of active user sessions.
+    """
     return {
         "seat": state.seat,
         "greeter_ready": client_state(state, "greeter").ready,
@@ -252,11 +263,22 @@ async def send_message(writer: Optional[asyncio.StreamWriter], message: Dict[str
 
 
 async def broadcast_message(state: DaemonState, message: Dict[str, Any]) -> None:
+    """Send one protocol message to every connected internal client.
+
+    Args:
+        state: Current daemon runtime state.
+        message: Encoded protocol object to broadcast.
+    """
     for client in state.clients.values():
         await send_message(client.writer, message)
 
 
 async def broadcast_state_changed(state: DaemonState) -> None:
+    """Broadcast the current daemon state snapshot to all clients.
+
+    Args:
+        state: Current daemon runtime state.
+    """
     await broadcast_message(
         state,
         wldm.protocol.new_event(wldm.protocol.EVENT_STATE_CHANGED, state_snapshot(state)),
@@ -357,29 +379,100 @@ async def wait_for_stop_or_process(proc: AsyncProcess,
                                    stop_event: asyncio.Event) -> bool:
     proc_task = asyncio.create_task(proc.wait())
     stop_task = asyncio.create_task(stop_event.wait())
+    ret = False
 
     try:
         done, _ = await asyncio.wait(
             {proc_task, stop_task},
             return_when=asyncio.FIRST_COMPLETED,
         )
-        return stop_task in done and stop_event.is_set()
 
-    finally:
-        for task in [proc_task, stop_task]:
-            if task.done():
-                continue
+        ret = stop_task in done and stop_event.is_set()
 
-            task.cancel()
+    except Exception:
+        logger.exception("unexpected failure while waiting for the process")
 
-            with suppress(asyncio.CancelledError):
-                await task
+    for task in [proc_task, stop_task]:
+        if task.done():
+            continue
+
+        task.cancel()
+
+        with suppress(asyncio.CancelledError):
+            await task
+
+    return ret
+
+
+async def wait_for_stop_or_client(state: DaemonState,
+                                  client_names: list[str],
+                                  stop_event: asyncio.Event) -> tuple[bool, str]:
+    """Wait until the daemon should stop or one managed client exits.
+
+    Args:
+        state: Current daemon runtime state.
+        client_names: Client names whose processes should be watched.
+        stop_event: Event set when the daemon should stop.
+
+    Returns:
+        A tuple ``(stopped, name)`` where ``stopped`` is true when
+        ``stop_event`` won, and ``name`` is the client that exited first when a
+        managed client finished instead.
+    """
+    client_tasks = {}
+    ret = (False, "")
+
+    for name in client_names:
+        proc = client_state(state, name).proc
+        if proc is None:
+            continue
+
+        client_tasks[asyncio.create_task(proc.wait())] = name
+
+    stop_task = asyncio.create_task(stop_event.wait())
+
+    try:
+        done, _ = await asyncio.wait(
+            set(client_tasks) | {stop_task},
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+
+        if stop_task in done and stop_event.is_set():
+            ret = (True, "")
+
+        else:
+            for task, name in client_tasks.items():
+                if task in done:
+                    ret = (False, name)
+                    break
+
+    except Exception:
+        logger.exception("unexpected failure while waiting for managed clients")
+
+    for task in [*client_tasks, stop_task]:
+        if task.done():
+            continue
+
+        task.cancel()
+
+        with suppress(asyncio.CancelledError):
+            await task
+
+    return ret
 
 
 async def handle_request_async(state: DaemonState,
                                client_name: str,
                                req: Dict[str, Any],
                                cfg: wldm.inifile.IniFile) -> None:
+    """Process one protocol request from an internal client.
+
+    Args:
+        state: Current daemon runtime state.
+        client_name: Name of the client that sent the request.
+        req: Decoded protocol request.
+        cfg: Loaded daemon configuration.
+    """
     client = client_state(state, client_name)
     outcome = process_request(state, req, cfg)
     await send_message(client.writer, outcome.response)
@@ -419,6 +512,15 @@ async def handle_client(state: DaemonState,
                         reader: asyncio.StreamReader,
                         writer: asyncio.StreamWriter,
                         cfg: wldm.inifile.IniFile) -> None:
+    """Serve one connected internal client until its channel closes.
+
+    Args:
+        state: Current daemon runtime state.
+        name: Stable client name used to look up ``ClientState``.
+        reader: Stream used to receive protocol frames from the client.
+        writer: Stream used to send protocol frames to the client.
+        cfg: Loaded daemon configuration.
+    """
     client = client_state(state, name)
     client.writer = writer
 
@@ -448,6 +550,12 @@ async def handle_client(state: DaemonState,
 
 
 async def close_client_channel(state: DaemonState, name: str) -> None:
+    """Close the transport and serving task for one internal client.
+
+    Args:
+        state: Current daemon runtime state.
+        name: Client name whose channel should be closed.
+    """
     client = client_state(state, name)
 
     if client.writer is not None:
@@ -469,17 +577,51 @@ async def close_greeter_channel(state: DaemonState) -> None:
     await close_client_channel(state, "greeter")
 
 
+async def start_client(state: DaemonState,
+                       name: str,
+                       cfg: wldm.inifile.IniFile,
+                       argv: list[str],
+                       env: Dict[str, str]) -> AsyncProcess:
+    """Start one internal client and attach its inherited IPC channel.
+
+    Args:
+        state: Current daemon runtime state.
+        name: Stable client name used to track runtime state.
+        cfg: Loaded daemon configuration.
+        argv: Command line used to start the internal client.
+        env: Environment passed to the client before the socket fd is added.
+
+    Returns:
+        The started subprocess object.
+    """
+    client = state.clients.setdefault(name, ClientState())
+    daemon_sock, child_sock = create_client_socketpair()
+
+    proc = await asyncio.create_subprocess_exec(
+        *argv,
+        env=dict(env, WLDM_SOCKET_FD=str(child_sock.fileno())),
+        pass_fds=(child_sock.fileno(),),
+    )
+    child_sock.close()
+
+    reader, writer = await asyncio.open_connection(sock=daemon_sock)
+    client.proc = proc
+    client.task = asyncio.create_task(handle_client(state, name, reader, writer, cfg))
+    client.ready = False
+
+    logger.info("start %s (pid=%d)", name, proc.pid)
+
+    return proc
+
+
 async def start_greeter(state: DaemonState,
                         cfg: wldm.inifile.IniFile,
                         greeter_tty: int) -> AsyncProcess:
-    greeter = client_state(state, "greeter")
     greeter_pam_service = cfg.get_str("greeter", "pam-service")
     greeter_user = cfg.get_str("greeter", "user")
     greeter_group = cfg.get_str("greeter", "group")
-    daemon_sock, child_sock = create_greeter_socketpair()
     env = dict(
         os.environ,
-        WLDM_SOCKET_FD=str(child_sock.fileno()),
         WLDM_SEAT=state.seat,
         WLDM_DATA_DIR=cfg.get_str("greeter", "data-dir"),
         WLDM_LOCALE_DIR=cfg.get_str("greeter", "locale-dir"),
@@ -501,35 +643,105 @@ async def start_greeter(state: DaemonState,
     # greeter.command can stay a plain launcher wrapper.
     env.update(keyboard_environment(cfg))
 
-    proc = await asyncio.create_subprocess_exec(
-        *state.internal_command, "greeter-session",
-        "--tty", str(greeter_tty),
-        "--pam-service", greeter_pam_service,
-        greeter_user, greeter_group,
-        *greeter_command(cfg, state.internal_command),
-        env=env,
-        pass_fds=(child_sock.fileno(),),
+    return await start_client(
+        state,
+        "greeter",
+        cfg,
+        [
+            *state.internal_command, "greeter-session",
+            "--tty", str(greeter_tty),
+            "--pam-service", greeter_pam_service,
+            greeter_user, greeter_group,
+            *greeter_command(cfg, state.internal_command),
+        ],
+        env,
     )
-    child_sock.close()
 
-    reader, writer = await asyncio.open_connection(sock=daemon_sock)
-    greeter.proc = proc
-    greeter.task = asyncio.create_task(handle_client(state, "greeter", reader, writer, cfg))
-    greeter.ready = False
 
-    logger.info("start the greeter (pid=%d)", proc.pid)
+async def start_dbus_adapter(state: DaemonState,
+                             cfg: wldm.inifile.IniFile) -> Optional[AsyncProcess]:
+    """Start the optional dbus-adapter client when enabled in config.
 
-    return proc
+    Args:
+        state: Current daemon runtime state.
+        cfg: Loaded daemon configuration.
+
+    Returns:
+        The started subprocess object, or ``None`` when the adapter is
+        disabled or could not be started.
+    """
+    if not cfg.get_bool("dbus", "enabled"):
+        return None
+
+    user = cfg.get_str("dbus", "user")
+
+    try:
+        return await start_client(
+            state,
+            "dbus-adapter",
+            cfg,
+            [*state.internal_command, "dbus-adapter", user],
+            dict(os.environ),
+        )
+
+    except Exception as e:
+        logger.warning("unable to start dbus-adapter: %s", e)
+        return None
+
+
+async def ensure_managed_clients(state: DaemonState,
+                                 cfg: wldm.inifile.IniFile,
+                                 greeter_tty: int) -> list[str]:
+    """Ensure the configured managed clients are running.
+
+    Args:
+        state: Current daemon runtime state.
+        cfg: Loaded daemon configuration.
+        greeter_tty: TTY reserved for the greeter session.
+
+    Returns:
+        The ordered list of managed client names that should be watched by the
+        main daemon loop in this iteration.
+    """
+    names = ["greeter"]
+
+    if client_state(state, "greeter").proc is None:
+        proc = await start_greeter(state, cfg, greeter_tty)
+
+        if client_state(state, "greeter").proc is None:
+            client_state(state, "greeter").proc = proc
+
+    if cfg.get_bool("dbus", "enabled"):
+        names.append("dbus-adapter")
+
+        if "dbus-adapter" not in state.clients:
+            state.clients["dbus-adapter"] = ClientState()
+
+        if client_state(state, "dbus-adapter").proc is None:
+            adapter_proc = await start_dbus_adapter(state, cfg)
+
+            if adapter_proc is not None and client_state(state, "dbus-adapter").proc is None:
+                client_state(state, "dbus-adapter").proc = adapter_proc
+
+    return names
 
 
 async def cleanup_async(state: DaemonState) -> None:
-    greeter = client_state(state, "greeter")
-    await close_greeter_channel(state)
+    for name in list(state.clients):
+        await close_client_channel(state, name)
 
     # Stop the greeter before user sessions so the login UI cannot race the
     # shutdown sequence and start new work while the daemon is tearing down.
+    greeter = client_state(state, "greeter")
     if greeter.proc is not None and greeter.proc.returncode is None:
         await terminate_process_tree(greeter.proc, "the greeter")
+
+    for name, client in state.clients.items():
+        if name == "greeter":
+            continue
+
+        if client.proc is not None and client.proc.returncode is None:
+            await terminate_process_tree(client.proc, name)
 
     for session in list(state.active_sessions.values()):
         with suppress(Exception):
@@ -590,30 +802,48 @@ async def run_daemon_async(parser: argparse.Namespace, cfg: wldm.inifile.IniFile
 
     try:
         while True:
-            # Restart the greeter after ordinary exits, but stop once it never
-            # reaches the ready state repeatedly to avoid a tight crash loop.
-            proc = await start_greeter(state, cfg, greeter_tty)
+            client_names = await ensure_managed_clients(state, cfg, greeter_tty)
 
-            if await wait_for_stop_or_process(proc, stop_event):
+            stopped, exited_name = await wait_for_stop_or_client(state, client_names, stop_event)
+
+            if stopped:
                 logger.info("stop signal received, shutting down daemon")
                 break
 
-            logger.info("greeter (pid=%d) finished with return code %d", proc.pid, proc.returncode)
+            if not exited_name:
+                continue
 
-            await close_greeter_channel(state)
+            exited = client_state(state, exited_name)
+            proc = exited.proc
+            if proc is None:
+                continue
 
-            if greeter.ready:
-                greeter.failures = 0
-            else:
-                greeter.failures += 1
+            exited.proc = None
 
-                if greeter.failures >= state.greeter_max_restarts:
-                    logger.critical("greeter failed %d times in a row, stopping daemon",
-                                    greeter.failures)
+            if exited_name == "greeter":
+                logger.info("greeter (pid=%d) finished with return code %d", proc.pid, proc.returncode)
+                await close_client_channel(state, exited_name)
 
-                    exit_code = wldm.EX_FAILURE
-                    break
+                # Restart the greeter after ordinary exits, but stop once it never
+                # reaches the ready state repeatedly to avoid a tight crash loop.
+                if greeter.ready:
+                    greeter.failures = 0
+                else:
+                    greeter.failures += 1
 
+                    if greeter.failures >= state.greeter_max_restarts:
+                        logger.critical("greeter failed %d times in a row, stopping daemon",
+                                        greeter.failures)
+
+                        exit_code = wldm.EX_FAILURE
+                        break
+
+                await asyncio.sleep(1)
+                continue
+
+            logger.warning("%s (pid=%d) finished with return code %d",
+                           exited_name, proc.pid, proc.returncode)
+            await close_client_channel(state, exited_name)
             await asyncio.sleep(1)
 
     except asyncio.CancelledError:

@@ -92,6 +92,18 @@ pre-execute =
 post-execute =
 
 #
+# Optional D-Bus adapter settings.
+# The daemon can start a separate unprivileged adapter process that mirrors
+# daemon state to D-Bus without moving D-Bus code into the privileged path.
+#
+[dbus]
+# Enable the optional adapter process.
+enabled = no
+
+# User account used to run the adapter process.
+user = gdm
+
+#
 # Keyboard defaults for the greeter compositor.
 # wldm exports these values as XKB_DEFAULT_* so cage or another compositor can
 # apply them.

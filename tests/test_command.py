@@ -51,6 +51,15 @@ def test_greeter_session_subcommand_parses_arguments():
     assert args.args == ["-s", "-m", "last"]
 
 
+def test_dbus_adapter_subcommand_parses_arguments():
+    parser = wldm.command.setup_parser()
+
+    args = parser.parse_args(["dbus-adapter", "gdm"])
+
+    assert args.func is wldm.command.cmd_dbus_adapter
+    assert args.username == "gdm"
+
+
 def test_cmd_daemon_dispatches_to_module(monkeypatch):
     monkeypatch.setattr(wldm.daemon, "cmd_main", lambda ns: 17)
 

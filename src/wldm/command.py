@@ -29,6 +29,11 @@ def cmd_greeter_session(cmdargs: argparse.Namespace) -> int:
     return wldm.greeter_session.cmd_main(cmdargs)
 
 
+def cmd_dbus_adapter(cmdargs: argparse.Namespace) -> int:
+    import wldm.dbus_adapter
+    return wldm.dbus_adapter.cmd_main(cmdargs)
+
+
 def setup_parser() -> argparse.ArgumentParser:
     epilog = "Report bugs to authors."
 
@@ -100,6 +105,19 @@ opens a PAM-backed session for the greeter.
     sp.add_argument("group", help="greeter group")
     sp.add_argument("prog", help="program to execute")
     sp.add_argument("args", nargs=argparse.REMAINDER, help="optional <prog> arguments")
+
+    # command: dbus-adapter
+    sp_description = """\
+bridges daemon state to an external D-Bus adapter.
+
+"""
+    sp = subparsers.add_parser("dbus-adapter",
+                               formatter_class=argparse.RawTextHelpFormatter,
+                               description=sp_description, help=sp_description,
+                               epilog=epilog, add_help=False)
+    sp.set_defaults(func=cmd_dbus_adapter)
+    wldm.add_common_arguments(sp)
+    sp.add_argument("username", help="adapter user")
 
     return parser
 
