@@ -1,0 +1,16 @@
+<!DOCTYPE busconfig PUBLIC
+ "-//freedesktop//DTD D-Bus Bus Configuration 1.0//EN"
+ "https://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
+<busconfig>
+  <policy user="@dbus_user@">
+    <allow own="@dbus_service@"/>
+  </policy>
+
+  <policy context="default">
+    <allow send_destination="@dbus_service@" send_interface="org.freedesktop.DBus.Properties"/>
+    <allow send_destination="@dbus_service@" send_interface="org.freedesktop.DBus.Introspectable"/>
+    <allow send_destination="@dbus_service@" send_interface="org.freedesktop.DisplayManager"/>
+    <allow send_destination="@dbus_service@" send_interface="org.freedesktop.DisplayManager.Seat"/>
+    <allow send_destination="@dbus_service@" send_interface="org.freedesktop.DisplayManager.Session"/>
+  </policy>
+</busconfig>

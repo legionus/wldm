@@ -219,9 +219,15 @@ class DisplayManagerService:
         self.snapshot = dict(snapshot)
         self.Gio = Gio
         self.GLib = GLib
+        self.loop: Any = None
+        self.name_acquired = False
         self.connection = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
         self.owner_id = Gio.bus_own_name_on_connection(
-            self.connection, service, Gio.BusNameOwnerFlags.NONE, None, None
+            self.connection,
+            service,
+            Gio.BusNameOwnerFlags.NONE,
+            self._on_name_acquired,
+            self._on_name_lost,
         )
         self.registration_ids: dict[str, int] = {}
         self.manager_info = Gio.DBusNodeInfo.new_for_xml(MANAGER_XML).interfaces[0]
@@ -238,6 +244,19 @@ class DisplayManagerService:
             self.registration_ids.pop(path, None)
 
         self.Gio.bus_unown_name(self.owner_id)
+
+    def _on_name_acquired(self, connection: Any, name: str) -> None:
+        del connection
+        self.name_acquired = True
+        logger.info("acquired D-Bus name %s", name)
+
+    def _on_name_lost(self, connection: Any, name: str) -> None:
+        del connection
+        self.name_acquired = False
+        logger.error("lost D-Bus name %s", name)
+
+        if self.loop is not None:
+            self.GLib.idle_add(schedule_loop_quit, self.loop)
 
     def manager_path(self) -> str:
         """Return the fixed manager object path."""
@@ -529,6 +548,7 @@ def run_adapter(username: str, uid: int, gid: int, workdir: str, service_name: s
         service = DisplayManagerService(service_name, request_state(client), Gio, GLib)
 
         loop = GLib.MainLoop()
+        service.loop = loop
 
         thread = threading.Thread(
             target=read_daemon_events,

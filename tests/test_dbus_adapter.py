@@ -36,6 +36,23 @@ class DummyService:
         self.closed = True
 
 
+def test_name_lifecycle_callbacks_update_service_state():
+    calls = []
+    service = wldm.dbus_adapter.DisplayManagerService.__new__(wldm.dbus_adapter.DisplayManagerService)
+    service.name_acquired = False
+    service.loop = object()
+    service.GLib = SimpleNamespace(idle_add=lambda func, arg: calls.append((func, arg)))
+
+    service._on_name_acquired(None, "org.freedesktop.DisplayManager")
+
+    assert service.name_acquired is True
+
+    service._on_name_lost(None, "org.freedesktop.DisplayManager")
+
+    assert service.name_acquired is False
+    assert calls == [(wldm.dbus_adapter.schedule_loop_quit, service.loop)]
+
+
 def test_request_state_reads_valid_snapshot(monkeypatch):
     request = {"v": 1, "id": "req-1", "type": "request", "action": wldm.protocol.ACTION_GET_STATE, "payload": {}}
     monkeypatch.setattr(wldm.dbus_adapter.wldm.protocol, "new_request", lambda action, payload: dict(request))

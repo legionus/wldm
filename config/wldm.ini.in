@@ -101,6 +101,8 @@ post-execute =
 enabled = no
 
 # User account used to run the adapter process.
+# If you change this value, update the installed D-Bus policy file as well:
+# /usr/share/dbus-1/system.d/wldm-dbus.conf
 user = gdm
 
 # Well-known D-Bus service name exported by the adapter.

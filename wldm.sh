@@ -10,4 +10,4 @@ export WLDM_SOURCE_TREE=1
 export WLDM_DATA_DIR="${SCRIPT_TOP}/data"
 export WLDM_CONFIG="${WLDM_CONFIG:-${SCRIPT_TOP}/config/wldm-devel.ini}"
 
-exec python3 "${SCRIPT_TOP}/src/wldm/command.py" "${@}"
+exec python3 "${SCRIPT_TOP}/src/wldm/command.py" -vvv "${@}"
