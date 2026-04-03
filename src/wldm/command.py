@@ -2,6 +2,7 @@
 # Copyright (C) 2026  Alexey Gladkov <legion@kernel.org>
 
 import argparse
+import importlib
 import sys
 
 import wldm
@@ -9,27 +10,42 @@ import wldm
 logger = wldm.logger
 
 
+def set_process_title(role: str) -> None:
+    try:
+        setproctitle = importlib.import_module("setproctitle")
+
+    except Exception:
+        return
+
+    setproctitle.setproctitle(f"wldm [{role}]")
+
+
 def cmd_daemon(cmdargs: argparse.Namespace) -> int:
+    set_process_title("daemon")
     import wldm.daemon
     return wldm.daemon.cmd_main(cmdargs)
 
 
 def cmd_greeter(cmdargs: argparse.Namespace) -> int:
+    set_process_title("greeter")
     import wldm.greeter
     return wldm.greeter.cmd_main(cmdargs)
 
 
 def cmd_user_session(cmdargs: argparse.Namespace) -> int:
+    set_process_title("user-session")
     import wldm.user_session
     return wldm.user_session.cmd_main(cmdargs)
 
 
 def cmd_greeter_session(cmdargs: argparse.Namespace) -> int:
+    set_process_title("greeter-session")
     import wldm.greeter_session
     return wldm.greeter_session.cmd_main(cmdargs)
 
 
 def cmd_dbus_adapter(cmdargs: argparse.Namespace) -> int:
+    set_process_title("dbus-adapter")
     import wldm.dbus_adapter
     return wldm.dbus_adapter.cmd_main(cmdargs)
 

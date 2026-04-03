@@ -3,6 +3,7 @@
 
 from types import SimpleNamespace
 import io
+import sys
 
 import wldm.command
 import wldm.daemon
@@ -63,10 +64,32 @@ def test_dbus_adapter_subcommand_parses_arguments():
 
 def test_cmd_daemon_dispatches_to_module(monkeypatch):
     monkeypatch.setattr(wldm.daemon, "cmd_main", lambda ns: 17)
+    monkeypatch.setattr(wldm.command, "set_process_title", lambda role: None)
 
     result = wldm.command.cmd_daemon(SimpleNamespace())
 
     assert result == 17
+
+
+def test_set_process_title_is_noop_without_module(monkeypatch):
+    monkeypatch.setitem(sys.modules, "setproctitle", None)
+
+    wldm.command.set_process_title("daemon")
+
+
+def test_set_process_title_uses_setproctitle_module(monkeypatch):
+    calls = {}
+
+    class DummyModule:
+        @staticmethod
+        def setproctitle(value):
+            calls["title"] = value
+
+    monkeypatch.setitem(sys.modules, "setproctitle", DummyModule())
+
+    wldm.command.set_process_title("dbus-adapter")
+
+    assert calls["title"] == "wldm [dbus-adapter]"
 
 
 def test_cmd_dispatches_to_selected_handler(monkeypatch):
