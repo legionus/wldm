@@ -17,15 +17,13 @@ def test_setup_parser_defaults_to_daemon():
     assert args.func is wldm.command.cmd_daemon
 
 
-def test_user_session_subcommand_parses_program_and_args():
+def test_user_session_subcommand_parses_username():
     parser = wldm.command.setup_parser()
 
-    args = parser.parse_args(["user-session", "alice", "startplasma-wayland", "--", "--debug"])
+    args = parser.parse_args(["user-session", "alice"])
 
     assert args.func is wldm.command.cmd_user_session
     assert args.username == "alice"
-    assert args.prog == "startplasma-wayland"
-    assert args.args == ["--debug"]
 
 
 def test_greeter_session_subcommand_parses_arguments():

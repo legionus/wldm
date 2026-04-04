@@ -395,10 +395,9 @@ def test_handle_request_async_starts_session_after_auth(monkeypatch):
             "user-session",
             "--",
             "alice",
-            "startplasma-wayland",
-            "--debug",
         )
         assert env["WLDM_SEAT"] == "seat0"
+        assert env["WLDM_SESSION_COMMAND"] == "startplasma-wayland --debug"
         assert env["WLDM_SESSION_DESKTOP_NAMES"] == "plasma:kde"
         return proc
 

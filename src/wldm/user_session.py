@@ -102,6 +102,19 @@ def process_exit_status(status: int) -> int:
     return wldm.EX_FAILURE
 
 
+def configured_session_command() -> str:
+    """Return the opaque session command passed down by the daemon.
+
+    Returns:
+        The unparsed session command string from ``WLDM_SESSION_COMMAND``.
+    """
+    command = os.environ.get("WLDM_SESSION_COMMAND", "").strip()
+    if not command:
+        raise RuntimeError("environ variable `WLDM_SESSION_COMMAND' not specified")
+
+    return command
+
+
 def exec_user_program(ttydev: wldm.tty.TTYdevice,
                       username: str, uid: int, gid: int, workdir: str,
                       prog_args: List[str],
@@ -237,15 +250,24 @@ def cmd_main(parser: argparse.Namespace) -> int:
 
     wldm.logindefs.read_values()
 
-    prog = parser.prog
-    args = parser.args
     wrapper = cfg.get_str("session", "execute")
     pre_execute = cfg.get_str("session", "pre-execute")
     post_execute = cfg.get_str("session", "post-execute")
 
-    if len(prog) == 0:
-        prog = pw.pw_shell or "/bin/sh"
-        args = ["-l"]
+    try:
+        prog, *args = shlex.split(configured_session_command())
+
+    except RuntimeError as exc:
+        logger.critical("[!] %s", exc)
+        return wldm.EX_FAILURE
+
+    except ValueError as exc:
+        logger.critical("Invalid session command: %s", exc)
+        return wldm.EX_FAILURE
+
+    if not prog:
+        logger.critical("Invalid session command: empty command")
+        return wldm.EX_FAILURE
 
     if not os.path.isabs(prog) or not os.access(prog, os.X_OK):
         args = ["-c", shlex.join([prog] + args)]

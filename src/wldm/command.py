@@ -97,8 +97,6 @@ opens a session for the user.
     sp.set_defaults(func=cmd_user_session)
     wldm.add_common_arguments(sp)
     sp.add_argument("username", help="user to login")
-    sp.add_argument("prog", nargs='?', default="", help="script when booting into custom rootfs")
-    sp.add_argument("args", nargs='*', default=[], help="optional <prog> arguments")
 
     # command: greeter-session
     sp_description = """\
