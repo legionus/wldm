@@ -209,7 +209,7 @@ def run_greeter_session(pw: pwd.struct_passwd,
                             wldm.drop_privileges(pw.pw_name, pw.pw_uid, gid, pw.pw_dir)
                             wldm.close_inherited_fds((ipc_fd,))
 
-                            os.execve(prog_args[0], prog_args, env)
+                            os.execvpe(prog_args[0], prog_args, env)
 
                         except Exception as e:
                             logger.critical("Failed to exec `%s %s': %r", prog_args[0], prog_args, e)

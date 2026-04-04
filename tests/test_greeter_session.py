@@ -271,8 +271,8 @@ def test_run_greeter_session_child_exec_preserves_passed_socket_fd(monkeypatch):
                         }))
     monkeypatch.setattr(wldm.greeter_session.wldm, "close_inherited_fds",
                         lambda keep_fds=(): calls.update({"keep_fds": keep_fds}))
-    monkeypatch.setattr(wldm.greeter_session.os, "execve",
-                        lambda prog, argv, env: calls.update({"execve": (prog, argv, env)}) or
+    monkeypatch.setattr(wldm.greeter_session.os, "execvpe",
+                        lambda prog, argv, env: calls.update({"execvpe": (prog, argv, env)}) or
                         (_ for _ in ()).throw(SystemExit(0)))
     monkeypatch.setattr(wldm.greeter_session.os, "close", lambda fd: calls.setdefault("closed_fds", []).append(fd))
     monkeypatch.setattr(wldm.greeter_session.os, "_exit", lambda code: (_ for _ in ()).throw(AssertionError(code)))
@@ -282,10 +282,10 @@ def test_run_greeter_session_child_exec_preserves_passed_socket_fd(monkeypatch):
     except SystemExit as exc:
         assert exc.code == 0
     else:
-        raise AssertionError("run_greeter_session() should have exited through execve")
+        raise AssertionError("run_greeter_session() should have exited through execvpe")
 
     assert calls["dup2"] == [(55, 0), (55, 1)]
     assert calls["drop_privileges"] == ("gdm", 32, 32, "/var/lib/gdm")
     assert calls["keep_fds"] == (13,)
-    assert calls["execve"] == ("cage", ["cage", "--", "greeter"], {"PATH": "/usr/bin", "WLDM_SOCKET_FD": "13"})
+    assert calls["execvpe"] == ("cage", ["cage", "--", "greeter"], {"PATH": "/usr/bin", "WLDM_SOCKET_FD": "13"})
     assert calls["closed_fds"] == [13]
