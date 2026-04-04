@@ -167,11 +167,13 @@ def run_greeter_session(pw: pwd.struct_passwd,
 
                     if pid == 0:
                         try:
-                            wldm.exec_program(
-                                username=pw.pw_name, uid=pw.pw_uid, gid=gid, workdir=pw.pw_dir,
-                                argv=prog_args, env=env,
-                                keep_fds=(ipc_fd,),
-                            )
+                            os.dup2(ttydev.fd, 0)
+                            os.dup2(ttydev.fd, 1)
+
+                            wldm.drop_privileges(pw.pw_name, pw.pw_uid, gid, pw.pw_dir)
+                            wldm.close_inherited_fds((ipc_fd,))
+
+                            os.execve(prog_args[0], prog_args, env)
 
                         except Exception as e:
                             logger.critical("Failed to exec `%s %s': %r", prog_args[0], prog_args, e)

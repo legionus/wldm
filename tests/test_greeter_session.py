@@ -248,11 +248,17 @@ def test_run_greeter_session_child_exec_preserves_passed_socket_fd(monkeypatch):
         lambda pamh, pw_arg: {"PATH": "/usr/bin", "WLDM_SOCKET_FD": "13"},
     )
     monkeypatch.setattr(wldm.greeter_session.os, "fork", lambda: 0)
-    monkeypatch.setattr(
-        wldm.greeter_session.wldm,
-        "exec_program",
-        lambda **kwargs: calls.update({"exec_program": kwargs}) or (_ for _ in ()).throw(SystemExit(0)),
-    )
+    monkeypatch.setattr(wldm.greeter_session.os, "dup2",
+                        lambda src, dst: calls.setdefault("dup2", []).append((src, dst)))
+    monkeypatch.setattr(wldm.greeter_session.wldm, "drop_privileges",
+                        lambda username, uid, gid, workdir: calls.update({
+                            "drop_privileges": (username, uid, gid, workdir)
+                        }))
+    monkeypatch.setattr(wldm.greeter_session.wldm, "close_inherited_fds",
+                        lambda keep_fds=(): calls.update({"keep_fds": keep_fds}))
+    monkeypatch.setattr(wldm.greeter_session.os, "execve",
+                        lambda prog, argv, env: calls.update({"execve": (prog, argv, env)}) or
+                        (_ for _ in ()).throw(SystemExit(0)))
     monkeypatch.setattr(wldm.greeter_session.os, "close", lambda fd: calls.setdefault("closed_fds", []).append(fd))
     monkeypatch.setattr(wldm.greeter_session.os, "_exit", lambda code: (_ for _ in ()).throw(AssertionError(code)))
 
@@ -263,15 +269,10 @@ def test_run_greeter_session_child_exec_preserves_passed_socket_fd(monkeypatch):
     except SystemExit as exc:
         assert exc.code == 0
     else:
-        raise AssertionError("run_greeter_session() should have exited through exec_program")
+        raise AssertionError("run_greeter_session() should have exited through execve")
 
-    assert calls["exec_program"] == {
-        "username": "gdm",
-        "uid": 32,
-        "gid": 32,
-        "workdir": "/var/lib/gdm",
-        "argv": ["cage", "--", "greeter"],
-        "env": {"PATH": "/usr/bin", "WLDM_SOCKET_FD": "13"},
-        "keep_fds": (13,),
-    }
+    assert calls["dup2"] == [(55, 0), (55, 1)]
+    assert calls["drop_privileges"] == ("gdm", 32, 32, "/var/lib/gdm")
+    assert calls["keep_fds"] == (13,)
+    assert calls["execve"] == ("cage", ["cage", "--", "greeter"], {"PATH": "/usr/bin", "WLDM_SOCKET_FD": "13"})
     assert calls["closed_fds"] == [13]

@@ -80,13 +80,14 @@ def test_run_session_hook_executes_command_as_user(monkeypatch):
         pw,
         {"HOME": pw.pw_dir},
         ttydev,
-        ["/usr/bin/sway", "--debug"],
+        'sway --debug --profile "demo user"',
     )
 
     assert result is True
-    assert calls["cmd"] == ["/usr/libexec/pre-hook", "/usr/bin/sway", "--debug"]
+    assert calls["cmd"] == ["/usr/libexec/pre-hook"]
     assert calls["cwd"] == "/home/alice"
     assert calls["env"]["WLDM_TTY"] == "/dev/tty12"
+    assert calls["env"]["WLDM_SESSION_COMMAND"] == 'sway --debug --profile "demo user"'
     assert calls["user"] == 1001
     assert calls["group"] == 1001
     assert calls["extra_groups"] == [1001, 27]
@@ -111,7 +112,7 @@ def test_run_session_hook_reports_failure(monkeypatch):
         lambda msg, *args: criticals.append(msg % args if args else msg),
     )
 
-    result = wldm.user_session.run_session_hook("pre", "/usr/libexec/pre-hook", pw, {}, ttydev, ["/usr/bin/sway"])
+    result = wldm.user_session.run_session_hook("pre", "/usr/libexec/pre-hook", pw, {}, ttydev, "sway")
 
     assert result is False
     assert any("pre hook failed" in message for message in criticals)
@@ -132,7 +133,27 @@ def test_cmd_main_fails_without_session_command(monkeypatch):
     assert result == wldm.EX_FAILURE
 
 
-def test_cmd_main_uses_opaque_session_command_from_env(monkeypatch):
+def test_build_session_argv_uses_shell_for_non_absolute_command(monkeypatch):
+    monkeypatch.setenv("WLDM_SESSION_COMMAND", 'startplasma-wayland --profile "KDE Plasma"')
+    monkeypatch.setattr(wldm.user_session.os.path, "isabs", lambda path: False)
+    monkeypatch.setattr(wldm.user_session.os, "access", lambda path, mode: False)
+
+    argv = wldm.user_session.build_session_argv("/bin/bash")
+
+    assert argv == ["/bin/bash", "-c", "startplasma-wayland --profile 'KDE Plasma'"]
+
+
+def test_build_session_argv_preserves_absolute_executable(monkeypatch):
+    monkeypatch.setenv("WLDM_SESSION_COMMAND", '/usr/bin/startplasma-wayland --profile "KDE Plasma"')
+    monkeypatch.setattr(wldm.user_session.os.path, "isabs", lambda path: path.startswith("/"))
+    monkeypatch.setattr(wldm.user_session.os, "access", lambda path, mode: True)
+
+    argv = wldm.user_session.build_session_argv("/bin/bash")
+
+    assert argv == ["/usr/bin/startplasma-wayland", "--profile", "KDE Plasma"]
+
+
+def test_cmd_main_passes_wrapper_paths_to_run_user_session(monkeypatch):
     pw = pwd.struct_passwd(("alice", "x", 1001, 1001, "", "/home/alice", "/bin/bash"))
     calls = {}
 
@@ -144,15 +165,10 @@ def test_cmd_main_uses_opaque_session_command_from_env(monkeypatch):
     )
     monkeypatch.setattr(wldm.logindefs, "read_values", lambda: None)
     monkeypatch.setenv("WLDM_SESSION_COMMAND", 'startplasma-wayland --profile "KDE Plasma"')
-    monkeypatch.setattr(wldm.user_session.os.path, "isabs", lambda path: False)
-    monkeypatch.setattr(wldm.user_session.os, "access", lambda path, mode: False)
 
-    def fake_run_user_session(
-        pw_arg, pam_service, prog_args, wrapper="", pre_execute="", post_execute=""
-    ):
+    def fake_run_user_session(pw_arg, pam_service, wrapper="", pre_execute="", post_execute=""):
         calls["pw"] = pw_arg
         calls["pam_service"] = pam_service
-        calls["prog_args"] = prog_args
         calls["wrapper"] = wrapper
         calls["pre_execute"] = pre_execute
         calls["post_execute"] = post_execute
@@ -164,69 +180,9 @@ def test_cmd_main_uses_opaque_session_command_from_env(monkeypatch):
     assert result is None
     assert calls["pw"] == pw
     assert calls["pam_service"] == "custom-login"
-    assert calls["prog_args"] == ["/bin/bash", "-c", "startplasma-wayland --profile 'KDE Plasma'"]
     assert calls["wrapper"] == ""
     assert calls["pre_execute"] == ""
     assert calls["post_execute"] == ""
-
-
-def test_cmd_main_rejects_invalid_session_command_from_env(monkeypatch):
-    pw = pwd.struct_passwd(("alice", "x", 1001, 1001, "", "/home/alice", "/bin/bash"))
-    criticals = []
-
-    monkeypatch.setattr(wldm.user_session.pwd, "getpwnam", lambda username: pw)
-    monkeypatch.setattr(
-        wldm.config,
-        "read_config",
-        lambda: make_config({"pam-service": "custom-login", "execute": "", "pre-execute": "", "post-execute": ""}),
-    )
-    monkeypatch.setattr(wldm.logindefs, "read_values", lambda: None)
-    monkeypatch.setenv("WLDM_SESSION_COMMAND", '"unterminated')
-    monkeypatch.setattr(
-        wldm.user_session.logger,
-        "critical",
-        lambda msg, *args: criticals.append(msg % args if args else msg),
-    )
-
-    result = wldm.user_session.cmd_main(SimpleNamespace(username="alice"))
-
-    assert result == wldm.EX_FAILURE
-    assert any("Invalid session command" in message for message in criticals)
-
-
-def test_cmd_main_uses_shell_for_non_absolute_command(monkeypatch):
-    pw = pwd.struct_passwd(("alice", "x", 1001, 1001, "", "/home/alice", "/bin/bash"))
-    calls = {}
-
-    monkeypatch.setattr(wldm.user_session.pwd, "getpwnam", lambda username: pw)
-    monkeypatch.setattr(
-        wldm.config,
-        "read_config",
-        lambda: make_config({"pam-service": "custom-login", "execute": "", "pre-execute": "", "post-execute": ""}),
-    )
-    monkeypatch.setattr(wldm.logindefs, "read_values", lambda: None)
-    monkeypatch.setenv("WLDM_SESSION_COMMAND", "exec /usr/bin/startplasma-wayland --foo")
-    monkeypatch.setattr(wldm.user_session.os.path, "isabs", lambda path: False)
-    monkeypatch.setattr(wldm.user_session.os, "access", lambda path, mode: False)
-    monkeypatch.setattr(
-        wldm.user_session,
-        "run_user_session",
-        lambda pw_arg, pam_service, prog_args, wrapper="", pre_execute="", post_execute="": calls.update(
-            {
-                "pw": pw_arg,
-                "pam_service": pam_service,
-                "prog_args": prog_args,
-                "wrapper": wrapper,
-                "pre_execute": pre_execute,
-                "post_execute": post_execute,
-            }
-        ),
-    )
-
-    result = wldm.user_session.cmd_main(SimpleNamespace(username="alice"))
-
-    assert result is None
-    assert calls["prog_args"] == ["/bin/bash", "-c", "exec /usr/bin/startplasma-wayland --foo"]
 
 
 def test_finish_user_session_always_ends_pam(monkeypatch):
@@ -258,42 +214,17 @@ def test_finish_user_session_ends_pam_even_on_close_error(monkeypatch):
     assert calls == [("close", "handle"), ("end", "handle")]
 
 
-def test_exec_program_preserves_keep_fds(monkeypatch):
+def test_close_inherited_fds_preserves_keep_fds(monkeypatch):
     calls = []
 
-    monkeypatch.setattr(wldm.user_session.os, "dup2", lambda src, dst: calls.append(("dup2", src, dst)))
-    monkeypatch.setattr(wldm.user_session.os, "initgroups", lambda username, gid: calls.append(("initgroups", username, gid)))
-    monkeypatch.setattr(wldm.user_session.os, "setgid", lambda gid: calls.append(("setgid", gid)))
-    monkeypatch.setattr(wldm.user_session.os, "setuid", lambda uid: calls.append(("setuid", uid)))
-    monkeypatch.setattr(wldm.user_session.os, "chdir", lambda path: calls.append(("chdir", path)))
     monkeypatch.setattr(wldm.user_session.os, "sysconf", lambda name: 16)
     monkeypatch.setattr(wldm.user_session.os, "closerange", lambda start, end: calls.append(("closerange", start, end)))
-    monkeypatch.setattr(wldm.user_session.os, "execve", lambda prog, argv, env: calls.append(("execve", prog, argv, env)))
 
-    wldm.exec_program(
-        username="alice",
-        uid=1001,
-        gid=1001,
-        workdir="/home/alice",
-        argv=["/usr/bin/sway", "--debug"],
-        env={"HOME": "/home/alice"},
-        stdin_fd=9,
-        stdout_fd=9,
-        stderr_fd=9,
-        keep_fds=[7],
-    )
+    wldm.close_inherited_fds((7,))
 
     assert calls == [
-        ("dup2", 9, 0),
-        ("dup2", 9, 1),
-        ("dup2", 9, 2),
-        ("initgroups", "alice", 1001),
-        ("setgid", 1001),
-        ("setuid", 1001),
-        ("chdir", "/home/alice"),
         ("closerange", 3, 7),
         ("closerange", 8, 16),
-        ("execve", "/usr/bin/sway", ["/usr/bin/sway", "--debug"], {"HOME": "/home/alice"}),
     ]
 
 
@@ -317,7 +248,9 @@ def test_run_user_session_returns_early_when_console_is_unavailable(monkeypatch)
 
     pw = pwd.struct_passwd(("alice", "x", 1001, 1001, "", "/home/alice", "/bin/bash"))
 
-    assert wldm.user_session.run_user_session(pw, "login", ["/bin/bash", "-l"]) == wldm.EX_FAILURE
+    monkeypatch.setenv("WLDM_SESSION_COMMAND", "exec /bin/bash -l")
+
+    assert wldm.user_session.run_user_session(pw, "login") == wldm.EX_FAILURE
     assert closed == []
 
 
@@ -363,8 +296,9 @@ def test_run_user_session_parent_path_opens_and_closes_resources(monkeypatch):
             calls.append(("run_session_hook", name, command, session_prog, env)) or True,
     )
     monkeypatch.setattr(wldm.user_session, "exec_user_program",
-                        lambda ttydev, username, uid, gid, workdir, prog, prog_args, env:
-                        calls.append(("exec_user_program", ttydev.fd, username, uid, gid, workdir, prog, prog_args, env)))
+                        lambda ttydev, username, uid, gid, workdir, shell, wrapper, env:
+                        calls.append(("exec_user_program", ttydev.fd, username, uid, gid, workdir,
+                                      shell, wrapper, env)))
     monkeypatch.setattr(wldm.user_session.os, "fork", lambda: 1234)
     monkeypatch.setattr(wldm.user_session.os, "waitpid", lambda pid, flags: (pid, 0))
     monkeypatch.setattr(wldm.user_session.os, "WIFEXITED", lambda status: True)
@@ -380,7 +314,6 @@ def test_run_user_session_parent_path_opens_and_closes_resources(monkeypatch):
     result = wldm.user_session.run_user_session(
         pw,
         "custom-login",
-        ["/bin/bash", "-l"],
         "",
         "/usr/libexec/pre-hook",
         "/usr/libexec/post-hook",
@@ -441,7 +374,9 @@ def test_run_user_session_parent_path_logs_nonzero_exit(monkeypatch):
     monkeypatch.setattr(wldm.user_session.logger, "critical",
                         lambda msg, *args: criticals.append(msg % args if args else msg))
 
-    result = wldm.user_session.run_user_session(pw, "login", ["/bin/bash", "-l"])
+    monkeypatch.setenv("WLDM_SESSION_COMMAND", "exec /bin/bash -l")
+
+    result = wldm.user_session.run_user_session(pw, "login")
 
     assert result == 7
     assert any("Child exited" in message for message in criticals)
@@ -470,7 +405,9 @@ def test_run_user_session_aborts_when_pre_hook_fails(monkeypatch):
     monkeypatch.setattr(wldm.user_session.os, "fork", lambda: (_ for _ in ()).throw(AssertionError("fork should not be called")))
     monkeypatch.setattr(wldm.user_session.os, "close", lambda fd: calls.append(("close_console", fd)))
 
-    result = wldm.user_session.run_user_session(pw, "login", ["/bin/bash", "-l"], "", "/usr/libexec/pre-hook", "")
+    monkeypatch.setenv("WLDM_SESSION_COMMAND", "exec /bin/bash -l")
+
+    result = wldm.user_session.run_user_session(pw, "login", "", "/usr/libexec/pre-hook", "")
 
     assert result == wldm.EX_FAILURE
     assert ("tty_close",) in calls

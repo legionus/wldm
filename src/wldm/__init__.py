@@ -180,28 +180,6 @@ def close_inherited_fds(keep_fds: tuple[int, ...] = ()) -> None:
         os.closerange(bounds[i], bounds[i + 1])
 
 
-def exec_program(
-    *,
-    username: str, uid: int, gid: int, workdir: str,
-    argv: list[str], env: dict[str, str],
-    stdin_fd: int | None = None, stdout_fd: int | None = None, stderr_fd: int | None = None,
-    keep_fds: tuple[int, ...] = (),
-) -> None:
-    if stdin_fd is not None:
-        os.dup2(stdin_fd, 0)
-
-    if stdout_fd is not None:
-        os.dup2(stdout_fd, 1)
-
-    if stderr_fd is not None:
-        os.dup2(stderr_fd, 2)
-
-    drop_privileges(username, uid, gid, workdir)
-    close_inherited_fds(keep_fds)
-
-    os.execve(argv[0], argv, env)
-
-
 def setup_file_logger(logger: logging.Logger, level: int,
                       fmt: str, path: str) -> logging.Logger:
     formatter = logging.Formatter(fmt=fmt, datefmt="%H:%M:%S")

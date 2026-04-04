@@ -108,13 +108,12 @@ baking those paths into the main config.
   development config can use `../data/scripts/wayland-session`.
 - `pre-execute`
   Optional executable run after the user PAM session is opened and the session
-  environment is prepared, but before the final user program is executed.
-  `wldm` invokes it as `pre-execute <session-command> [args...]`. A non-zero
-  exit status aborts the session start.
+  environment is prepared, but before the final user program is executed. A
+  non-zero exit status aborts the session start.
 - `post-execute`
   Optional executable run after the user session exits and before the PAM
-  session is closed. `wldm` invokes it as `post-execute <session-command>
-  [args...]`. A non-zero exit status is logged but does not interrupt cleanup.
+  session is closed. A non-zero exit status is logged but does not interrupt
+  cleanup.
 
 Session hooks are executed as the target user, not as `root`. They inherit the
 session environment assembled by `wldm`, including `XDG_RUNTIME_DIR`,
@@ -125,6 +124,7 @@ metadata is available.
 `wldm` also adds:
 
 - `WLDM_TTY`
+- `WLDM_SESSION_COMMAND`
 
 The hook paths themselves are executable paths, not shell command lines.
 Relative paths are resolved against the directory that contains the loaded
