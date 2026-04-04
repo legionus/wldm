@@ -35,6 +35,8 @@ import wldm.policy
 import wldm.protocol
 # pylint: disable-next=wrong-import-position
 import wldm.sessions
+# pylint: disable-next=wrong-import-position
+import wldm.state
 
 logger = wldm.logger
 resource_path: str
@@ -129,8 +131,8 @@ def configured_keyboard_short_names() -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
-def configured_last_session_command() -> str:
-    return os.environ.get("WLDM_LAST_SESSION_COMMAND", "").strip()
+def configured_state_file() -> str:
+    return os.environ.get("WLDM_STATE_FILE", "").strip()
 
 
 def clear_entry_selection(entry: Any) -> None:
@@ -290,8 +292,12 @@ class LoginApp:
         self.quit = False
         self.auth_in_progress = False
         self.actions = available_actions()
-        self.last_username = os.environ.get("WLDM_LAST_USERNAME", "").strip()
-        self.last_session_command = configured_last_session_command()
+        self.state_file = configured_state_file()
+        self.last_username = ""
+        self.last_session_command = ""
+
+        if self.state_file:
+            self.last_username, self.last_session_command = wldm.state.load_last_session_file(self.state_file)
 
         self.WIDGET_BINDINGS: list[Dict[str, Any]] = [
             {
@@ -427,6 +433,26 @@ class LoginApp:
     def handle_connection_lost(self) -> None:
         self.set_status(_("Connection to daemon lost."), error=True)
         self.on_quit()
+
+    def save_last_session_state(self) -> None:
+        """Persist the remembered greeter username and session selection.
+
+        Args:
+            None.
+
+        Returns:
+            Nothing. The helper writes the current `last-session` file when the
+            greeter has a configured state file path.
+        """
+        state_file = getattr(self, "state_file", "")
+
+        if not state_file:
+            return
+
+        try:
+            wldm.state.save_last_session_file(state_file, self.last_username, self.last_session_command)
+        except OSError as e:
+            logger.warning("unable to save last-session state in %s: %s", state_file, e)
 
     def log_protocol_error(self, context: str, raw: bytes, error: Exception) -> None:
         logger.critical("%s: %s; raw=%r", context, error, raw)
@@ -635,12 +661,12 @@ class LoginApp:
             self.set_auth_state(False)
 
             if not bool(payload.get("failed", False)):
-                self.last_username = ""
-
                 if self.username_entry is not None:
-                    self.last_username = self.username_entry.get_text().strip()
+                    current_username = self.username_entry.get_text().strip()
+                    if current_username:
+                        self.last_username = current_username
 
-                self.last_session_command = self.get_session_command()
+                self.save_last_session_state()
 
             if self.username_entry is not None:
                 self.username_entry.set_text(self.last_username)
@@ -853,6 +879,7 @@ class LoginApp:
 
         if answer.get("ok") and answer.get("payload", {}).get("verified"):
             self.last_username = username.strip()
+            self.last_session_command = self.get_session_command()
             self.username_entry.set_text("")
             status_message = _("Authentication accepted. Waiting for session...")
             status_error = False

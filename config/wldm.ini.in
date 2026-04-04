@@ -10,10 +10,6 @@ seat = seat0
 # UNIX socket used for daemon <-> greeter requests.
 socket-path = /run/wldm/greeter.sock
 
-# Optional directory for small daemon-managed state such as the last restored
-# login/session choice. Leave empty to disable persistent greeter state.
-state-dir =
-
 # Optional daemon log file. Leave empty to keep logging on stderr/journal.
 log-path =
 
@@ -43,6 +39,10 @@ data-dir = @datadir@
 
 # Directory that contains locale catalogs used by the greeter.
 locale-dir = @localedir@
+
+# Optional directory for small greeter-managed state such as the last restored
+# username/session choice. Leave empty to disable persistent greeter state.
+state-dir =
 
 # Theme name. "default" uses the built-in resources directory.
 theme = default

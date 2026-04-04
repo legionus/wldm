@@ -107,8 +107,6 @@ def test_encode_and_decode_get_state_response():
         payload={
             "seat": "seat0",
             "greeter_ready": True,
-            "last_username": "alice",
-            "last_session_command": "sway",
             "active_sessions": [{"pid": 42, "username": "alice", "command": "sway"}],
         },
     )
@@ -118,8 +116,6 @@ def test_encode_and_decode_get_state_response():
     assert decoded["payload"] == {
         "seat": "seat0",
         "greeter_ready": True,
-        "last_username": "alice",
-        "last_session_command": "sway",
         "active_sessions": [{"pid": 42, "username": "alice", "command": "sway"}],
     }
 
@@ -130,8 +126,6 @@ def test_encode_and_decode_state_changed_event():
         {
             "seat": "seat0",
             "greeter_ready": False,
-            "last_username": "",
-            "last_session_command": "",
             "active_sessions": [],
         },
     )

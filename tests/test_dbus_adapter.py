@@ -64,8 +64,6 @@ def test_request_state_reads_valid_snapshot(monkeypatch):
             payload={
                 "seat": "seat0",
                 "greeter_ready": False,
-                "last_username": "",
-                "last_session_command": "",
                 "active_sessions": [],
             },
         ),
@@ -110,8 +108,6 @@ def test_read_daemon_events_applies_state_changes(monkeypatch):
     snapshot = {
         "seat": "seat0",
         "greeter_ready": True,
-        "last_username": "alice",
-        "last_session_command": "sway",
         "active_sessions": [],
     }
     client = DummyClient([
@@ -152,8 +148,6 @@ def test_run_adapter_drops_privileges_and_runs_loop(monkeypatch):
             payload={
                 "seat": "seat0",
                 "greeter_ready": True,
-                "last_username": "alice",
-                "last_session_command": "sway",
                 "active_sessions": [],
             },
         ),

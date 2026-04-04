@@ -27,11 +27,6 @@ baking those paths into the main config.
   current greeter and D-Bus adapter paths use inherited socket pairs instead of
   pathname listeners, so this option is currently reserved and not used by the
   internal helpers.
-- `state-dir`
-  Optional directory used for small daemon-managed runtime state. When set,
-  `wldm` stores the last successfully completed username and session command in
-  a bounded `last-session` state file there and uses them to restore the
-  greeter state on the next login screen.
 - `log-path`
   Daemon log file. Default: empty, which keeps logging on stderr/journal.
 - `poweroff-command`
@@ -61,6 +56,12 @@ baking those paths into the main config.
 - `locale-dir`
   Directory that contains gettext catalogs for the greeter. The installed
   config points this at `/usr/share/locale`.
+- `state-dir`
+  Optional directory used for small greeter-managed state. When set, the
+  greeter stores the last successfully completed username and session command
+  in a bounded `last-session` state file there and restores that UI state on
+  the next greeter activation. The daemon passes the resolved file path to the
+  greeter through `WLDM_STATE_FILE`.
 - `theme`
   Greeter theme name. `default` uses `data-dir/resources`. Any other value
   makes the greeter look for `themes/<name>/` next to that resource base path
@@ -215,7 +216,6 @@ WLDM_VERBOSITY=2 ./wldm.sh greeter
 [daemon]
 seat = seat0
 socket-path = /run/wldm/greeter.sock
-state-dir =
 log-path =
 poweroff-command = systemctl poweroff
 reboot-command = systemctl reboot
@@ -228,6 +228,7 @@ group = gdm
 tty = 7
 data-dir = /usr/share/wldm
 locale-dir = /usr/share/locale
+state-dir =
 theme = default
 session-dirs = /usr/share/wayland-sessions
 user-session-dir = .local/share/wayland-sessions

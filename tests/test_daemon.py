@@ -82,20 +82,19 @@ def make_config(user="gdm",
                 theme="default",
                 session_dirs="/usr/share/wayland-sessions",
                 user_session_dir=".local/share/wayland-sessions",
+                greeter_state_dir="",
                 command="cage -s -m last --",
                 pam_service="system-login",
                 max_restarts="3",
                 user_sessions="yes",
                 seat="seat0",
                 socket_path="/tmp/wldm/greeter.sock",
-                state_dir="",
                 daemon_log="/tmp/wldm/daemon.log",
                 greeter_log="/tmp/wldm/greeter.log"):
     return wldm.inifile.IniFile({
         "daemon": {
             "seat": seat,
             "socket-path": socket_path,
-            "state-dir": state_dir,
             "log-path": daemon_log,
             "poweroff-command": "systemctl poweroff",
             "reboot-command": "systemctl reboot",
@@ -109,6 +108,7 @@ def make_config(user="gdm",
             "theme": theme,
             "session-dirs": session_dirs,
             "user-session-dir": user_session_dir,
+            "state-dir": greeter_state_dir,
             "command": command,
             "pam-service": pam_service,
             "max-restarts": max_restarts,
@@ -335,8 +335,6 @@ def test_send_message_writes_encoded_line():
 def test_process_request_returns_state_snapshot():
     state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3, seat="seat9")
     state.clients["greeter"].ready = True
-    state.last_username = "alice"
-    state.last_session_command = "sway"
     state.active_sessions[42] = wldm.daemon.SessionState(
         proc=DummyAsyncProc(pid=42, returncode=None),
         username="alice",
@@ -352,8 +350,6 @@ def test_process_request_returns_state_snapshot():
     assert outcome.response["payload"] == {
         "seat": "seat9",
         "greeter_ready": True,
-        "last_username": "alice",
-        "last_session_command": "sway",
         "active_sessions": [{"pid": 42, "username": "alice", "command": "sway"}],
     }
 
@@ -474,25 +470,6 @@ def test_send_session_finished_switches_back_to_greeter_tty(monkeypatch):
     assert finished["payload"]["failed"] is False
     assert finished["payload"]["message"] == "Session finished."
 
-
-def test_send_session_finished_saves_last_successful_session(tmp_path, monkeypatch):
-    state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3, state_dir=str(tmp_path))
-    state.clients["greeter"].writer = DummyWriter()
-    proc = DummyAsyncProc(pid=555, returncode=0)
-    session = wldm.daemon.SessionState(proc=proc, username="alice", command="sway --debug")
-    state.active_sessions[555] = session
-
-    monkeypatch.setattr(wldm.tty, "change", lambda console, tty: True)
-
-    asyncio.run(wldm.daemon.send_session_finished(state, session))
-
-    assert state.last_username == "alice"
-    assert state.last_session_command == "sway --debug"
-    assert (tmp_path / wldm.state.LAST_SESSION_FILE).read_text(encoding="utf-8") == (
-        "[session]\nusername = alice\ncommand = sway --debug\n"
-    )
-
-
 def test_send_session_finished_reports_failed_session(monkeypatch):
     state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
     state.clients["greeter"].writer = DummyWriter()
@@ -533,9 +510,13 @@ def test_handle_client_marks_client_ready(monkeypatch):
 
 def test_start_greeter_passes_socket_env(monkeypatch):
     state = wldm.daemon.DaemonState(["/usr/bin/python3", "/srv/wldm/src/wldm/command.py"], 3, seat="seat9")
-    state.last_username = "alice"
-    state.last_session_command = "labwc"
-    cfg = make_config(command="labwc --", greeter_log="/tmp/custom-greeter.log", user_sessions="no", theme="retro")
+    cfg = make_config(
+        command="labwc --",
+        greeter_log="/tmp/custom-greeter.log",
+        user_sessions="no",
+        theme="retro",
+        greeter_state_dir="/tmp/wldm-state",
+    )
     cfg["daemon"]["suspend-command"] = "do-suspend"
     cfg.sections["keyboard"] = {
         "rules": "evdev",
@@ -601,8 +582,7 @@ def test_start_greeter_passes_socket_env(monkeypatch):
     assert calls["env"]["WLDM_ACTIONS"] == "poweroff:reboot:suspend"
     assert calls["env"]["WLDM_GREETER_STDERR_LOG"] == "/tmp/custom-greeter.log"
     assert calls["env"]["WLDM_GREETER_USER_SESSIONS"] == "no"
-    assert calls["env"]["WLDM_LAST_USERNAME"] == "alice"
-    assert calls["env"]["WLDM_LAST_SESSION_COMMAND"] == "labwc"
+    assert calls["env"]["WLDM_STATE_FILE"] == "/tmp/wldm-state/last-session"
     assert calls["env"]["XKB_DEFAULT_RULES"] == "evdev"
     assert calls["env"]["XKB_DEFAULT_MODEL"] == "pc105"
     assert calls["env"]["XKB_DEFAULT_LAYOUT"] == "us,ru"

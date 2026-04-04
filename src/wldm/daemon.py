@@ -29,8 +29,7 @@ class DaemonState:
     def __init__(self,
                  internal_command: str | list[str],
                  greeter_max_restarts: int,
-                 seat: str = wldm.policy.DEFAULT_SEAT,
-                 state_dir: str = "") -> None:
+                 seat: str = wldm.policy.DEFAULT_SEAT) -> None:
         if isinstance(internal_command, str):
             self.internal_command = [internal_command]
         else:
@@ -38,9 +37,6 @@ class DaemonState:
 
         self.greeter_max_restarts = greeter_max_restarts
         self.seat = seat
-        self.state_dir = state_dir
-        self.last_username = ""
-        self.last_session_command = ""
         self.clients: dict[str, "ClientState"] = {"greeter": ClientState()}
         self.console: int = -1
         self.greeter_tty: int = 0
@@ -107,13 +103,11 @@ def state_snapshot(state: DaemonState) -> Dict[str, Any]:
 
     Returns:
         A protocol payload with the configured seat, current greeter readiness,
-        remembered login choice, and the list of active user sessions.
+        and the list of active user sessions.
     """
     return {
         "seat": state.seat,
         "greeter_ready": client_state(state, "greeter").ready,
-        "last_username": state.last_username,
-        "last_session_command": state.last_session_command,
         "active_sessions": [
             {"pid": session.proc.pid, "username": session.username, "command": session.command}
             for session in state.active_sessions.values()
@@ -280,16 +274,6 @@ async def send_session_finished(state: DaemonState,
     returncode = proc.returncode if proc.returncode is not None else wldm.EX_FAILURE
 
     failed = returncode != 0
-
-    if not failed and session.command:
-        state.last_username = session.username
-        state.last_session_command = session.command
-
-        try:
-            wldm.state.save_last_session(state.state_dir, session.username, session.command)
-
-        except OSError as e:
-            logger.warning("unable to save last session state in %s: %s", state.state_dir, e)
 
     if failed:
         message = f"Session failed with exit status {returncode}."
@@ -617,12 +601,10 @@ async def start_greeter(state: DaemonState,
         WLDM_GREETER_STDERR_LOG=cfg.get_str("greeter", "log-path"),
         WLDM_GREETER_USER_SESSIONS="yes" if cfg.get_bool("greeter", "user-sessions") else "no",
     )
+    greeter_state_dir = cfg.get_str("greeter", "state-dir")
 
-    if state.last_session_command:
-        env["WLDM_LAST_SESSION_COMMAND"] = state.last_session_command
-
-    if state.last_username:
-        env["WLDM_LAST_USERNAME"] = state.last_username
+    if greeter_state_dir:
+        env["WLDM_STATE_FILE"] = wldm.state.last_session_path(greeter_state_dir)
 
     # Keep compositor-side keyboard setup in the daemon environment contract so
     # greeter.command can stay a plain launcher wrapper.
@@ -772,11 +754,9 @@ async def run_daemon_async(parser: argparse.Namespace, cfg: wldm.inifile.IniFile
         wldm.command.internal_command_prefix(),
         greeter_max_restarts,
         seat=cfg.get_str("daemon", "seat"),
-        state_dir=cfg.get_str("daemon", "state-dir"),
     )
     state.console = console
     state.greeter_tty = greeter_tty
-    state.last_username, state.last_session_command = wldm.state.load_last_session(state.state_dir)
 
     exit_code = wldm.EX_SUCCESS
 

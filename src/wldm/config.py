@@ -31,7 +31,6 @@ def read_config() -> wldm.inifile.IniFile:
         "daemon": {
             "seat": wldm.policy.DEFAULT_SEAT,
             "socket-path": "/run/wldm/greeter.sock",
-            "state-dir": "",
             "log-path": "",
             "poweroff-command": "systemctl poweroff",
             "reboot-command": "systemctl reboot",
@@ -44,6 +43,7 @@ def read_config() -> wldm.inifile.IniFile:
             "tty": "7",
             "data-dir": "",
             "locale-dir": "",
+            "state-dir": "",
             "theme": "default",
             "session-dirs": ":".join(wldm.policy.SYSTEM_WAYLAND_SESSION_DIRS),
             "user-session-dir": wldm.policy.USER_WAYLAND_SESSION_DIR,
@@ -98,6 +98,11 @@ def read_config() -> wldm.inifile.IniFile:
                 if parsed.get_str("greeter", "locale-dir") != "":
                     parsed.sections["greeter"]["locale-dir"] = wldm.resolve_config_path(
                             parsed.get_str("greeter", "locale-dir"),
+                            base_dir=os.path.dirname(path))
+
+                if parsed.get_str("greeter", "state-dir") != "":
+                    parsed.sections["greeter"]["state-dir"] = wldm.resolve_config_path(
+                            parsed.get_str("greeter", "state-dir"),
                             base_dir=os.path.dirname(path))
 
                 for key in ["execute", "pre-execute", "post-execute"]:

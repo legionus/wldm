@@ -707,6 +707,224 @@ def test_handle_event_updates_status_label(monkeypatch):
     assert app.status_label.text == "Session failed with exit status 7."
 
 
+def test_login_app_loads_last_session_from_state_file(monkeypatch, tmp_path):
+    greeter = load_greeter_module(monkeypatch)
+    state_file = tmp_path / "last-session"
+
+    monkeypatch.setenv("WLDM_STATE_FILE", str(state_file))
+    monkeypatch.setattr(greeter.wldm.state, "load_last_session_file", lambda path: ("alice", "labwc"))
+
+    app = greeter.LoginApp(client=DummyClient())
+
+    assert app.state_file == str(state_file)
+    assert app.last_username == "alice"
+    assert app.last_session_command == "labwc"
+
+
+def test_handle_event_saves_last_session_state_on_success(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+    calls = []
+
+    class FakeEntry:
+        def __init__(self, text=""):
+            self.text = text
+
+        def get_text(self):
+            return self.text
+
+        def set_text(self, text):
+            self.text = text
+
+        def grab_focus(self):
+            return None
+
+        def select_region(self, start, end):
+            return None
+
+    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app.auth_in_progress = False
+    app.state_file = "/tmp/wldm-state/last-session"
+    app.last_username = ""
+    app.last_session_command = "labwc"
+    app.username_entry = FakeEntry("alice")
+    app.password_entry = FakeEntry("secret")
+    app.sessions_entry = None
+    app.login_button = None
+    app.status_label = DummyLabel()
+    app.session_label = None
+    app.refresh_sessions = lambda username="", preferred_command="": None
+    app.get_session_command = lambda: "labwc"
+
+    monkeypatch.setattr(
+        greeter.wldm.state,
+        "save_last_session_file",
+        lambda path, username, command: calls.append((path, username, command)),
+    )
+
+    greeter.LoginApp.handle_event(
+        app,
+        {
+            "v": 1,
+            "type": "event",
+            "event": greeter.wldm.protocol.EVENT_SESSION_FINISHED,
+            "payload": {"pid": 1, "returncode": 0, "failed": False, "message": "Session finished."},
+        },
+    )
+
+    assert calls == [("/tmp/wldm-state/last-session", "alice", "labwc")]
+
+
+def test_handle_event_saves_last_session_state_when_username_entry_was_cleared(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+    calls = []
+
+    class FakeEntry:
+        def __init__(self, text=""):
+            self.text = text
+
+        def get_text(self):
+            return self.text
+
+        def set_text(self, text):
+            self.text = text
+
+        def grab_focus(self):
+            return None
+
+        def select_region(self, start, end):
+            return None
+
+    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app.auth_in_progress = False
+    app.state_file = "/tmp/wldm-state/last-session"
+    app.last_username = "alice"
+    app.last_session_command = "labwc"
+    app.username_entry = FakeEntry("")
+    app.password_entry = FakeEntry("secret")
+    app.sessions_entry = None
+    app.login_button = None
+    app.status_label = DummyLabel()
+    app.session_label = None
+    app.refresh_sessions = lambda username="", preferred_command="": None
+    app.get_session_command = lambda: "labwc"
+
+    monkeypatch.setattr(
+        greeter.wldm.state,
+        "save_last_session_file",
+        lambda path, username, command: calls.append((path, username, command)),
+    )
+
+    greeter.LoginApp.handle_event(
+        app,
+        {
+            "v": 1,
+            "type": "event",
+            "event": greeter.wldm.protocol.EVENT_SESSION_FINISHED,
+            "payload": {"pid": 1, "returncode": 0, "failed": False, "message": "Session finished."},
+        },
+    )
+
+    assert calls == [("/tmp/wldm-state/last-session", "alice", "labwc")]
+
+
+def test_handle_event_keeps_remembered_session_command_when_current_selection_changed(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+    calls = []
+
+    class FakeEntry:
+        def __init__(self, text=""):
+            self.text = text
+
+        def get_text(self):
+            return self.text
+
+        def set_text(self, text):
+            self.text = text
+
+        def grab_focus(self):
+            return None
+
+        def select_region(self, start, end):
+            return None
+
+    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app.auth_in_progress = False
+    app.state_file = "/tmp/wldm-state/last-session"
+    app.last_username = "alice"
+    app.last_session_command = "labwc"
+    app.username_entry = FakeEntry("")
+    app.password_entry = FakeEntry("secret")
+    app.sessions_entry = None
+    app.login_button = None
+    app.status_label = DummyLabel()
+    app.session_label = None
+    app.refresh_sessions = lambda username="", preferred_command="": None
+    app.get_session_command = lambda: "sway"
+
+    monkeypatch.setattr(
+        greeter.wldm.state,
+        "save_last_session_file",
+        lambda path, username, command: calls.append((path, username, command)),
+    )
+
+    greeter.LoginApp.handle_event(
+        app,
+        {
+            "v": 1,
+            "type": "event",
+            "event": greeter.wldm.protocol.EVENT_SESSION_FINISHED,
+            "payload": {"pid": 1, "returncode": 0, "failed": False, "message": "Session finished."},
+        },
+    )
+
+    assert calls == [("/tmp/wldm-state/last-session", "alice", "labwc")]
+
+
+def test_login_click_remembers_selected_session_before_username_clear(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+
+    class FakeEntry:
+        def __init__(self, text=""):
+            self.text = text
+            self.focused = False
+
+        def get_text(self):
+            return self.text
+
+        def set_text(self, text):
+            self.text = text
+
+        def grab_focus(self):
+            self.focused = True
+
+    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app.auth_in_progress = False
+    app.last_username = ""
+    app.last_session_command = ""
+    app.username_entry = FakeEntry("alice")
+    app.password_entry = FakeEntry("secret")
+    app.set_auth_state = lambda busy: None
+    app.set_status = lambda message, error=False: None
+    app.send_recv_answer = lambda data: {"ok": True, "payload": {"verified": True}}
+    app.get_session_command = lambda: "labwc"
+    app.get_selected_session = lambda: {"desktop_names": ["labwc"]}
+
+    class DummySecret:
+        def __len__(self):
+            return 6
+
+        def clear(self):
+            return None
+
+    monkeypatch.setattr(greeter.gtk_ffi, "read_password_secret", lambda entry: DummySecret())
+
+    greeter.LoginApp.on_login_clicked(app)
+
+    assert app.last_username == "alice"
+    assert app.last_session_command == "labwc"
+    assert app.username_entry.get_text() == ""
+
+
 def test_set_status_toggles_error_css_class(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
 

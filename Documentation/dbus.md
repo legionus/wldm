@@ -167,9 +167,6 @@ The current exported state includes:
 - configured seat
 - active user sessions
 
-The daemon's remembered login state (`last_username`,
-`last_session_command`) is not exported on D-Bus.
-
 Greeter pseudo-sessions are also not exported.
 
 ## Non-goals

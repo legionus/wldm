@@ -192,8 +192,6 @@ def _encode_response_payload(body: bytearray, action: str, payload: Dict[str, An
     elif action == ACTION_GET_STATE:
         body.extend(_encode_text(str(payload.get("seat", ""))))
         body.extend(_encode_bool(bool(payload.get("greeter_ready", False))))
-        body.extend(_encode_text(str(payload.get("last_username", ""))))
-        body.extend(_encode_text(str(payload.get("last_session_command", ""))))
 
         sessions = list(payload.get("active_sessions", []))
         body.extend(FRAME_HEADER.pack(len(sessions)))
@@ -215,8 +213,6 @@ def _decode_response_payload(action: str, payload: memoryview, offset: int) -> t
     if action == ACTION_GET_STATE:
         seat, offset = _decode_text(payload, offset)
         greeter_ready, offset = _decode_bool(payload, offset)
-        last_username, offset = _decode_text(payload, offset)
-        last_session_command, offset = _decode_text(payload, offset)
 
         if offset + FRAME_HEADER.size > len(payload):
             raise ProtocolError("truncated active session list length", payload.tobytes())
@@ -235,8 +231,6 @@ def _decode_response_payload(action: str, payload: memoryview, offset: int) -> t
         return {
             "seat": seat,
             "greeter_ready": greeter_ready,
-            "last_username": last_username,
-            "last_session_command": last_session_command,
             "active_sessions": sessions,
         }, offset
 
