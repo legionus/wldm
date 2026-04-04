@@ -3,11 +3,21 @@
 
 import argparse
 import importlib
+import os
 import sys
 
 import wldm
 
 logger = wldm.logger
+
+
+def internal_command_prefix() -> list[str]:
+    path = os.path.abspath(__file__ or "")
+
+    if path.endswith((".pyc", ".pyo")):
+        path = path[:-1]
+
+    return [sys.executable, path]
 
 
 def set_process_title(role: str) -> None:
@@ -117,8 +127,6 @@ opens a PAM-backed session for the greeter.
                     help="PAM service used to create the greeter session.")
     sp.add_argument("username", help="greeter user")
     sp.add_argument("group", help="greeter group")
-    sp.add_argument("prog", help="program to execute")
-    sp.add_argument("args", nargs=argparse.REMAINDER, help="optional <prog> arguments")
 
     # command: dbus-adapter
     sp_description = """\

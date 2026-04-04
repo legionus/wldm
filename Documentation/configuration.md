@@ -78,7 +78,8 @@ baking those paths into the main config.
   `.local/share/wayland-sessions`.
 - `command`
   Greeter compositor launcher prefix. Default: `cage -s -m last --`.
-  `wldm greeter` is appended automatically.
+  `greeter-session` reads this string from the daemon environment and appends
+  `wldm greeter` automatically.
 - `pam-service`
   PAM service used for the greeter session. Default: `system-login`.
 - `max-restarts`

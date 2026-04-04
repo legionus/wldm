@@ -5,10 +5,8 @@
 import argparse
 import asyncio
 import os
-import shlex
 import signal
 import socket
-import sys
 from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
@@ -91,15 +89,6 @@ KEYBOARD_ENV_OPTIONS = {
     "options": "XKB_DEFAULT_OPTIONS",
 }
 
-def internal_command_prefix() -> list[str]:
-    path = os.path.abspath(wldm.command.__file__ or "")
-
-    if path.endswith((".pyc", ".pyo")):
-        path = path[:-1]
-
-    return [sys.executable, path]
-
-
 def create_client_socketpair() -> tuple[socket.socket, socket.socket]:
     """Create a private connected socket pair for one internal client."""
     return socket.socketpair()
@@ -130,12 +119,6 @@ def state_snapshot(state: DaemonState) -> Dict[str, Any]:
             for session in state.active_sessions.values()
         ],
     }
-
-
-def greeter_command(cfg: wldm.inifile.IniFile, internal_prefix: list[str]) -> list[str]:
-    command = cfg.get_str("greeter", "command")
-
-    return shlex.split(command) + internal_prefix + ["greeter"]
 
 
 def configured_power_actions(cfg: wldm.inifile.IniFile) -> list[str]:
@@ -627,6 +610,7 @@ async def start_greeter(state: DaemonState,
         WLDM_DATA_DIR=cfg.get_str("greeter", "data-dir"),
         WLDM_LOCALE_DIR=cfg.get_str("greeter", "locale-dir"),
         WLDM_THEME=cfg.get_str("greeter", "theme"),
+        WLDM_GREETER_COMMAND=cfg.get_str("greeter", "command"),
         WLDM_GREETER_SESSION_DIRS=cfg.get_str("greeter", "session-dirs"),
         WLDM_GREETER_USER_SESSION_DIR=cfg.get_str("greeter", "user-session-dir"),
         WLDM_ACTIONS=":".join(configured_power_actions(cfg)),
@@ -653,7 +637,6 @@ async def start_greeter(state: DaemonState,
             "--tty", str(greeter_tty),
             "--pam-service", greeter_pam_service,
             greeter_user, greeter_group,
-            *greeter_command(cfg, state.internal_command),
         ],
         env,
     )
@@ -786,7 +769,7 @@ async def run_daemon_async(parser: argparse.Namespace, cfg: wldm.inifile.IniFile
     logger.debug("daemon start")
 
     state = DaemonState(
-        internal_command_prefix(),
+        wldm.command.internal_command_prefix(),
         greeter_max_restarts,
         seat=cfg.get_str("daemon", "seat"),
         state_dir=cfg.get_str("daemon", "state-dir"),

@@ -8,10 +8,12 @@ import grp
 import os
 import os.path
 import pwd
+import shlex
 
 from typing import Dict, Iterator, List, Optional, Any
 
 import wldm
+import wldm.command as wldm_command
 import wldm.pam
 import wldm.policy
 import wldm.tty
@@ -70,6 +72,27 @@ def greeter_ipc_fd() -> int:
     fd = int(socket_fd)
     os.set_inheritable(fd, True)
     return fd
+
+
+def build_greeter_argv() -> List[str]:
+    """Resolve the final greeter argv from the daemon-provided command string.
+
+    Returns:
+        Final argv used to start the compositor wrapper and greeter process.
+    """
+    command = os.environ.get("WLDM_GREETER_COMMAND", "").strip()
+    if not command:
+        raise RuntimeError("environ variable `WLDM_GREETER_COMMAND' not specified")
+
+    try:
+        argv = shlex.split(command)
+    except ValueError as exc:
+        raise RuntimeError(f"invalid greeter command: {exc}") from exc
+
+    if not argv:
+        raise RuntimeError("invalid greeter command: empty command")
+
+    return [*argv, *wldm_command.internal_command_prefix(), "greeter"]
 
 
 def process_exit_status(status: int) -> int:
@@ -149,8 +172,7 @@ def finish_greeter_session(pamh: Optional[Any]) -> None:
 def run_greeter_session(pw: pwd.struct_passwd,
                         gid: int,
                         pam_service: str,
-                        tty_number: int,
-                        prog_args: List[str]) -> int:
+                        tty_number: int) -> int:
     ipc_fd = greeter_ipc_fd()
 
     try:
@@ -162,6 +184,7 @@ def run_greeter_session(pw: pwd.struct_passwd,
 
                 with open_greeter_pam_session(pam_service, pw, ttydev) as pamh:
                     env = new_greeter_environ(pamh, pw)
+                    prog_args = build_greeter_argv()
 
                     pid = os.fork()
 
@@ -215,25 +238,10 @@ def cmd_main(parser: argparse.Namespace) -> int:
         logger.critical("Group '%s' not found.", parser.group)
         return wldm.EX_FAILURE
 
-    prog = parser.prog
-    args = parser.args
-
-    if not os.access(prog, os.X_OK):
-        for path in os.get_exec_path():
-            prog_exec = os.path.join(path, prog)
-
-            if os.access(prog_exec, os.X_OK):
-                prog = prog_exec
-                break
-
-        if not os.access(prog, os.X_OK):
-            logger.critical("[!] Could not find the executable file: %s", prog)
-            return wldm.EX_FAILURE
-
     redirect_greeter_stderr()
 
     try:
-        return run_greeter_session(pw, gid, parser.pam_service, parser.tty, [prog] + args)
+        return run_greeter_session(pw, gid, parser.pam_service, parser.tty)
 
     except Exception:
         logger.exception("unexpected greeter session failure")

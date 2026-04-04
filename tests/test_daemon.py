@@ -298,19 +298,6 @@ def test_save_last_session_writes_state_file(tmp_path):
     )
 
 
-def test_greeter_command_uses_configured_launcher():
-    cfg = make_config(command="labwc --")
-    prefix = ["/usr/bin/python3", "/srv/wldm/src/wldm/command.py"]
-
-    assert wldm.daemon.greeter_command(cfg, prefix) == [
-        "labwc",
-        "--",
-        "/usr/bin/python3",
-        "/srv/wldm/src/wldm/command.py",
-        "greeter",
-    ]
-
-
 def test_control_command_uses_configured_system_commands():
     cfg = make_config()
     cfg["daemon"]["poweroff-command"] = "do-poweroff --now"
@@ -605,16 +592,10 @@ def test_start_greeter_passes_socket_env(monkeypatch):
         "gdm",
         "gdm",
     )
-    assert calls["cmd"][9:] == (
-        "labwc",
-        "--",
-        "/usr/bin/python3",
-        "/srv/wldm/src/wldm/command.py",
-        "greeter",
-    )
     assert calls["env"]["WLDM_SOCKET_FD"] == "11"
     assert calls["env"]["WLDM_SEAT"] == "seat9"
     assert calls["env"]["WLDM_THEME"] == "retro"
+    assert calls["env"]["WLDM_GREETER_COMMAND"] == "labwc --"
     assert calls["env"]["WLDM_GREETER_SESSION_DIRS"] == "/usr/share/wayland-sessions"
     assert calls["env"]["WLDM_GREETER_USER_SESSION_DIR"] == ".local/share/wayland-sessions"
     assert calls["env"]["WLDM_ACTIONS"] == "poweroff:reboot:suspend"

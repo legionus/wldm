@@ -58,18 +58,16 @@ def test_cmd_main_runs_greeter_session(monkeypatch):
 
     monkeypatch.setattr(wldm.greeter_session.pwd, "getpwnam", lambda username: pw)
     monkeypatch.setattr(wldm.greeter_session.grp, "getgrnam", lambda group: SimpleNamespace(gr_gid=1001))
-    monkeypatch.setattr(wldm.greeter_session.os, "access", lambda path, mode: True)
     monkeypatch.setattr(wldm.greeter_session, "redirect_greeter_stderr", lambda: calls.update({"redirected": True}))
     monkeypatch.setattr(
         wldm.greeter_session,
         "run_greeter_session",
-        lambda pw_arg, gid, pam_service, tty, prog_args:
+        lambda pw_arg, gid, pam_service, tty:
             calls.update({
                 "pw": pw_arg,
                 "gid": gid,
                 "pam_service": pam_service,
                 "tty": tty,
-                "prog_args": prog_args,
             }) or wldm.greeter_session.wldm.EX_SUCCESS,
     )
 
@@ -79,8 +77,6 @@ def test_cmd_main_runs_greeter_session(monkeypatch):
             group="gdm",
             tty=7,
             pam_service="system-login",
-            prog="cage",
-            args=["-s", "-m", "last"],
         )
     )
 
@@ -90,7 +86,25 @@ def test_cmd_main_runs_greeter_session(monkeypatch):
     assert calls["gid"] == 1001
     assert calls["pam_service"] == "system-login"
     assert calls["tty"] == 7
-    assert calls["prog_args"] == ["cage", "-s", "-m", "last"]
+
+
+def test_build_greeter_argv_uses_daemon_command(monkeypatch):
+    monkeypatch.setenv("WLDM_GREETER_COMMAND", "cage -s -m last --")
+    monkeypatch.setattr(wldm.greeter_session.wldm_command, "internal_command_prefix",
+                        lambda: ["/usr/bin/python3", "/srv/wldm/src/wldm/command.py"])
+
+    argv = wldm.greeter_session.build_greeter_argv()
+
+    assert argv == [
+        "cage",
+        "-s",
+        "-m",
+        "last",
+        "--",
+        "/usr/bin/python3",
+        "/srv/wldm/src/wldm/command.py",
+        "greeter",
+    ]
 
 
 def test_prepare_greeter_terminal_switches_and_sets_controlling_tty(monkeypatch):
@@ -209,9 +223,9 @@ def test_run_greeter_session_waits_for_child_and_returns_exit_status(monkeypatch
     monkeypatch.setattr(wldm.greeter_session.os, "close", lambda fd: calls.setdefault("closed_fds", []).append(fd))
     monkeypatch.setattr(wldm.greeter_session.os, "waitpid", lambda pid, opts: (pid, 7 << 8))
 
-    result = wldm.greeter_session.run_greeter_session(
-        pw, 32, "system-login", 7, ["cage", "--", "greeter"]
-    )
+    monkeypatch.setattr(wldm.greeter_session, "build_greeter_argv", lambda: ["cage", "--", "greeter"])
+
+    result = wldm.greeter_session.run_greeter_session(pw, 32, "system-login", 7)
 
     assert result == 7
     assert calls["tty"] == 7
@@ -247,6 +261,7 @@ def test_run_greeter_session_child_exec_preserves_passed_socket_fd(monkeypatch):
         "new_greeter_environ",
         lambda pamh, pw_arg: {"PATH": "/usr/bin", "WLDM_SOCKET_FD": "13"},
     )
+    monkeypatch.setattr(wldm.greeter_session, "build_greeter_argv", lambda: ["cage", "--", "greeter"])
     monkeypatch.setattr(wldm.greeter_session.os, "fork", lambda: 0)
     monkeypatch.setattr(wldm.greeter_session.os, "dup2",
                         lambda src, dst: calls.setdefault("dup2", []).append((src, dst)))
@@ -263,9 +278,7 @@ def test_run_greeter_session_child_exec_preserves_passed_socket_fd(monkeypatch):
     monkeypatch.setattr(wldm.greeter_session.os, "_exit", lambda code: (_ for _ in ()).throw(AssertionError(code)))
 
     try:
-        wldm.greeter_session.run_greeter_session(
-            pw, 32, "system-login", 7, ["cage", "--", "greeter"]
-        )
+        wldm.greeter_session.run_greeter_session(pw, 32, "system-login", 7)
     except SystemExit as exc:
         assert exc.code == 0
     else:

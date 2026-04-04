@@ -35,10 +35,6 @@ def test_greeter_session_subcommand_parses_arguments():
         "--pam-service", "system-login",
         "gdm",
         "gdm",
-        "cage",
-        "-s",
-        "-m",
-        "last",
     ])
 
     assert args.func is wldm.command.cmd_greeter_session
@@ -46,8 +42,6 @@ def test_greeter_session_subcommand_parses_arguments():
     assert args.pam_service == "system-login"
     assert args.username == "gdm"
     assert args.group == "gdm"
-    assert args.prog == "cage"
-    assert args.args == ["-s", "-m", "last"]
 
 
 def test_dbus_adapter_subcommand_parses_arguments():
