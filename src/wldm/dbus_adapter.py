@@ -70,11 +70,12 @@ SESSION_XML = f"""\
 """
 
 
-def load_dbus_modules() -> tuple[Any, Any]:
-    """Import Gio and GLib lazily so D-Bus support stays optional.
+def load_unprivileged_modules() -> tuple[Any, Any]:
+    """Import modules that are only needed after dropping privileges.
 
     Returns:
-        A ``(Gio, GLib)`` pair from ``gi.repository``.
+        A ``(Gio, GLib)`` pair from ``gi.repository`` for the unprivileged
+        D-Bus adapter path.
     """
     try:
         from gi.repository import Gio, GLib  # type: ignore[import-untyped]
@@ -543,7 +544,7 @@ def run_adapter(username: str, uid: int, gid: int, workdir: str, service_name: s
         # Keep the optional D-Bus stack out of the privileged part of the
         # adapter so import-time side effects happen only after the uid/gid
         # switch.
-        Gio, GLib = load_dbus_modules()
+        Gio, GLib = load_unprivileged_modules()
 
         service = DisplayManagerService(service_name, request_state(client), Gio, GLib)
 

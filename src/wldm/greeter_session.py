@@ -8,7 +8,6 @@ import grp
 import os
 import os.path
 import pwd
-import shlex
 
 from typing import Dict, Iterator, List, Optional, Any
 
@@ -19,6 +18,18 @@ import wldm.policy
 import wldm.tty
 
 logger = wldm.logger
+
+
+def load_unprivileged_modules() -> tuple[Any]:
+    """Import modules that are only needed after dropping privileges.
+
+    Returns:
+        A tuple with modules used exclusively in the unprivileged greeter exec
+        path.
+    """
+    import shlex
+
+    return (shlex,)
 
 
 def base_greeter_environ() -> Dict[str, str]:
@@ -83,6 +94,8 @@ def build_greeter_argv() -> List[str]:
     command = os.environ.get("WLDM_GREETER_COMMAND", "").strip()
     if not command:
         raise RuntimeError("environ variable `WLDM_GREETER_COMMAND' not specified")
+
+    (shlex,) = load_unprivileged_modules()
 
     try:
         argv = shlex.split(command)

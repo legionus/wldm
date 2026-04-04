@@ -7,9 +7,8 @@ import contextlib
 import os
 import os.path
 import pwd
-import shlex
 import subprocess
-from typing import Dict, Iterator, List, Optional, Any
+from typing import Dict, Iterator, List, Optional, Any, cast
 
 import wldm
 import wldm.config
@@ -20,6 +19,18 @@ import wldm.tty
 import wldm.wtmp
 
 logger = wldm.logger
+
+
+def load_unprivileged_modules() -> tuple[Any]:
+    """Import modules that are only needed after dropping privileges.
+
+    Returns:
+        A tuple with modules used exclusively in the unprivileged user-session
+        exec path.
+    """
+    import shlex
+
+    return (shlex,)
 
 
 def validate_execute_path(name: str, execute: str) -> str:
@@ -115,7 +126,9 @@ def build_session_argv(shell: str) -> List[str]:
     if not session_command:
         raise RuntimeError("environ variable `WLDM_SESSION_COMMAND' not specified")
 
-    prog, *args = shlex.split(session_command)
+    (shlex,) = load_unprivileged_modules()
+
+    prog, *args = cast(List[str], shlex.split(session_command))
 
     if not prog:
         raise RuntimeError("Invalid session command: empty command")

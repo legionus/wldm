@@ -184,7 +184,7 @@ def test_run_adapter_drops_privileges_and_runs_loop(monkeypatch):
 
     monkeypatch.setattr(wldm.dbus_adapter, "SocketClient", lambda fd: calls.update({"fd": fd}) or client)
     monkeypatch.setattr(wldm.dbus_adapter, "adapter_ipc_fd", lambda: 13)
-    monkeypatch.setattr(wldm.dbus_adapter, "load_dbus_modules", lambda: ("gio", DummyGLib))
+    monkeypatch.setattr(wldm.dbus_adapter, "load_unprivileged_modules", lambda: ("gio", DummyGLib))
     monkeypatch.setattr(
         wldm.dbus_adapter,
         "DisplayManagerService",
