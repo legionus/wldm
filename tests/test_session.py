@@ -7,7 +7,6 @@ import pwd
 import wldm
 import wldm.config
 import wldm.inifile
-import wldm.logindefs
 import wldm.pam
 import wldm.tty
 import wldm.user_session
@@ -127,7 +126,6 @@ def test_cmd_main_fails_without_session_command(monkeypatch):
         "read_config",
         lambda: make_config({"pam-service": "custom-login", "execute": "", "pre-execute": "", "post-execute": ""}),
     )
-    monkeypatch.setattr(wldm.logindefs, "read_values", lambda: None)
     result = wldm.user_session.cmd_main(SimpleNamespace(username="alice"))
 
     assert result == wldm.EX_FAILURE
@@ -163,7 +161,6 @@ def test_cmd_main_passes_wrapper_paths_to_run_user_session(monkeypatch):
         "read_config",
         lambda: make_config({"pam-service": "custom-login", "execute": "", "pre-execute": "", "post-execute": ""}),
     )
-    monkeypatch.setattr(wldm.logindefs, "read_values", lambda: None)
     monkeypatch.setenv("WLDM_SESSION_COMMAND", 'startplasma-wayland --profile "KDE Plasma"')
 
     def fake_run_user_session(pw_arg, pam_service, wrapper="", pre_execute="", post_execute=""):

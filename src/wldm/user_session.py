@@ -17,7 +17,6 @@ import wldm.inifile
 import wldm.pam
 import wldm.policy
 import wldm.tty
-import wldm.logindefs
 import wldm.wtmp
 
 logger = wldm.logger
@@ -266,8 +265,6 @@ def cmd_main(parser: argparse.Namespace) -> int:
     except KeyError:
         logger.critical("User '%s' not found.", parser.username)
         return wldm.EX_FAILURE
-
-    wldm.logindefs.read_values()
 
     wrapper = cfg.get_str("session", "execute")
     pre_execute = cfg.get_str("session", "pre-execute")
