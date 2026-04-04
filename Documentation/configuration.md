@@ -35,14 +35,16 @@ baking those paths into the main config.
 - `log-path`
   Daemon log file. Default: empty, which keeps logging on stderr/journal.
 - `poweroff-command`
-  Command executed for greeter poweroff requests. Default: `systemctl poweroff`.
+  Shell command executed for greeter poweroff requests. Default:
+  `systemctl poweroff`.
 - `reboot-command`
-  Command executed for greeter reboot requests. Default: `systemctl reboot`.
+  Shell command executed for greeter reboot requests. Default:
+  `systemctl reboot`.
 - `suspend-command`
-  Command executed for greeter suspend requests. Default: empty, which disables
-  the action and hides the button in the greeter.
+  Shell command executed for greeter suspend requests. Default: empty, which
+  disables the action and hides the button in the greeter.
 - `hibernate-command`
-  Command executed for greeter hibernate requests. Default: empty, which
+  Shell command executed for greeter hibernate requests. Default: empty, which
   disables the action and hides the button in the greeter.
 
 ## `[greeter]`

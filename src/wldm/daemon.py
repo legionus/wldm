@@ -148,7 +148,7 @@ def configured_power_actions(cfg: wldm.inifile.IniFile) -> list[str]:
     return actions
 
 
-def control_command(cfg: wldm.inifile.IniFile, action: str) -> list[str]:
+def control_command(cfg: wldm.inifile.IniFile, action: str) -> str:
     option = POWER_ACTION_COMMANDS.get(action)
 
     if option is None:
@@ -159,7 +159,7 @@ def control_command(cfg: wldm.inifile.IniFile, action: str) -> list[str]:
     if not command:
         raise ValueError(f"control action is disabled: {action}")
 
-    return shlex.split(command)
+    return command
 
 
 def keyboard_environment(cfg: wldm.inifile.IniFile) -> Dict[str, str]:
@@ -505,7 +505,7 @@ async def handle_request_async(state: DaemonState,
 
         logger.info("execute %s command: %s", outcome.control_action, command)
 
-        await asyncio.create_subprocess_exec(*command)
+        await asyncio.create_subprocess_exec("/bin/sh", "-c", command)
 
 
 async def handle_client(state: DaemonState,

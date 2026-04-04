@@ -318,10 +318,10 @@ def test_control_command_uses_configured_system_commands():
     cfg["daemon"]["suspend-command"] = "do-suspend"
     cfg["daemon"]["hibernate-command"] = "do-hibernate --deep"
 
-    assert wldm.daemon.control_command(cfg, wldm.protocol.ACTION_POWEROFF) == ["do-poweroff", "--now"]
-    assert wldm.daemon.control_command(cfg, wldm.protocol.ACTION_REBOOT) == ["do-reboot", "--cold"]
-    assert wldm.daemon.control_command(cfg, wldm.protocol.ACTION_SUSPEND) == ["do-suspend"]
-    assert wldm.daemon.control_command(cfg, wldm.protocol.ACTION_HIBERNATE) == ["do-hibernate", "--deep"]
+    assert wldm.daemon.control_command(cfg, wldm.protocol.ACTION_POWEROFF) == "do-poweroff --now"
+    assert wldm.daemon.control_command(cfg, wldm.protocol.ACTION_REBOOT) == "do-reboot --cold"
+    assert wldm.daemon.control_command(cfg, wldm.protocol.ACTION_SUSPEND) == "do-suspend"
+    assert wldm.daemon.control_command(cfg, wldm.protocol.ACTION_HIBERNATE) == "do-hibernate --deep"
 
 
 def test_configured_power_actions_only_includes_enabled_actions():
@@ -435,7 +435,7 @@ def test_handle_request_async_runs_control_command(monkeypatch):
 
     asyncio.run(wldm.daemon.handle_request_async(state, "greeter", req, cfg))
 
-    assert calls["cmd"] == ("do-poweroff", "--now")
+    assert calls["cmd"] == ("/bin/sh", "-c", "do-poweroff --now")
     assert wldm.protocol.decode_message(state.clients["greeter"].writer.lines[0])["payload"] == {"accepted": True}
 
 
