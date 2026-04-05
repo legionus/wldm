@@ -57,6 +57,7 @@ def test_dbus_adapter_subcommand_parses_arguments():
 def test_cmd_daemon_dispatches_to_module(monkeypatch):
     monkeypatch.setattr(wldm.daemon, "cmd_main", lambda ns: 17)
     monkeypatch.setattr(wldm.command, "set_process_title", lambda role: None)
+    monkeypatch.setattr(wldm.command.wldm.audit, "setup_audit_hook", lambda role: None)
 
     result = wldm.command.cmd_daemon(SimpleNamespace())
 
