@@ -6,18 +6,42 @@ import importlib
 import os
 import sys
 
+source_tree = os.environ.get("WLDM_SOURCE_TREE", "").strip()
+if source_tree:
+    sys.path.insert(0, os.path.join(source_tree, "src"))
+
+# pylint: disable-next=wrong-import-position
 import wldm
 
 logger = wldm.logger
 
 
 def internal_command_prefix() -> list[str]:
-    path = os.path.abspath(__file__ or "")
+    """Build the Python command prefix used for internal helper subprocesses.
 
-    if path.endswith((".pyc", ".pyo")):
-        path = path[:-1]
+    Returns:
+        A command prefix that restarts the current wldm code under the same
+        interpreter hardening flags. Source-tree mode uses the command.py path
+        with `WLDM_SOURCE_TREE` bootstrap support, while installed mode uses
+        `-m wldm.command`.
+    """
+    prefix = [sys.executable]
 
-    return [sys.executable, path]
+    if getattr(sys.flags, "isolated", 0):
+        prefix.append("-I")
+
+    if getattr(sys.flags, "safe_path", False):
+        prefix.append("-P")
+
+    if source_tree:
+        path = os.path.abspath(__file__ or "")
+
+        if path.endswith((".pyc", ".pyo")):
+            path = path[:-1]
+
+        return [*prefix, path]
+
+    return [*prefix, "-m", "wldm.command"]
 
 
 def set_process_title(role: str) -> None:

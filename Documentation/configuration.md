@@ -107,9 +107,9 @@ baking those paths into the main config.
   with a site-local script that does additional setup such as
   `dbus-update-activation-environment --systemd`.
 
-  Relative paths are resolved against the directory that contains the loaded
-  `wldm.ini` only in source-tree mode (`WLDM_SOURCE_TREE=1`), so the in-tree
-  development config can use `../data/scripts/wayland-session`.
+  Relative paths are resolved against the source-tree root only in source-tree
+  mode, where `WLDM_SOURCE_TREE` contains that root path. This lets the in-tree
+  development config use values such as `data/scripts/wayland-session`.
 - `pre-execute`
   Optional executable run after the user PAM session is opened and the session
   environment is prepared, but before the final user program is executed. A

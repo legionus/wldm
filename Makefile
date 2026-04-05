@@ -14,17 +14,25 @@ DBUSSERVICE ?= org.freedesktop.DisplayManager
 
 WLDM_DATADIR := $(DATADIR)/wldm
 CONFIG_TEMPLATE := config/wldm.ini.in
+LAUNCHER_TEMPLATE := data/scripts/wldm.in
 SERVICE_TEMPLATE := data/systemd/wldm.service.in
 DBUS_POLICY_TEMPLATE := data/dbus-1/system.d/wldm-dbus.conf.in
 
-.PHONY: all install install-python install-data install-config install-systemd install-dbus-policy uninstall
+.PHONY: all install install-python install-launcher install-data install-config install-systemd install-dbus-policy uninstall
 
 all:
 
-install: install-python install-data install-config install-systemd install-dbus-policy
+install: install-python install-launcher install-data install-config install-systemd install-dbus-policy
 
 install-python:
 	$(PYTHON) -m pip install . --root $(DESTDIR) --no-deps --no-build-isolation
+
+install-launcher:
+	install -d $(DESTDIR)$(BINDIR)
+	sed \
+		-e 's|@python@|$(PYTHON)|g' \
+		$(LAUNCHER_TEMPLATE) > $(DESTDIR)$(BINDIR)/wldm
+	chmod 0755 $(DESTDIR)$(BINDIR)/wldm
 
 install-data:
 	install -d $(DESTDIR)$(WLDM_DATADIR)/resources

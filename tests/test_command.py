@@ -84,6 +84,34 @@ def test_set_process_title_uses_setproctitle_module(monkeypatch):
     assert calls["title"] == "wldm [dbus-adapter]"
 
 
+def test_internal_command_prefix_uses_module_entrypoint_when_not_in_source_tree(monkeypatch):
+    monkeypatch.setattr(wldm.command.sys, "executable", "/usr/bin/python3")
+    monkeypatch.setattr(wldm.command.sys, "flags", SimpleNamespace(isolated=1, safe_path=True))
+    monkeypatch.setattr(wldm.command, "source_tree", "")
+
+    assert wldm.command.internal_command_prefix() == [
+        "/usr/bin/python3",
+        "-I",
+        "-P",
+        "-m",
+        "wldm.command",
+    ]
+
+
+def test_internal_command_prefix_uses_command_script_in_source_tree(monkeypatch):
+    monkeypatch.setattr(wldm.command.sys, "executable", "/usr/bin/python3")
+    monkeypatch.setattr(wldm.command.sys, "flags", SimpleNamespace(isolated=1, safe_path=True))
+    monkeypatch.setattr(wldm.command, "source_tree", "/srv/wldm")
+    monkeypatch.setattr(wldm.command, "__file__", "/srv/wldm/src/wldm/command.py")
+
+    assert wldm.command.internal_command_prefix() == [
+        "/usr/bin/python3",
+        "-I",
+        "-P",
+        "/srv/wldm/src/wldm/command.py",
+    ]
+
+
 def test_cmd_dispatches_to_selected_handler(monkeypatch):
     args = SimpleNamespace(func=lambda ns: 23, verbose=0, quiet=False)
 

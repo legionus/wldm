@@ -82,7 +82,7 @@ def read_config() -> wldm.inifile.IniFile:
         "keyboard": set(cfg["keyboard"]),
     }
 
-    source_tree = os.environ.get("WLDM_SOURCE_TREE", "") == "1"
+    source_tree = os.environ.get("WLDM_SOURCE_TREE", "").strip()
 
     for path in _config_candidates():
         try:
@@ -93,17 +93,17 @@ def read_config() -> wldm.inifile.IniFile:
                 if parsed.get_str("greeter", "data-dir") != "":
                     parsed.sections["greeter"]["data-dir"] = wldm.resolve_config_path(
                             parsed.get_str("greeter", "data-dir"),
-                            base_dir=os.path.dirname(path))
+                            base_dir=source_tree)
 
                 if parsed.get_str("greeter", "locale-dir") != "":
                     parsed.sections["greeter"]["locale-dir"] = wldm.resolve_config_path(
                             parsed.get_str("greeter", "locale-dir"),
-                            base_dir=os.path.dirname(path))
+                            base_dir=source_tree)
 
                 if parsed.get_str("greeter", "state-dir") != "":
                     parsed.sections["greeter"]["state-dir"] = wldm.resolve_config_path(
                             parsed.get_str("greeter", "state-dir"),
-                            base_dir=os.path.dirname(path))
+                            base_dir=source_tree)
 
                 for key in ["execute", "pre-execute", "post-execute"]:
                     if parsed.get_str("session", key) == "":
@@ -111,7 +111,7 @@ def read_config() -> wldm.inifile.IniFile:
 
                     parsed.sections["session"][key] = wldm.resolve_config_path(
                             parsed.get_str("session", key),
-                            base_dir=os.path.dirname(path))
+                            base_dir=source_tree)
 
             for section, values in parsed.sections.items():
                 cfg[section].update(values)
