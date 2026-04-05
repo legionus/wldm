@@ -12,6 +12,8 @@ if source_tree:
 
 # pylint: disable-next=wrong-import-position
 import wldm
+# pylint: disable-next=wrong-import-position
+import wldm.audit
 
 logger = wldm.logger
 
@@ -56,32 +58,37 @@ def set_process_title(role: str) -> None:
 
 def cmd_daemon(cmdargs: argparse.Namespace) -> int:
     set_process_title("daemon")
-    import wldm.daemon
-    return wldm.daemon.cmd_main(cmdargs)
+    wldm.audit.setup_audit_hook("daemon")
+    import wldm.daemon as wldm_daemon
+    return wldm_daemon.cmd_main(cmdargs)
 
 
 def cmd_greeter(cmdargs: argparse.Namespace) -> int:
     set_process_title("greeter")
-    import wldm.greeter
-    return wldm.greeter.cmd_main(cmdargs)
+    wldm.audit.setup_audit_hook("greeter")
+    import wldm.greeter as wldm_greeter
+    return wldm_greeter.cmd_main(cmdargs)
 
 
 def cmd_user_session(cmdargs: argparse.Namespace) -> int:
     set_process_title("user-session")
-    import wldm.user_session
-    return wldm.user_session.cmd_main(cmdargs)
+    wldm.audit.setup_audit_hook("user-session")
+    import wldm.user_session as wldm_user_session
+    return wldm_user_session.cmd_main(cmdargs)
 
 
 def cmd_greeter_session(cmdargs: argparse.Namespace) -> int:
     set_process_title("greeter-session")
-    import wldm.greeter_session
-    return wldm.greeter_session.cmd_main(cmdargs)
+    wldm.audit.setup_audit_hook("greeter-session")
+    import wldm.greeter_session as wldm_greeter_session
+    return wldm_greeter_session.cmd_main(cmdargs)
 
 
 def cmd_dbus_adapter(cmdargs: argparse.Namespace) -> int:
     set_process_title("dbus-adapter")
-    import wldm.dbus_adapter
-    return wldm.dbus_adapter.cmd_main(cmdargs)
+    wldm.audit.setup_audit_hook("dbus-adapter")
+    import wldm.dbus_adapter as wldm_dbus_adapter
+    return wldm_dbus_adapter.cmd_main(cmdargs)
 
 
 def setup_parser() -> argparse.ArgumentParser:
