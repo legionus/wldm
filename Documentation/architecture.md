@@ -68,7 +68,6 @@ The daemon in [`src/wldm/daemon.py`](../src/wldm/daemon.py):
 - authenticates users through PAM
 - starts greeter, user-session, and optional D-Bus adapter subprocesses
 - supervises child processes and restart limits
-- tracks persistent login state such as the last successful username/session
 - exposes a small read-only state snapshot to internal clients
 - handles power actions such as reboot and poweroff
 
@@ -103,6 +102,8 @@ It is responsible for:
 - enumerating available Wayland sessions from `/usr/share/wayland-sessions`
 - optionally extending that list with `~/.local/share/wayland-sessions` for the
   username currently typed into the greeter
+- loading and saving remembered greeter state such as the last successful
+  username and session command through `WLDM_STATE_FILE`
 - sending structured requests to the daemon over an inherited IPC socket fd
 - reacting to daemon events such as `session-starting` and `session-finished`
 

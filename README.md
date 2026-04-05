@@ -2,7 +2,7 @@
 
 `wldm` is a small Wayland display manager written mostly in Python. It runs a
 greeter under an unprivileged user, talks to a privileged daemon over a local
-UNIX socket, and starts the selected user session on a dedicated virtual
+inherited IPC fd, and starts the selected user session on a dedicated virtual
 terminal.
 
 For the runtime split and process model, see
@@ -24,12 +24,21 @@ options and examples, see
 At minimum you need:
 
 - Python 3
-- `PyGObject` with GTK 4 bindings
-- PAM
-- `systemd-logind`
+- [`PyGObject`](https://pypi.org/project/PyGObject) with GTK 4 bindings
+- [`Linux PAM`](https://github.com/linux-pam/linux-pam) (Pluggable Authentication
+  Modules for Linux)
 - a greeter compositor, by default `cage`
 
-The default configuration is in [`config/wldm.ini`](config/wldm.ini).
+Recommended system integration:
+
+- D-Bus when `[dbus].enabled = yes`
+- `systemd-logind`
+- starting `wldm` as a system-managed service instead of from an interactive
+  shell
+
+The install-time default configuration template is in
+[`config/wldm.ini.in`](config/wldm.ini.in). `make install` turns it into the
+installed `/etc/wldm.ini`.
 
 By default the selected Wayland session is started through the bundled
 `wayland-session` wrapper so the user's login shell and profile scripts can
@@ -40,7 +49,6 @@ On Gentoo, that usually means system packages around:
 - `dev-python/pygobject`
 - `gui-libs/gtk:4`
 - `sys-libs/pam`
-- `sys-apps/systemd`
 - a Wayland greeter compositor such as `cage`
 
 Exact package names, slots, and USE flags can vary by profile and tree state.
@@ -63,8 +71,10 @@ Running the daemon directly from an existing shell session is not equivalent to
 running it as a system-managed service and can confuse `logind`.
 
 `wldm.sh` uses [`config/wldm-devel.ini`](config/wldm-devel.ini) so in-tree
-testing can keep the socket and logs under `/tmp/wldm/` without changing the
-main production defaults.
+testing can keep runtime artifacts under `/tmp/wldm/` without changing the
+main production defaults. It bootstraps the source tree through
+`WLDM_SOURCE_TREE` and starts Python with `-I -P`, so in-tree runs no longer
+depend on `PYTHONPATH`.
 
 For more logging:
 
@@ -101,48 +111,41 @@ Run checks:
 ./check.sh
 ```
 
-Build source and wheel distributions:
+For a system-style install with the hardened launcher, generated `/etc/wldm.ini`,
+packaged data files, `systemd` unit, and D-Bus policy:
 
 ```bash
-python3 -m build
+make install
 ```
 
-If isolated builds fail because `venv` support is missing, use:
+By default this installs:
 
-```bash
-python3 -m build --no-isolation
-```
-
-Install the package locally:
-
-```bash
-python3 -m pip install .
-```
-
-The packaged `systemd` unit is installed as
-`share/wldm/systemd/wldm.service`.
+- `/usr/sbin/wldm`
+- `/etc/wldm.ini`
+- `/usr/lib/systemd/system/wldm.service`
+- `/usr/share/dbus-1/system.d/wldm-dbus.conf`
 
 ## systemd
 
-The repository ships [`systemd/wldm.service`](systemd/wldm.service). For a real
-installation, copy or install it into your system unit directory, adjust paths
-if needed, then enable and start it with `systemctl`.
+The repository ships the install-time unit template
+[`data/systemd/wldm.service.in`](data/systemd/wldm.service.in). For a real
+installation, prefer `make install` so the generated unit, launcher, and
+config stay aligned.
 
 Example:
 
 ```bash
-python3 -m pip install .
-install -Dm0644 systemd/wldm.service /etc/systemd/system/wldm.service
+make install
 systemctl daemon-reload
 systemctl enable wldm.service
 systemctl start wldm.service
 ```
 
-The packaged unit starts `/usr/bin/wldm`, so system installs should either
-place the entry point there or adjust `ExecStart=` accordingly.
+The installed unit starts `/usr/sbin/wldm`, which is the hardened launcher that
+runs `python3 -I -P -m wldm.command`.
 
 For packaged or production-oriented defaults, see
-[`config/wldm.ini`](config/wldm.ini). For in-tree development overrides, see
+[`config/wldm.ini.in`](config/wldm.ini.in). For in-tree development overrides, see
 [`config/wldm-devel.ini`](config/wldm-devel.ini).
 
 ## Contributing
