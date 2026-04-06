@@ -27,3 +27,40 @@ jobs:
 
       - name: Run checks
         run: ./check.sh
+
+  install:
+    name: Install smoke test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@v6
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            python3-gi \
+            python3-pip \
+            gobject-introspection \
+            gir1.2-gtk-4.0
+
+      - name: Run make install into DESTDIR
+        run: |
+          rm -rf /tmp/wldm-root
+          make install DESTDIR=/tmp/wldm-root PREFIX=/usr
+
+      - name: Verify installed artifacts
+        run: |
+          test -x /tmp/wldm-root/usr/sbin/wldm
+          test -f /tmp/wldm-root/etc/wldm.ini
+          test -f /tmp/wldm-root/usr/lib/systemd/system/wldm.service
+          test -f /tmp/wldm-root/usr/share/dbus-1/system.d/wldm-dbus.conf
+          test -f /tmp/wldm-root/usr/share/wldm/resources/greeter.ui
+          test -f /tmp/wldm-root/usr/share/wldm/resources/style.css
+          test -x /tmp/wldm-root/usr/share/wldm/scripts/wayland-session
+
+      - name: Verify launcher and unit contents
+        run: |
+          grep -F 'python3 -I -P -m wldm.command "$@"' /tmp/wldm-root/usr/sbin/wldm
+          grep -F 'ExecStart=/usr/sbin/wldm' /tmp/wldm-root/usr/lib/systemd/system/wldm.service
