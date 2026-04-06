@@ -30,7 +30,6 @@ def read_config() -> wldm.inifile.IniFile:
     cfg: dict[str, dict[str, str]] = {
         "daemon": {
             "seat": wldm.policy.DEFAULT_SEAT,
-            "socket-path": "/run/wldm/greeter.sock",
             "log-path": "",
             "poweroff-command": "systemctl poweroff",
             "reboot-command": "systemctl reboot",

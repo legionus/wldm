@@ -21,7 +21,6 @@ def test_read_config_uses_explicit_repo_config(monkeypatch):
     cfg = wldm.config.read_config()
 
     assert cfg["daemon"]["seat"] == "seat0"
-    assert cfg["daemon"]["socket-path"] == "/run/wldm/greeter.sock"
     assert cfg["daemon"]["log-path"] == ""
     assert cfg["daemon"]["suspend-command"] == ""
     assert cfg["daemon"]["hibernate-command"] == ""
@@ -77,7 +76,6 @@ def test_read_config_sets_default_runtime_greeter_values(monkeypatch):
     cfg = wldm.config.read_config()
 
     assert cfg["daemon"]["seat"] == "seat0"
-    assert cfg["daemon"]["socket-path"] == "/run/wldm/greeter.sock"
     assert cfg["daemon"]["log-path"] == ""
     assert cfg["daemon"]["suspend-command"] == ""
     assert cfg["daemon"]["hibernate-command"] == ""
@@ -130,7 +128,6 @@ def test_read_config_loads_devel_overrides_when_selected_explicitly(monkeypatch)
 
     cfg = wldm.config.read_config()
 
-    assert cfg["daemon"]["socket-path"] == "/tmp/wldm/greeter.sock"
     assert cfg["daemon"]["log-path"] == "/tmp/wldm/daemon.log"
     assert cfg["greeter"]["state-dir"] == "/tmp/wldm-state"
     assert cfg["greeter"]["log-path"] == "/tmp/wldm/greeter.log"
@@ -167,7 +164,6 @@ def test_read_config_ignores_invalid_explicit_file(monkeypatch, tmp_path):
 
     cfg = wldm.config.read_config()
 
-    assert cfg["daemon"]["socket-path"] == "/run/wldm/greeter.sock"
     assert cfg["greeter"]["user"] == "fallback-user"
 
 
@@ -183,5 +179,4 @@ def test_read_config_ignores_oversized_explicit_file(monkeypatch, tmp_path):
 
     cfg = wldm.config.read_config()
 
-    assert cfg["daemon"]["socket-path"] == "/run/wldm/greeter.sock"
     assert cfg["greeter"]["user"] == "fallback-user"

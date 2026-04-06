@@ -22,11 +22,6 @@ baking those paths into the main config.
 
 - `seat`
   Seat identifier passed into session metadata. Default: `seat0`.
-- `socket-path`
-  Legacy daemon socket path setting. Default: `/run/wldm/greeter.sock`. The
-  current greeter and D-Bus adapter paths use inherited socket pairs instead of
-  pathname listeners, so this option is currently reserved and not used by the
-  internal helpers.
 - `log-path`
   Daemon log file. Default: empty, which keeps logging on stderr/journal.
 - `poweroff-command`
@@ -215,7 +210,6 @@ WLDM_VERBOSITY=2 ./wldm.sh greeter
 ```ini
 [daemon]
 seat = seat0
-socket-path = /run/wldm/greeter.sock
 log-path =
 poweroff-command = systemctl poweroff
 reboot-command = systemctl reboot

@@ -88,13 +88,11 @@ def make_config(user="gdm",
                 max_restarts="3",
                 user_sessions="yes",
                 seat="seat0",
-                socket_path="/tmp/wldm/greeter.sock",
                 daemon_log="/tmp/wldm/daemon.log",
                 greeter_log="/tmp/wldm/greeter.log"):
     return wldm.inifile.IniFile({
         "daemon": {
             "seat": seat,
-            "socket-path": socket_path,
             "log-path": daemon_log,
             "poweroff-command": "systemctl poweroff",
             "reboot-command": "systemctl reboot",

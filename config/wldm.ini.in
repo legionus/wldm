@@ -1,14 +1,10 @@
 #
 # Main daemon settings.
-# These options control the privileged wldm process and the IPC it uses to
-# talk to the greeter.
+# These options control the privileged wldm process.
 #
 [daemon]
 # Seat identifier exported into the user session environment.
 seat = seat0
-
-# UNIX socket used for daemon <-> greeter requests.
-socket-path = /run/wldm/greeter.sock
 
 # Optional daemon log file. Leave empty to keep logging on stderr/journal.
 log-path =
