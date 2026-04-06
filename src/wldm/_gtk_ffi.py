@@ -11,6 +11,9 @@ from wldm._libc import strlen
 from wldm.secret import SecretBytes
 
 
+_gtk: ctypes.CDLL | None = None
+
+
 def _load_library(name: str) -> ctypes.CDLL | None:
     path = find_library(name)
     if path is None:
@@ -18,10 +21,26 @@ def _load_library(name: str) -> ctypes.CDLL | None:
     return ctypes.CDLL(path)
 
 
-_gtk = _load_library("gtk-4")
-if _gtk is not None:
-    _gtk.gtk_editable_get_text.argtypes = [c_void_p]
-    _gtk.gtk_editable_get_text.restype = c_char_p
+def _load_gtk_library() -> ctypes.CDLL | None:
+    """Load libgtk lazily for the native password-entry fast path.
+
+    Returns:
+        The loaded `ctypes.CDLL` object for `gtk-4`, or `None` when the native
+        helper is unavailable.
+    """
+    global _gtk
+
+    if _gtk is not None:
+        return _gtk
+
+    gtk = _load_library("gtk-4")
+
+    if gtk is not None:
+        gtk.gtk_editable_get_text.argtypes = [c_void_p]
+        gtk.gtk_editable_get_text.restype = c_char_p
+
+    _gtk = gtk
+    return _gtk
 
 _pycapsule_get_pointer = ctypes.pythonapi.PyCapsule_GetPointer
 _pycapsule_get_pointer.argtypes = [ctypes.py_object, c_char_p]
@@ -44,14 +63,16 @@ def _editable_pointer(editable: Any) -> c_void_p | None:
 
 
 def read_password_secret(editable: Any) -> SecretBytes:
-    if _gtk is None:
+    gtk = _load_gtk_library()
+
+    if gtk is None:
         return SecretBytes(editable.get_text().encode("utf-8"))
 
     pointer = _editable_pointer(editable)
     if pointer is None or pointer.value is None:
         return SecretBytes(editable.get_text().encode("utf-8"))
 
-    text_ptr = _gtk.gtk_editable_get_text(pointer)
+    text_ptr = gtk.gtk_editable_get_text(pointer)
     if text_ptr is None:
         return SecretBytes()
 

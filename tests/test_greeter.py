@@ -644,7 +644,7 @@ def test_send_recv_answer_round_trips_protocol_messages(monkeypatch):
 
 def test_read_password_secret_uses_native_ffi_when_available(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
-    monkeypatch.setattr(greeter.gtk_ffi, "_gtk", None)
+    monkeypatch.setattr(greeter.gtk_ffi, "_load_gtk_library", lambda: None)
 
     secret = greeter.gtk_ffi.read_password_secret(types.SimpleNamespace(get_text=lambda: "secret"))
 
