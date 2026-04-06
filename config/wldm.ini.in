@@ -10,8 +10,8 @@ seat = seat0
 log-path =
 
 # Commands exposed through the greeter power menu.
-poweroff-command = systemctl poweroff
-reboot-command = systemctl reboot
+poweroff-command = poweroff
+reboot-command = reboot
 
 # Leave empty to disable the action and hide its button in the greeter.
 suspend-command =
@@ -24,8 +24,8 @@ hibernate-command =
 #
 [greeter]
 # User and group for the greeter process.
-user = gdm
-group = gdm
+user = @greeter_user@
+group = @greeter_group@
 
 # Virtual terminal reserved for the greeter.
 tty = 7
@@ -50,7 +50,7 @@ session-dirs = /usr/share/wayland-sessions
 user-session-dir = .local/share/wayland-sessions
 
 # Compositor launcher prefix. wldm appends "wldm greeter" automatically.
-command = cage -d -s -m last --
+command = cage -d -s --
 
 # PAM service used for the greeter session itself.
 pam-service = system-login
@@ -99,10 +99,10 @@ enabled = no
 # User account used to run the adapter process.
 # If you change this value, update the installed D-Bus policy file as well:
 # /usr/share/dbus-1/system.d/wldm-dbus.conf
-user = gdm
+user = @dbus_user@
 
 # Well-known D-Bus service name exported by the adapter.
-service = org.freedesktop.DisplayManager
+service = @dbus_service@
 
 # Optional log file for the adapter process. Leave empty to keep logging on
 # stderr/journal.
@@ -115,13 +115,13 @@ log-path =
 #
 [keyboard]
 # XKB rules name, for example "evdev".
-rules =
+rules = evdev
 
 # XKB keyboard model, for example "pc105".
-model =
+model = pc105
 
 # Comma-separated keyboard layouts, for example "us,ru".
-layout =
+layout = us
 
 # Comma-separated layout variants matching the layout list, for example
 # ",winkeys" or "intl,".
@@ -129,4 +129,4 @@ variant =
 
 # Comma-separated XKB options, for example "grp:alt_shift_toggle" or
 # "compose:ralt".
-options =
+options = grp:alt_shift_toggle
