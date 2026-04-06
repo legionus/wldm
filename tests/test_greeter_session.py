@@ -186,6 +186,17 @@ def test_redirect_greeter_stderr_replaces_fd_2(monkeypatch):
     ]
 
 
+def test_redirect_greeter_stderr_ignores_empty_path(monkeypatch):
+    monkeypatch.setenv("WLDM_GREETER_STDERR_LOG", "")
+    monkeypatch.setattr(
+        wldm.greeter_session.wldm,
+        "open_secure_append_file",
+        lambda path, mode=0o600: (_ for _ in ()).throw(AssertionError("should not open log file")),
+    )
+
+    wldm.greeter_session.redirect_greeter_stderr()
+
+
 def test_greeter_ipc_fd_marks_inherited_fd_inheritable(monkeypatch):
     calls = []
     monkeypatch.setenv("WLDM_SOCKET_FD", "13")

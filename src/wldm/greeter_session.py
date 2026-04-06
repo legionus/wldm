@@ -65,8 +65,13 @@ def new_greeter_environ(pamh: Optional[Any],
 
 
 def redirect_greeter_stderr(log_path: Optional[str] = None) -> None:
+    """Redirect greeter stderr to the configured log file when requested."""
     if log_path is None:
         log_path = os.environ.get("WLDM_GREETER_STDERR_LOG", "/tmp/wldm/greeter.log")
+
+    log_path = log_path.strip()
+    if not log_path:
+        return
 
     logfile = wldm.open_secure_append_file(log_path, mode=0o600)
     logfd = logfile.fileno()
@@ -74,6 +79,7 @@ def redirect_greeter_stderr(log_path: Optional[str] = None) -> None:
     os.dup2(logfd, 2)
 
     logfile.close()
+
 
 def greeter_ipc_fd() -> int:
     socket_fd = os.environ.get("WLDM_SOCKET_FD", "").strip()
