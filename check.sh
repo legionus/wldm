@@ -16,9 +16,9 @@ find src/wldm -type f -name '*.py' -a \! -name '*_tab.py' |
 find src/wldm -type f -name '*.py' -a \! -name '*_tab.py' |
 	xargs -r mypy --strict
 
-if pytest --help 2>/dev/null | grep -q -- '--cov'; then
-	pytest --cov=src/wldm --cov-report=term-missing --cov-fail-under=90 -q
+if python3 -c 'import pytest_cov' >/dev/null 2>&1; then
+	pytest --cov=src/wldm --cov-report=term-missing --cov-fail-under=90 -v
 else
 	echo "pytest-cov is not available; running tests without coverage"
-	pytest -q
+	pytest -v
 fi

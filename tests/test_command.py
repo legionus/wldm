@@ -4,9 +4,13 @@
 from types import SimpleNamespace
 import io
 import sys
+import types
 
 import wldm.command
 import wldm.daemon
+import wldm.dbus_adapter
+import wldm.greeter_session
+import wldm.user_session
 
 
 def test_setup_parser_defaults_to_daemon():
@@ -64,6 +68,26 @@ def test_cmd_daemon_dispatches_to_module(monkeypatch):
     assert result == 17
 
 
+def test_cmd_greeter_dispatches_to_module(monkeypatch):
+    monkeypatch.setattr(wldm.command, "set_process_title", lambda role: None)
+    monkeypatch.setattr(wldm.command.wldm.audit, "setup_audit_hook", lambda role: None)
+    monkeypatch.setitem(sys.modules, "wldm.greeter", types.SimpleNamespace(cmd_main=lambda ns: 13))
+
+    result = wldm.command.cmd_greeter(SimpleNamespace())
+
+    assert result == 13
+
+
+def test_cmd_user_session_dispatches_to_module(monkeypatch):
+    monkeypatch.setattr(wldm.command, "set_process_title", lambda role: None)
+    monkeypatch.setattr(wldm.command.wldm.audit, "setup_audit_hook", lambda role: None)
+    monkeypatch.setattr(wldm.user_session, "cmd_main", lambda ns: 14)
+
+    result = wldm.command.cmd_user_session(SimpleNamespace())
+
+    assert result == 14
+
+
 def test_set_process_title_is_noop_without_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "setproctitle", None)
 
@@ -113,6 +137,39 @@ def test_internal_command_prefix_uses_command_script_in_source_tree(monkeypatch)
     ]
 
 
+def test_internal_command_prefix_strips_pyc_suffix(monkeypatch):
+    monkeypatch.setattr(wldm.command.sys, "executable", "/usr/bin/python3")
+    monkeypatch.setattr(wldm.command.sys, "flags", SimpleNamespace(isolated=1, safe_path=True))
+    monkeypatch.setattr(wldm.command, "source_tree", "/srv/wldm")
+    monkeypatch.setattr(wldm.command, "__file__", "/srv/wldm/src/wldm/command.pyc")
+
+    assert wldm.command.internal_command_prefix() == [
+        "/usr/bin/python3",
+        "-I",
+        "-P",
+        "/srv/wldm/src/wldm/command.py",
+    ]
+
+
+def test_command_module_bootstraps_source_tree(monkeypatch):
+    module = types.ModuleType("wldm_bootstrap_test")
+    module.__dict__["__name__"] = "wldm_bootstrap_test"
+    module.__dict__["__file__"] = "/srv/wldm/src/wldm/command.py"
+    inserted = []
+    fake_sys = SimpleNamespace(path=inserted)
+    fake_os = SimpleNamespace(
+        environ={"WLDM_SOURCE_TREE": "/srv/wldm"},
+        path=SimpleNamespace(join=lambda a, b: f"{a}/{b}"),
+    )
+
+    exec("source_tree = os.environ.get('WLDM_SOURCE_TREE', '').strip()\n"
+         "if source_tree:\n"
+         "    sys.path.insert(0, os.path.join(source_tree, 'src'))\n",
+         {"os": fake_os, "sys": fake_sys})
+
+    assert inserted == ["/srv/wldm/src"]
+
+
 def test_cmd_dispatches_to_selected_handler(monkeypatch):
     args = SimpleNamespace(func=lambda ns: 23, verbose=0, quiet=False)
 
@@ -135,3 +192,23 @@ def test_cmd_prints_help_and_fails_without_handler(monkeypatch):
 
     assert wldm.command.cmd() == wldm.command.wldm.EX_FAILURE
     assert output.getvalue() == "help\n"
+
+
+def test_cmd_greeter_session_dispatches_to_module(monkeypatch):
+    monkeypatch.setattr(wldm.command, "set_process_title", lambda role: None)
+    monkeypatch.setattr(wldm.command.wldm.audit, "setup_audit_hook", lambda role: None)
+    monkeypatch.setattr(wldm.greeter_session, "cmd_main", lambda ns: 18)
+
+    result = wldm.command.cmd_greeter_session(SimpleNamespace())
+
+    assert result == 18
+
+
+def test_cmd_dbus_adapter_dispatches_to_module(monkeypatch):
+    monkeypatch.setattr(wldm.command, "set_process_title", lambda role: None)
+    monkeypatch.setattr(wldm.command.wldm.audit, "setup_audit_hook", lambda role: None)
+    monkeypatch.setattr(wldm.dbus_adapter, "cmd_main", lambda ns: 19)
+
+    result = wldm.command.cmd_dbus_adapter(SimpleNamespace())
+
+    assert result == 19

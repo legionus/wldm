@@ -195,6 +195,98 @@ def test_greeter_ipc_fd_marks_inherited_fd_inheritable(monkeypatch):
     assert calls == [(13, True)]
 
 
+def test_greeter_ipc_fd_requires_environment_variable(monkeypatch):
+    monkeypatch.delenv("WLDM_SOCKET_FD", raising=False)
+
+    try:
+        wldm.greeter_session.greeter_ipc_fd()
+    except RuntimeError as exc:
+        assert "WLDM_SOCKET_FD" in str(exc)
+    else:
+        raise AssertionError("greeter_ipc_fd() should require the inherited fd")
+
+
+def test_build_greeter_argv_requires_command(monkeypatch):
+    monkeypatch.delenv("WLDM_GREETER_COMMAND", raising=False)
+
+    try:
+        wldm.greeter_session.build_greeter_argv()
+    except RuntimeError as exc:
+        assert "WLDM_GREETER_COMMAND" in str(exc)
+    else:
+        raise AssertionError("build_greeter_argv() should require the greeter command")
+
+
+def test_build_greeter_argv_rejects_invalid_shell_syntax(monkeypatch):
+    monkeypatch.setenv("WLDM_GREETER_COMMAND", "cage '")
+
+    try:
+        wldm.greeter_session.build_greeter_argv()
+    except RuntimeError as exc:
+        assert "invalid greeter command" in str(exc)
+    else:
+        raise AssertionError("build_greeter_argv() should reject invalid shell syntax")
+
+
+def test_open_console_fd_raises_when_console_is_unavailable(monkeypatch):
+    monkeypatch.setattr(wldm.greeter_session.wldm.tty, "open_console", lambda: None)
+
+    try:
+        with wldm.greeter_session.open_console_fd():
+            raise AssertionError("open_console_fd() should have failed")
+    except RuntimeError as exc:
+        assert "Unable to open console" in str(exc)
+
+
+def test_finish_greeter_session_handles_close_errors(monkeypatch):
+    calls = []
+    monkeypatch.setattr(wldm.greeter_session.wldm.pam, "close_pam_session",
+                        lambda pamh: (_ for _ in ()).throw(RuntimeError("boom")))
+    monkeypatch.setattr(wldm.greeter_session.wldm.pam, "end_pam",
+                        lambda pamh: calls.append(("end_pam", pamh)))
+
+    wldm.greeter_session.finish_greeter_session("pamh")
+
+    assert calls == [("end_pam", "pamh")]
+
+
+def test_cmd_main_returns_failure_for_unknown_user(monkeypatch):
+    monkeypatch.setattr(wldm.greeter_session.pwd, "getpwnam", lambda username: (_ for _ in ()).throw(KeyError(username)))
+
+    result = wldm.greeter_session.cmd_main(
+        SimpleNamespace(username="missing", group="gdm", tty=7, pam_service="system-login")
+    )
+
+    assert result == wldm.greeter_session.wldm.EX_FAILURE
+
+
+def test_cmd_main_returns_failure_for_unknown_group(monkeypatch):
+    pw = pwd.struct_passwd(("gdm", "x", 1001, 1001, "", "/var/lib/gdm", "/bin/false"))
+    monkeypatch.setattr(wldm.greeter_session.pwd, "getpwnam", lambda username: pw)
+    monkeypatch.setattr(wldm.greeter_session.grp, "getgrnam", lambda group: (_ for _ in ()).throw(KeyError(group)))
+
+    result = wldm.greeter_session.cmd_main(
+        SimpleNamespace(username="gdm", group="missing", tty=7, pam_service="system-login")
+    )
+
+    assert result == wldm.greeter_session.wldm.EX_FAILURE
+
+
+def test_cmd_main_returns_failure_on_unexpected_exception(monkeypatch):
+    pw = pwd.struct_passwd(("gdm", "x", 1001, 1001, "", "/var/lib/gdm", "/bin/false"))
+    monkeypatch.setattr(wldm.greeter_session.pwd, "getpwnam", lambda username: pw)
+    monkeypatch.setattr(wldm.greeter_session.grp, "getgrnam", lambda group: SimpleNamespace(gr_gid=1001))
+    monkeypatch.setattr(wldm.greeter_session, "redirect_greeter_stderr", lambda: None)
+    monkeypatch.setattr(wldm.greeter_session, "run_greeter_session",
+                        lambda *args: (_ for _ in ()).throw(RuntimeError("boom")))
+
+    result = wldm.greeter_session.cmd_main(
+        SimpleNamespace(username="gdm", group="gdm", tty=7, pam_service="system-login")
+    )
+
+    assert result == wldm.greeter_session.wldm.EX_FAILURE
+
+
 def test_run_greeter_session_waits_for_child_and_returns_exit_status(monkeypatch):
     calls = {}
     pw = pwd.struct_passwd(("gdm", "x", 32, 32, "", "/var/lib/gdm", "/bin/false"))
