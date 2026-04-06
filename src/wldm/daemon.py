@@ -179,6 +179,17 @@ def process_request(state: DaemonState,
 
     if req["action"] == wldm.protocol.ACTION_AUTH:
         payload = req["payload"]
+
+        if wldm.protocol.auth_field_is_too_long(payload.get("username", b"")):
+            return RequestOutcome(
+                response=wldm.protocol.new_error(req, "bad_request", "Username is too long")
+            )
+
+        if wldm.protocol.auth_field_is_too_long(payload.get("password", b"")):
+            return RequestOutcome(
+                response=wldm.protocol.new_error(req, "bad_request", "Password is too long")
+            )
+
         session_username_bytes = payload["username"].as_bytes()
 
         try:

@@ -1235,6 +1235,83 @@ def test_on_login_clicked_includes_desktop_names_in_auth_request(monkeypatch):
     assert sent["payload"]["desktop_names"] == ["sway", "wlroots"]
 
 
+def test_on_login_clicked_rejects_overlong_username(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+    monkeypatch.setattr(greeter.wldm.sessions, "desktop_sessions", lambda username="": [])
+
+    class FakeEntry:
+        def __init__(self, text=""):
+            self.text = text
+            self.focused = False
+
+        def get_text(self):
+            return self.text
+
+        def set_text(self, text):
+            self.text = text
+
+        def grab_focus(self):
+            self.focused = True
+
+    class FakeLabel:
+        def __init__(self):
+            self.text = None
+
+        def set_text(self, text):
+            self.text = text
+
+    app = greeter.LoginApp(client=DummyClient())
+    app.username_entry = FakeEntry("a" * 257)
+    app.password_entry = FakeEntry("secret")
+    app.status_label = FakeLabel()
+    monkeypatch.setattr(app, "send_recv_answer", lambda data: (_ for _ in ()).throw(AssertionError("unexpected send")))
+
+    app.on_login_clicked()
+
+    assert app.status_label.text == (
+        f"Username must be {greeter.wldm.protocol.AUTH_FIELD_MAX_LENGTH} bytes or less."
+    )
+
+
+def test_on_login_clicked_rejects_overlong_password(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+    monkeypatch.setattr(greeter.wldm.sessions, "desktop_sessions", lambda username="": [])
+
+    class FakeEntry:
+        def __init__(self, text=""):
+            self.text = text
+            self.focused = False
+
+        def get_text(self):
+            return self.text
+
+        def set_text(self, text):
+            self.text = text
+
+        def grab_focus(self):
+            self.focused = True
+
+    class FakeLabel:
+        def __init__(self):
+            self.text = None
+
+        def set_text(self, text):
+            self.text = text
+
+    app = greeter.LoginApp(client=DummyClient())
+    app.username_entry = FakeEntry("alice")
+    app.password_entry = FakeEntry("a" * 257)
+    app.status_label = FakeLabel()
+    monkeypatch.setattr(app, "send_recv_answer", lambda data: (_ for _ in ()).throw(AssertionError("unexpected send")))
+
+    app.on_login_clicked()
+
+    assert app.status_label.text == (
+        f"Password must be {greeter.wldm.protocol.AUTH_FIELD_MAX_LENGTH} bytes or less."
+    )
+    assert app.password_entry.focused is True
+
+
 def test_on_login_clicked_sets_success_message_and_clears_username(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
 

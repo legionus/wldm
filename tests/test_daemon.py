@@ -187,6 +187,40 @@ def test_process_request_replies_with_bad_request_for_unknown_payload():
     assert outcome.event is None
 
 
+def test_process_request_rejects_overlong_username():
+    state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
+    req = wldm.protocol.new_request(
+        wldm.protocol.ACTION_AUTH,
+        {
+            "username": wldm.secret.SecretBytes(b"a" * 257),
+            "password": wldm.secret.SecretBytes(b"secret"),
+            "command": "ignored",
+            "desktop_names": [],
+        },
+    )
+
+    outcome = wldm.daemon.process_request(state, req, make_config())
+
+    assert outcome.response["error"] == {"code": "bad_request", "message": "Username is too long"}
+
+
+def test_process_request_rejects_overlong_password():
+    state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
+    req = wldm.protocol.new_request(
+        wldm.protocol.ACTION_AUTH,
+        {
+            "username": wldm.secret.SecretBytes(b"alice"),
+            "password": wldm.secret.SecretBytes(b"a" * 257),
+            "command": "ignored",
+            "desktop_names": [],
+        },
+    )
+
+    outcome = wldm.daemon.process_request(state, req, make_config())
+
+    assert outcome.response["error"] == {"code": "bad_request", "message": "Password is too long"}
+
+
 def test_process_request_does_not_start_session_for_failed_auth(monkeypatch):
     state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
     req = wldm.protocol.new_request(

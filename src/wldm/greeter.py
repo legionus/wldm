@@ -855,8 +855,29 @@ class LoginApp:
             self.set_status(_("Enter a username."), error=True)
             return
 
+        if wldm.protocol.auth_field_is_too_long(data["username"]):
+            self.set_status(
+                _("Username must be %(limit)d bytes or less.")
+                % {"limit": wldm.protocol.AUTH_FIELD_MAX_LENGTH},
+                error=True,
+            )
+            return
+
         if len(data["password"]) == 0:
             self.set_status(_("Enter a password."), error=True)
+
+            if hasattr(self.password_entry, "grab_focus"):
+                self.password_entry.grab_focus()
+
+            data["password"].clear()
+            return
+
+        if wldm.protocol.auth_field_is_too_long(data["password"]):
+            self.set_status(
+                _("Password must be %(limit)d bytes or less.")
+                % {"limit": wldm.protocol.AUTH_FIELD_MAX_LENGTH},
+                error=True,
+            )
 
             if hasattr(self.password_entry, "grab_focus"):
                 self.password_entry.grab_focus()

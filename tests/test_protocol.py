@@ -1,7 +1,11 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (C) 2026  Alexey Gladkov <legion@kernel.org>
 
+import asyncio
+import socket
+
 import wldm.protocol
+import wldm.secret
 
 
 def test_new_request_creates_versioned_envelope():
@@ -45,6 +49,13 @@ def test_encode_and_decode_round_trip():
     assert decoded["payload"]["command"] == "sway"
     assert decoded["payload"]["desktop_names"] == ["sway"]
 
+
+def test_auth_field_is_too_long_checks_wire_length():
+    assert wldm.protocol.auth_field_is_too_long("a" * 256) is False
+    assert wldm.protocol.auth_field_is_too_long("a" * 257) is True
+    assert wldm.protocol.auth_field_is_too_long(wldm.secret.SecretBytes(b"a" * 256)) is False
+    assert wldm.protocol.auth_field_is_too_long(wldm.secret.SecretBytes(b"a" * 257)) is True
+
 def test_decode_message_rejects_truncated_frame():
     try:
         wldm.protocol.decode_message(b"\x00\x00")
@@ -52,6 +63,56 @@ def test_decode_message_rejects_truncated_frame():
         assert "truncated protocol frame" in str(exc)
     else:
         raise AssertionError("decode_message() should reject truncated frames")
+
+
+def test_decode_message_rejects_oversized_frame_body():
+    raw = wldm.protocol.FRAME_HEADER.pack(wldm.protocol.MAX_FRAME_BODY_LENGTH + 1)
+
+    try:
+        wldm.protocol.decode_message(raw)
+    except wldm.protocol.ProtocolError as exc:
+        assert "too large" in str(exc)
+    else:
+        raise AssertionError("decode_message() should reject oversized frames")
+
+
+def test_read_message_async_rejects_oversized_frame_body():
+    class DummyReader:
+        def __init__(self, header: bytes):
+            self.header = header
+            self.calls = 0
+
+        async def readexactly(self, size: int) -> bytes:
+            self.calls += 1
+            if self.calls == 1:
+                return self.header
+            raise AssertionError("body read should not happen for oversized frame")
+
+    header = wldm.protocol.FRAME_HEADER.pack(wldm.protocol.MAX_FRAME_BODY_LENGTH + 1)
+    reader = DummyReader(header)
+
+    try:
+        asyncio.run(wldm.protocol.read_message_async(reader))
+    except wldm.protocol.ProtocolError as exc:
+        assert "too large" in str(exc)
+    else:
+        raise AssertionError("read_message_async() should reject oversized frames")
+
+
+def test_read_message_socket_rejects_oversized_frame_body():
+    sock1, sock2 = socket.socketpair()
+    try:
+        sock1.sendall(wldm.protocol.FRAME_HEADER.pack(wldm.protocol.MAX_FRAME_BODY_LENGTH + 1))
+
+        try:
+            wldm.protocol.read_message_socket(sock2)
+        except wldm.protocol.ProtocolError as exc:
+            assert "too large" in str(exc)
+        else:
+            raise AssertionError("read_message_socket() should reject oversized frames")
+    finally:
+        sock1.close()
+        sock2.close()
 
 
 def test_is_request_validates_shape():

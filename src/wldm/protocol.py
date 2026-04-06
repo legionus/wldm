@@ -38,11 +38,47 @@ TYPE_REQUEST = 1
 TYPE_RESPONSE = 2
 TYPE_EVENT = 3
 
+AUTH_FIELD_MAX_LENGTH = 256
+MAX_FRAME_BODY_LENGTH = 2048
+
 
 class ProtocolError(ValueError):
     def __init__(self, message: str, raw: bytes = b"") -> None:
         super().__init__(message)
         self.raw = raw
+
+
+def auth_field_length(value: Any) -> int:
+    """Return the wire-visible length of one auth field.
+
+    Args:
+        value: Username or password value to measure.
+
+    Returns:
+        Length of the encoded protocol field in bytes.
+    """
+    if isinstance(value, SecretBytes):
+        return len(value)
+
+    if isinstance(value, str):
+        return len(value.encode("utf-8"))
+
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return len(value)
+
+    return len(str(value).encode("utf-8"))
+
+
+def auth_field_is_too_long(value: Any) -> bool:
+    """Check whether one auth field exceeds the protocol limit.
+
+    Args:
+        value: Username or password value to validate.
+
+    Returns:
+        `True` if the field is longer than `AUTH_FIELD_MAX_LENGTH`.
+    """
+    return auth_field_length(value) > AUTH_FIELD_MAX_LENGTH
 
 
 def new_request(action: str, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -316,6 +352,9 @@ def encode_message(message: Dict[str, Any]) -> bytes:
     else:
         raise ProtocolError("unknown protocol message type")
 
+    if len(body) > MAX_FRAME_BODY_LENGTH:
+        raise ProtocolError("protocol frame body is too large")
+
     return FRAME_HEADER.pack(len(body)) + bytes(body)
 
 
@@ -328,6 +367,9 @@ def decode_message(raw: bytes | str) -> Dict[str, Any]:
 
     body_len = FRAME_HEADER.unpack(raw[:FRAME_HEADER.size])[0]
     body = raw[FRAME_HEADER.size:]
+
+    if body_len > MAX_FRAME_BODY_LENGTH:
+        raise ProtocolError("protocol frame body is too large", raw[:FRAME_HEADER.size])
 
     if len(body) != body_len:
         raise ProtocolError("protocol frame length mismatch", raw)
@@ -444,6 +486,9 @@ async def read_message_async(reader: asyncio.StreamReader) -> Dict[str, Any] | N
 
     body_len = FRAME_HEADER.unpack(header)[0]
 
+    if body_len > MAX_FRAME_BODY_LENGTH:
+        raise ProtocolError("protocol frame body is too large", header)
+
     try:
         body = await reader.readexactly(body_len)
 
@@ -460,6 +505,10 @@ def read_message_socket(sock: socket.socket) -> Dict[str, Any] | None:
         return None
 
     body_len = FRAME_HEADER.unpack(header)[0]
+
+    if body_len > MAX_FRAME_BODY_LENGTH:
+        raise ProtocolError("protocol frame body is too large", header)
+
     body = _recv_exact(sock, body_len)
 
     if body is None:
