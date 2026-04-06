@@ -147,14 +147,15 @@ loses the bus name, the daemon keeps running and login still works.
 
 The daemon and its internal clients communicate over inherited `socketpair()`
 file descriptors. The protocol is implemented in
-[`src/wldm/protocol.py`](../src/wldm/protocol.py).
+[`src/wldm/protocol.py`](../src/wldm/protocol.py) and documented in
+[`protocol.md`](protocol.md).
 
 Properties of the current transport:
 
 - the daemon creates one private connected socket pair per internal client
 - the client end is inherited through `WLDM_SOCKET_FD`
 - there is no pathname listener for the greeter or D-Bus adapter path
-- messages are newline-delimited JSON envelopes
+- messages use a small length-prefixed binary frame format
 - the protocol supports request/response messages and asynchronous events
 
 Current actions include:
