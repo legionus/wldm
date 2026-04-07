@@ -91,6 +91,13 @@ def cmd_dbus_adapter(cmdargs: argparse.Namespace) -> int:
     return wldm_dbus_adapter.cmd_main(cmdargs)
 
 
+def cmd_pam_worker(cmdargs: argparse.Namespace) -> int:
+    set_process_title("pam-worker")
+    wldm.audit.setup_audit_hook("pam-worker")
+    import wldm.pam_worker as wldm_pam_worker
+    return wldm_pam_worker.cmd_main(cmdargs)
+
+
 def setup_parser() -> argparse.ArgumentParser:
     epilog = "Report bugs to authors."
 
@@ -172,6 +179,18 @@ bridges daemon state to an external D-Bus adapter.
     wldm.add_common_arguments(sp)
     sp.add_argument("username", help="adapter user")
     sp.add_argument("service", help="D-Bus service name")
+
+    # command: pam-worker
+    sp_description = """\
+runs a blocking PAM authentication worker for one greeter conversation.
+
+"""
+    sp = subparsers.add_parser("pam-worker",
+                               formatter_class=argparse.RawTextHelpFormatter,
+                               description=sp_description, help=sp_description,
+                               epilog=epilog, add_help=False)
+    sp.set_defaults(func=cmd_pam_worker)
+    wldm.add_common_arguments(sp)
 
     return parser
 

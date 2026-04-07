@@ -15,8 +15,9 @@ from asyncio.subprocess import Process as AsyncProcess
 import wldm
 import wldm.command
 import wldm.config
+import wldm.daemon_auth as daemon_auth
 import wldm.inifile
-import wldm.pam
+import wldm.pam_worker_protocol as pam_worker_protocol
 import wldm.policy
 import wldm.greeter_protocol as greeter_protocol
 import wldm.secret
@@ -60,11 +61,7 @@ class SessionState:
     username: str
     command: str
 
-
-@dataclass
-class AuthSessionState:
-    username: str
-    verified: bool = False
+AuthSessionState = daemon_auth.AuthSessionState
 
 
 @dataclass
@@ -74,7 +71,7 @@ class ClientState:
     task: Optional[asyncio.Task[None]] = None
     failures: int = 0
     ready: bool = False
-    auth_session: Optional[AuthSessionState] = None
+    auth_session: Optional[daemon_auth.AuthSessionState] = None
 
 
 POWER_ACTION_COMMANDS = {
@@ -157,21 +154,6 @@ def keyboard_environment(cfg: wldm.inifile.IniFile) -> Dict[str, str]:
     return env
 
 
-def verify_creds(username: wldm.secret.SecretBytes, password: wldm.secret.SecretBytes) -> bool:
-    """Authenticate one username/password pair through PAM."""
-    if not username or not password:
-        return False
-
-    try:
-        if wldm.pam.authenticate(username, password):
-            return True
-
-    except Exception as e:
-        logger.critical("authorization failed: %s", e)
-
-    return False
-
-
 def process_request(state: DaemonState,
                     client_name: str,
                     req: Dict[str, Any],
@@ -186,74 +168,6 @@ def process_request(state: DaemonState,
             response=greeter_protocol.new_response(req, ok=True, payload=state_snapshot(state))
         )
 
-    if req["action"] == greeter_protocol.ACTION_CREATE_SESSION:
-        payload = req["payload"]
-
-        if greeter_protocol.auth_field_is_too_long(payload.get("username", b"")):
-            return RequestOutcome(
-                response=greeter_protocol.new_error(req, "bad_request", "Username is too long")
-            )
-
-        username_bytes = payload["username"].as_bytes()
-        client_state(state, client_name).auth_session = AuthSessionState(
-            username=username_bytes.decode("utf-8", errors="replace"),
-        )
-        payload["username"].clear()
-
-        return RequestOutcome(
-            response=greeter_protocol.new_conversation_response(
-                req,
-                "pending",
-                style="secret",
-                text="Password:",
-            )
-        )
-
-    if req["action"] == greeter_protocol.ACTION_CONTINUE_SESSION:
-        payload = req["payload"]
-        auth_session = client_state(state, client_name).auth_session
-
-        if auth_session is None:
-            return RequestOutcome(
-                response=greeter_protocol.new_error(req, "session_not_found", "No session is being configured")
-            )
-
-        if auth_session.verified:
-            payload["response"].clear()
-            return RequestOutcome(
-                response=greeter_protocol.new_error(req, "bad_request", "Session is already ready")
-            )
-
-        if greeter_protocol.auth_field_is_too_long(payload.get("response", b"")):
-            payload["response"].clear()
-            return RequestOutcome(
-                response=greeter_protocol.new_error(req, "bad_request", "Response is too long")
-            )
-
-        username = wldm.secret.SecretBytes(auth_session.username.encode("utf-8"))
-
-        try:
-            verified = verify_creds(username, payload["response"])
-        finally:
-            payload["response"].clear()
-
-        if not verified:
-            client_state(state, client_name).auth_session = None
-            return RequestOutcome(
-                response=greeter_protocol.new_error(req, "auth_failed", "Authentication failed")
-            )
-
-        auth_session.verified = True
-        return RequestOutcome(
-            response=greeter_protocol.new_conversation_response(req, "ready")
-        )
-
-    if req["action"] == greeter_protocol.ACTION_CANCEL_SESSION:
-        client_state(state, client_name).auth_session = None
-        return RequestOutcome(
-            response=greeter_protocol.new_response(req, ok=True, payload={})
-        )
-
     if req["action"] == greeter_protocol.ACTION_START_SESSION:
         payload = req["payload"]
         auth_session = client_state(state, client_name).auth_session
@@ -263,7 +177,7 @@ def process_request(state: DaemonState,
                 response=greeter_protocol.new_error(req, "session_not_found", "No session is being configured")
             )
 
-        if not auth_session.verified:
+        if not auth_session.ready:
             return RequestOutcome(
                 response=greeter_protocol.new_error(req, "session_not_ready", "Session is not ready")
             )
@@ -300,6 +214,8 @@ def process_request(state: DaemonState,
     return RequestOutcome(
         response=greeter_protocol.new_error(req, "unknown_action", f"Unknown action: {req['action']}"),
     )
+
+
 
 
 async def send_message(writer: Optional[asyncio.StreamWriter], message: Dict[str, Any]) -> bool:
@@ -519,6 +435,106 @@ async def handle_request_async(state: DaemonState,
         cfg: Loaded daemon configuration.
     """
     client = client_state(state, client_name)
+
+    if greeter_protocol.is_request(req, action=greeter_protocol.ACTION_CREATE_SESSION):
+        payload = req["payload"]
+        username = payload["username"]
+
+        if greeter_protocol.auth_field_is_too_long(username):
+            username.clear()
+            await send_message(client.writer, greeter_protocol.new_error(req, "bad_request", "Username is too long"))
+            return
+
+        if client.auth_session is not None:
+            await daemon_auth.stop_auth_session(client.auth_session, send_cancel=True)
+            client.auth_session = None
+
+        username_text = username.as_bytes().decode("utf-8", errors="replace")
+        username.clear()
+
+        new_auth_session, message = await daemon_auth.start_auth_session(
+            state.internal_command,
+            daemon_auth.tty_device_path(state.greeter_tty),
+            username_text,
+        )
+        client.auth_session = new_auth_session
+
+        if message is None:
+            await daemon_auth.stop_auth_session(new_auth_session)
+            client.auth_session = None
+            await send_message(
+                client.writer,
+                greeter_protocol.new_error(req, "auth_failed", "Authentication worker closed unexpectedly"),
+            )
+            return
+
+        if message["kind"] == pam_worker_protocol.KIND_READY:
+            new_auth_session.ready = True
+
+        response = daemon_auth.conversation_response_from_worker(req, message)
+
+        if message["kind"] == pam_worker_protocol.KIND_FAILED:
+            await daemon_auth.stop_auth_session(new_auth_session)
+            client.auth_session = None
+
+        await send_message(client.writer, response)
+        return
+
+    if greeter_protocol.is_request(req, action=greeter_protocol.ACTION_CONTINUE_SESSION):
+        payload = req["payload"]
+        auth_session: AuthSessionState | None = client.auth_session
+
+        if auth_session is None:
+            payload["response"].clear()
+            await send_message(
+                client.writer,
+                greeter_protocol.new_error(req, "session_not_found", "No session is being configured"),
+            )
+            return
+
+        if auth_session.ready:
+            payload["response"].clear()
+            await send_message(
+                client.writer,
+                greeter_protocol.new_error(req, "bad_request", "Session is already ready"),
+            )
+            return
+
+        if greeter_protocol.auth_field_is_too_long(payload["response"]):
+            payload["response"].clear()
+            await send_message(client.writer, greeter_protocol.new_error(req, "bad_request", "Response is too long"))
+            return
+
+        message = await daemon_auth.continue_auth_session(auth_session, payload["response"])
+        if message is None:
+            await daemon_auth.stop_auth_session(auth_session)
+            client.auth_session = None
+            await send_message(
+                client.writer,
+                greeter_protocol.new_error(req, "auth_failed", "Authentication worker closed unexpectedly"),
+            )
+            return
+
+        if message["kind"] == pam_worker_protocol.KIND_READY:
+            auth_session.ready = True
+
+        response = daemon_auth.conversation_response_from_worker(req, message)
+
+        if message["kind"] == pam_worker_protocol.KIND_FAILED:
+            await daemon_auth.stop_auth_session(auth_session)
+            client.auth_session = None
+
+        await send_message(client.writer, response)
+        return
+
+    if greeter_protocol.is_request(req, action=greeter_protocol.ACTION_CANCEL_SESSION):
+        if client.auth_session is not None:
+            await daemon_auth.stop_auth_session(client.auth_session, send_cancel=True)
+            client.auth_session = None
+
+        await send_message(client.writer, greeter_protocol.new_response(req, ok=True, payload={}))
+        return
+
     outcome = process_request(state, client_name, req, cfg)
     await send_message(client.writer, outcome.response)
 
@@ -586,7 +602,9 @@ async def handle_client(state: DaemonState,
             await handle_request_async(state, name, req, cfg)
 
     finally:
-        client.auth_session = None
+        if client.auth_session is not None:
+            await daemon_auth.stop_auth_session(client.auth_session, send_cancel=True)
+            client.auth_session = None
 
         if client.writer is writer:
             client.writer = None
@@ -776,6 +794,11 @@ async def ensure_managed_clients(state: DaemonState,
 
 
 async def cleanup_async(state: DaemonState) -> None:
+    for client in state.clients.values():
+        if client.auth_session is not None:
+            await daemon_auth.stop_auth_session(client.auth_session, send_cancel=True)
+            client.auth_session = None
+
     for name in list(state.clients):
         await close_client_channel(state, name)
 

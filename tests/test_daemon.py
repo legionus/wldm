@@ -6,10 +6,11 @@ import signal
 from types import SimpleNamespace
 
 import wldm.daemon
+import wldm.daemon_auth
 import wldm.config
 import wldm.inifile
-import wldm.pam
 import wldm.greeter_protocol as greeter_protocol
+import wldm.pam_worker_protocol as pam_worker_protocol
 import wldm.secret
 import wldm.state
 import wldm.tty
@@ -74,6 +75,16 @@ class DummyAsyncProc:
     async def wait(self):
         self.wait_calls += 1
         return self.returncode
+
+
+def dummy_auth_session(username="alice", ready=False):
+    return wldm.daemon.AuthSessionState(
+        username=username,
+        proc=DummyAsyncProc(pid=6000, returncode=0),
+        reader=SimpleNamespace(),
+        writer=DummyWriter(),
+        ready=ready,
+    )
 
 
 def make_config(user="gdm",
@@ -178,8 +189,9 @@ def test_process_request_replies_with_bad_request_for_unknown_payload():
     assert outcome.event is None
 
 
-def test_process_request_rejects_overlong_username():
+def test_handle_request_async_rejects_overlong_username():
     state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
+    state.clients["greeter"].writer = DummyWriter()
     req = greeter_protocol.new_request(
         greeter_protocol.ACTION_CREATE_SESSION,
         {
@@ -187,9 +199,10 @@ def test_process_request_rejects_overlong_username():
         },
     )
 
-    outcome = wldm.daemon.process_request(state, "greeter", req, make_config())
+    asyncio.run(wldm.daemon.handle_request_async(state, "greeter", req, make_config()))
+    outcome = greeter_protocol.decode_message(state.clients["greeter"].writer.lines[0])
 
-    assert outcome.response["error"] == {"code": "bad_request", "message": "Username is too long"}
+    assert outcome["error"] == {"code": "bad_request", "message": "Username is too long"}
 def test_process_request_replies_with_unknown_action_error():
     req = greeter_protocol.new_request("mystery", {})
     state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
@@ -199,58 +212,80 @@ def test_process_request_replies_with_unknown_action_error():
     assert outcome.response["error"]["code"] == "unknown_action"
 
 
-def test_process_request_create_session_returns_secret_prompt():
+def test_handle_request_async_create_session_returns_worker_prompt(monkeypatch):
     state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
+    state.clients["greeter"].writer = DummyWriter()
     req = greeter_protocol.new_request(
         greeter_protocol.ACTION_CREATE_SESSION,
         {"username": wldm.secret.SecretBytes(b"alice")},
     )
 
-    outcome = wldm.daemon.process_request(state, "greeter", req, make_config())
+    auth_session = dummy_auth_session("alice")
 
-    assert outcome.response["payload"] == {
+    async def fake_start_auth_session(internal_command, tty, username):
+        assert internal_command == state.internal_command
+        assert tty == ""
+        assert username == "alice"
+        return auth_session, pam_worker_protocol.new_prompt("secret", "Password:")
+
+    monkeypatch.setattr(wldm.daemon.daemon_auth, "start_auth_session", fake_start_auth_session)
+
+    asyncio.run(wldm.daemon.handle_request_async(state, "greeter", req, make_config()))
+    outcome = greeter_protocol.decode_message(state.clients["greeter"].writer.lines[0])
+
+    assert outcome["payload"] == {
         "state": "pending",
         "message": {"style": "secret", "text": "Password:"},
     }
-    assert state.clients["greeter"].auth_session == wldm.daemon.AuthSessionState(username="alice", verified=False)
+    assert state.clients["greeter"].auth_session is auth_session
     assert req["payload"]["username"].as_bytes() == b""
 
 
-def test_process_request_continue_session_requires_configured_session():
+def test_handle_request_async_continue_session_requires_configured_session():
     state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
+    state.clients["greeter"].writer = DummyWriter()
     req = greeter_protocol.new_request(
         greeter_protocol.ACTION_CONTINUE_SESSION,
         {"response": wldm.secret.SecretBytes(b"secret")},
     )
 
-    outcome = wldm.daemon.process_request(state, "greeter", req, make_config())
+    asyncio.run(wldm.daemon.handle_request_async(state, "greeter", req, make_config()))
+    outcome = greeter_protocol.decode_message(state.clients["greeter"].writer.lines[0])
 
-    assert outcome.response["error"] == {
+    assert outcome["error"] == {
         "code": "session_not_found",
         "message": "No session is being configured",
     }
 
 
-def test_process_request_continue_session_marks_session_ready(monkeypatch):
+def test_handle_request_async_continue_session_marks_session_ready(monkeypatch):
     state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
-    state.clients["greeter"].auth_session = wldm.daemon.AuthSessionState(username="alice", verified=False)
+    state.clients["greeter"].writer = DummyWriter()
+    state.clients["greeter"].auth_session = dummy_auth_session("alice")
     req = greeter_protocol.new_request(
         greeter_protocol.ACTION_CONTINUE_SESSION,
         {"response": wldm.secret.SecretBytes(b"secret")},
     )
 
-    monkeypatch.setattr(wldm.daemon, "verify_creds", lambda username, password: True)
+    async def fake_continue_auth_session(auth_session, response):
+        assert auth_session.username == "alice"
+        assert response.as_bytes() == b"secret"
+        response.clear()
+        return pam_worker_protocol.new_ready()
 
-    outcome = wldm.daemon.process_request(state, "greeter", req, make_config())
+    monkeypatch.setattr(wldm.daemon.daemon_auth, "continue_auth_session", fake_continue_auth_session)
 
-    assert outcome.response["payload"] == {"state": "ready"}
-    assert state.clients["greeter"].auth_session == wldm.daemon.AuthSessionState(username="alice", verified=True)
+    asyncio.run(wldm.daemon.handle_request_async(state, "greeter", req, make_config()))
+    outcome = greeter_protocol.decode_message(state.clients["greeter"].writer.lines[0])
+
+    assert outcome["payload"] == {"state": "ready"}
+    assert state.clients["greeter"].auth_session.ready is True
     assert req["payload"]["response"].as_bytes() == b""
 
 
 def test_process_request_start_session_requires_ready_state():
     state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
-    state.clients["greeter"].auth_session = wldm.daemon.AuthSessionState(username="alice", verified=False)
+    state.clients["greeter"].auth_session = dummy_auth_session("alice", ready=False)
     req = greeter_protocol.new_request(
         greeter_protocol.ACTION_START_SESSION,
         {"command": "sway", "desktop_names": ["sway"]},
@@ -266,7 +301,7 @@ def test_process_request_start_session_requires_ready_state():
 
 def test_process_request_start_session_after_ready():
     state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
-    state.clients["greeter"].auth_session = wldm.daemon.AuthSessionState(username="alice", verified=True)
+    state.clients["greeter"].auth_session = dummy_auth_session("alice", ready=True)
     req = greeter_protocol.new_request(
         greeter_protocol.ACTION_START_SESSION,
         {"command": "startplasma-wayland --debug", "desktop_names": ["plasma", "kde"]},
@@ -289,12 +324,14 @@ def test_process_request_start_session_after_ready():
 
 def test_process_request_cancel_session_clears_auth_state():
     state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
-    state.clients["greeter"].auth_session = wldm.daemon.AuthSessionState(username="alice", verified=False)
+    state.clients["greeter"].writer = DummyWriter()
+    state.clients["greeter"].auth_session = dummy_auth_session("alice")
     req = greeter_protocol.new_request(greeter_protocol.ACTION_CANCEL_SESSION, {})
 
-    outcome = wldm.daemon.process_request(state, "greeter", req, make_config())
+    asyncio.run(wldm.daemon.handle_request_async(state, "greeter", req, make_config()))
+    outcome = greeter_protocol.decode_message(state.clients["greeter"].writer.lines[0])
 
-    assert outcome.response["ok"] is True
+    assert outcome["ok"] is True
     assert state.clients["greeter"].auth_session is None
 
 
@@ -379,7 +416,7 @@ def test_process_request_returns_state_snapshot():
 def test_handle_request_async_starts_session_after_auth(monkeypatch):
     state = wldm.daemon.DaemonState(["/usr/bin/python3", "/srv/wldm/src/wldm/command.py"], 3)
     state.clients["greeter"].writer = DummyWriter()
-    state.clients["greeter"].auth_session = wldm.daemon.AuthSessionState(username="alice", verified=True)
+    state.clients["greeter"].auth_session = dummy_auth_session("alice", ready=True)
     req = greeter_protocol.new_request(
         greeter_protocol.ACTION_START_SESSION,
         {

@@ -9,6 +9,7 @@ import types
 import wldm.command
 import wldm.daemon
 import wldm.dbus_adapter
+import wldm.pam_worker
 import wldm.greeter_session
 import wldm.user_session
 
@@ -56,6 +57,14 @@ def test_dbus_adapter_subcommand_parses_arguments():
     assert args.func is wldm.command.cmd_dbus_adapter
     assert args.username == "gdm"
     assert args.service == "org.freedesktop.DisplayManager"
+
+
+def test_pam_worker_subcommand_parses_arguments():
+    parser = wldm.command.setup_parser()
+
+    args = parser.parse_args(["pam-worker"])
+
+    assert args.func is wldm.command.cmd_pam_worker
 
 
 def test_cmd_daemon_dispatches_to_module(monkeypatch):
@@ -212,3 +221,13 @@ def test_cmd_dbus_adapter_dispatches_to_module(monkeypatch):
     result = wldm.command.cmd_dbus_adapter(SimpleNamespace())
 
     assert result == 19
+
+
+def test_cmd_pam_worker_dispatches_to_module(monkeypatch):
+    monkeypatch.setattr(wldm.command, "set_process_title", lambda role: None)
+    monkeypatch.setattr(wldm.command.wldm.audit, "setup_audit_hook", lambda role: None)
+    monkeypatch.setattr(wldm.pam_worker, "cmd_main", lambda ns: 20)
+
+    result = wldm.command.cmd_pam_worker(SimpleNamespace())
+
+    assert result == 20

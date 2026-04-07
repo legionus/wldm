@@ -16,6 +16,7 @@ ROLE_ALLOWED_CTYPES = {
     "greeter": (None, "gtk-4", "libgtk-4.so", "libgtk-4.so.", "c", "libc.so", "libc.so."),
     "greeter-session": (None, "pam", "libpam.so", "libpam.so.", "c", "libc.so", "libc.so."),
     "user-session": (None, "pam", "libpam.so", "libpam.so.", "c", "libc.so", "libc.so."),
+    "pam-worker": (None, "pam", "libpam.so", "libpam.so.", "c", "libc.so", "libc.so."),
     "dbus-adapter": (None,),
 }
 
