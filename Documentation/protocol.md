@@ -6,6 +6,11 @@ optional D-Bus adapter.
 
 This is an internal protocol, not a public compatibility promise.
 
+The intended authentication model is a request/response PAM conversation,
+not a single username/password exchange. The current implementation still has
+legacy one-shot `auth`, but the target protocol shape is the conversation flow
+described below.
+
 ## Transport
 
 - The daemon creates one private connected `socketpair()` per internal client.
@@ -85,7 +90,121 @@ request = id + action + request-specific-fields
 - `id` (`string`) request identifier
 - `action` (`string`) request name
 
-### `auth`
+## Authentication Conversation
+
+The intended greeter login flow is:
+
+```text
+greeter                                daemon
+-------                                ------
+
+create-session(username)     ------->  create PAM auth context
+
+                             <-------  response(ok=true,
+                                                state="pending",
+                                                message={style,text})
+                                            or
+                             <-------  response(ok=true,
+                                                state="ready")
+                                            or
+                             <------- response(ok=false, ...)
+
+continue-session(response)   ------->  feed reply into PAM
+
+                             <-------  response(ok=true,
+                                                state="pending",
+                                                message={style,text})
+                                            or
+                             <-------  response(ok=true,
+                                                state="ready")
+                                            or
+                             <-------  response(ok=false, ...)
+
+cancel-session()             ------->  cancel PAM auth context
+
+                             <-------  response(ok=true)
+
+start-session(command,
+              desktop_names) -------> launch user session
+
+                             <-------  response(ok=true)
+                             <-------  event(session-starting)
+                             <-------  event(state-changed)
+                             <-------  event(session-finished)
+```
+
+The important part is that PAM prompts stay synchronous at the protocol
+level: each greeter reply gets exactly one response telling it either:
+
+- another prompt is needed
+- authentication is ready to start a session
+- or the attempt failed
+
+This keeps the login UI simpler than an event-driven auth conversation while
+still allowing PAM stacks that ask more than one question.
+
+### `create-session`
+
+Wire layout:
+
+```text
+request(create-session) = id + action("create-session") + username
+```
+
+Fields:
+
+- `username` (`bytes`) opaque auth field identifying the target user
+
+Meaning:
+
+- Starts or replaces the current authentication conversation for this client.
+
+### `continue-session`
+
+Wire layout:
+
+```text
+request(continue-session) = id + action("continue-session") + response
+```
+
+Fields:
+
+- `response` (`bytes`) opaque reply to the current PAM prompt
+
+Meaning:
+
+- Sends one answer back into the current PAM conversation.
+
+### `cancel-session`
+
+Wire layout:
+
+```text
+request(cancel-session) = id + action("cancel-session")
+```
+
+Meaning:
+
+- Cancels the current PAM conversation for this client.
+
+### `start-session`
+
+Wire layout:
+
+```text
+request(start-session) = id + action("start-session") + command + desktop_names
+```
+
+Fields:
+
+- `command` (`string`) selected session command
+- `desktop_names` (`string list`) desktop name tokens for the selected session
+
+Meaning:
+
+- Starts the final user session after the daemon has reported `state="ready"`.
+
+### Legacy `auth`
 
 Wire layout:
 
@@ -106,8 +225,9 @@ Limits:
 
 Meaning:
 
-- Sent by the greeter when the user submits a login request.
-- On success, the daemon later broadcasts `session-starting`.
+- Transitional one-shot login request.
+- Keeps the current username/password flow working while the greeter and
+  daemon move to the conversation model above.
 
 ### `get-state`
 
@@ -165,6 +285,60 @@ Fields:
 
 - `verified` (`bool`) `true` means PAM authentication succeeded
 
+### Successful `create-session` or `continue-session` Response
+
+Wire layout:
+
+```text
+response(session-conversation, ok=true) = id + action + ok + state + has-message + [style + text]
+```
+
+Fields:
+
+- `state` (`string`) one of:
+  - `pending`
+  - `ready`
+- `has-message` (`bool`) whether a prompt payload follows
+- `style` (`string`) prompt style when `has-message=true`
+- `text` (`string`) prompt text when `has-message=true`
+
+Meaning:
+
+- `state="pending"` means the greeter must continue the PAM conversation.
+- `state="ready"` means the greeter may send `start-session`.
+
+Prompt styles are intended to be:
+
+- `secret`
+- `visible`
+- `info`
+- `error`
+
+### Successful `cancel-session` Response
+
+Wire layout:
+
+```text
+response(cancel-session, ok=true) = id + action("cancel-session") + ok
+```
+
+Meaning:
+
+- Confirms that any in-progress PAM conversation for this client was dropped.
+
+### Successful `start-session` Response
+
+Wire layout:
+
+```text
+response(start-session, ok=true) = id + action("start-session") + ok
+```
+
+Meaning:
+
+- Confirms that the daemon accepted the request to launch the final user
+  session.
+
 ### Successful `get-state` Response
 
 Wire layout:
@@ -212,6 +386,11 @@ Current error codes:
 - `bad_request`
 - `unknown_action`
 - `action_disabled`
+
+Conversation-specific errors are expected to include at least:
+
+- `session_not_found`
+- `session_not_ready`
 
 ## Event Messages
 
@@ -287,3 +466,6 @@ Meaning:
 - `username` and `password` are decoded into secret-carrying buffers rather
   than plain text strings so the auth path can scrub them after PAM
   verification.
+- The same secret-carrying treatment should apply to
+  `create-session.username` and `continue-session.response` in the
+  conversation-based flow.
