@@ -155,22 +155,6 @@ def keyboard_environment(cfg: wldm.inifile.IniFile) -> Dict[str, str]:
             env[env_name] = value
 
     return env
-
-
-def verify_creds(username: wldm.secret.SecretBytes, password: wldm.secret.SecretBytes) -> bool:
-    if not username or not password:
-        return False
-
-    try:
-        if wldm.pam.authenticate(username, password):
-            return True
-
-    except Exception as e:
-        logger.critical("authorization failed: %s", e)
-
-    return False
-
-
 def process_request(state: DaemonState,
                     client_name: str,
                     req: Dict[str, Any],
@@ -184,46 +168,6 @@ def process_request(state: DaemonState,
         return RequestOutcome(
             response=wldm.protocol.new_response(req, ok=True, payload=state_snapshot(state))
         )
-
-    if req["action"] == wldm.protocol.ACTION_AUTH:
-        payload = req["payload"]
-
-        if wldm.protocol.auth_field_is_too_long(payload.get("username", b"")):
-            return RequestOutcome(
-                response=wldm.protocol.new_error(req, "bad_request", "Username is too long")
-            )
-
-        if wldm.protocol.auth_field_is_too_long(payload.get("password", b"")):
-            return RequestOutcome(
-                response=wldm.protocol.new_error(req, "bad_request", "Password is too long")
-            )
-
-        session_username_bytes = payload["username"].as_bytes()
-
-        try:
-            response = {"verified": verify_creds(payload["username"], payload["password"])}
-
-        finally:
-            # The login path only needs the cleartext credentials for the PAM
-            # check, so scrub them immediately after the auth decision.
-            payload["username"].clear()
-            payload["password"].clear()
-
-        outcome = RequestOutcome(response=wldm.protocol.new_response(req, ok=True, payload=response))
-
-        if response["verified"]:
-            outcome.event = wldm.protocol.new_event(
-                wldm.protocol.EVENT_SESSION_STARTING,
-                {
-                    "command": payload["command"],
-                    "desktop_names": payload.get("desktop_names", []),
-                },
-            )
-            outcome.session_username = session_username_bytes.decode("utf-8", errors="replace")
-            outcome.session_command = payload["command"]
-            outcome.session_desktop_names = list(payload.get("desktop_names", []))
-
-        return outcome
 
     if req["action"] == wldm.protocol.ACTION_CREATE_SESSION:
         payload = req["payload"]

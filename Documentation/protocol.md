@@ -6,10 +6,8 @@ optional D-Bus adapter.
 
 This is an internal protocol, not a public compatibility promise.
 
-The intended authentication model is a request/response PAM conversation,
-not a single username/password exchange. The current implementation still has
-legacy one-shot `auth`, but the target protocol shape is the conversation flow
-described below.
+The authentication model is a request/response PAM conversation, not a single
+username/password exchange.
 
 ## Transport
 
@@ -204,31 +202,6 @@ Meaning:
 
 - Starts the final user session after the daemon has reported `state="ready"`.
 
-### Legacy `auth`
-
-Wire layout:
-
-```text
-request(auth) = id + action("auth") + username + password + command + desktop_names
-```
-
-Fields:
-
-- `username` (`bytes`) opaque auth field
-- `password` (`bytes`) opaque auth field
-- `command` (`string`) selected session command
-- `desktop_names` (`string list`) desktop name tokens for the selected session
-
-Limits:
-
-- `username` and `password` are each limited to 256 bytes on the wire.
-
-Meaning:
-
-- Transitional one-shot login request.
-- Keeps the current username/password flow working while the greeter and
-  daemon move to the conversation model above.
-
 ### `get-state`
 
 Wire layout:
@@ -272,18 +245,6 @@ response = id + action + ok + response-specific-fields
 - `id` (`string`) request identifier
 - `action` (`string`) action name copied from the request
 - `ok` (`bool`) response status
-
-### Successful `auth` Response
-
-Wire layout:
-
-```text
-response(auth, ok=true) = id + action("auth") + ok + verified
-```
-
-Fields:
-
-- `verified` (`bool`) `true` means PAM authentication succeeded
 
 ### Successful `create-session` or `continue-session` Response
 

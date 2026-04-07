@@ -14,7 +14,6 @@ from wldm.secret import SecretBytes
 
 PROTOCOL_VERSION = 1
 
-ACTION_AUTH = "auth"
 ACTION_CREATE_SESSION = "create-session"
 ACTION_CONTINUE_SESSION = "continue-session"
 ACTION_CANCEL_SESSION = "cancel-session"
@@ -238,10 +237,7 @@ def _decode_signed_int(payload: memoryview, offset: int) -> tuple[int, int]:
 
 
 def _encode_response_payload(body: bytearray, action: str, payload: Dict[str, Any]) -> None:
-    if action == ACTION_AUTH:
-        body.extend(_encode_bool(bool(payload.get("verified", False))))
-
-    elif action in {ACTION_CREATE_SESSION, ACTION_CONTINUE_SESSION}:
+    if action in {ACTION_CREATE_SESSION, ACTION_CONTINUE_SESSION}:
         body.extend(_encode_text(str(payload.get("state", ""))))
         message = payload.get("message")
         if isinstance(message, dict):
@@ -269,10 +265,6 @@ def _encode_response_payload(body: bytearray, action: str, payload: Dict[str, An
 
 
 def _decode_response_payload(action: str, payload: memoryview, offset: int) -> tuple[Dict[str, Any], int]:
-    if action == ACTION_AUTH:
-        verified, offset = _decode_bool(payload, offset)
-        return {"verified": verified}, offset
-
     if action in {ACTION_CREATE_SESSION, ACTION_CONTINUE_SESSION}:
         state, offset = _decode_text(payload, offset)
         has_message, offset = _decode_bool(payload, offset)
@@ -347,12 +339,7 @@ def encode_message(message: Dict[str, Any]) -> bytes:
 
         payload = message.get("payload", {})
 
-        if message.get("action") == ACTION_AUTH:
-            body.extend(_encode_blob(payload.get("username", b"")))
-            body.extend(_encode_blob(payload.get("password", b"")))
-            body.extend(_encode_text(str(payload.get("command", ""))))
-            body.extend(_encode_string_list(list(payload.get("desktop_names", []))))
-        elif message.get("action") == ACTION_CREATE_SESSION:
+        if message.get("action") == ACTION_CREATE_SESSION:
             body.extend(_encode_blob(payload.get("username", b"")))
         elif message.get("action") == ACTION_CONTINUE_SESSION:
             body.extend(_encode_blob(payload.get("response", b"")))
@@ -443,19 +430,7 @@ def decode_message(raw: bytes | str) -> Dict[str, Any]:
             "payload": {},
         }
 
-        if action == ACTION_AUTH:
-            username, offset = _decode_secbytes(payload, offset)
-            password, offset = _decode_secbytes(payload, offset)
-            command, offset = _decode_text(payload, offset)
-            desktop_names, offset = _decode_string_list(payload, offset)
-
-            decoded["payload"] = {
-                "username": username,
-                "password": password,
-                "command": command,
-                "desktop_names": desktop_names,
-            }
-        elif action == ACTION_CREATE_SESSION:
+        if action == ACTION_CREATE_SESSION:
             username, offset = _decode_secbytes(payload, offset)
             decoded["payload"] = {"username": username}
         elif action == ACTION_CONTINUE_SESSION:

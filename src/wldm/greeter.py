@@ -995,34 +995,6 @@ class LoginApp:
 
         return response
 
-    def complete_authentication_legacy(self,
-                                       username: str,
-                                       password: wldm.secret.SecretBytes,
-                                       command: str,
-                                       desktop_names: list[str]) -> bool:
-        """Authenticate through the legacy one-shot request.
-
-        Args:
-            username: Login name from the greeter entry.
-            command: Selected session command.
-            desktop_names: Selected DesktopNames list.
-
-        Returns:
-            `True` if the daemon accepted the legacy auth request.
-        """
-        request = wldm.protocol.new_request(
-            wldm.protocol.ACTION_AUTH,
-            {
-                "username": username,
-                "password": password,
-                "command": command,
-                "desktop_names": desktop_names,
-            },
-        )
-        answer = self.send_recv_answer(request)
-
-        return bool(answer.get("ok") and answer.get("payload", {}).get("verified"))
-
     def start_selected_session(self, command: str, desktop_names: list[str]) -> bool:
         """Ask the daemon to start one already-authenticated session."""
         start_request = wldm.protocol.new_request(
@@ -1038,9 +1010,6 @@ class LoginApp:
 
     def handle_conversation_answer(self, answer: Dict[str, Any]) -> str:
         """Advance the current greeter-side conversation state from one reply."""
-        if answer.get("payload", {}).get("verified") is not None:
-            return "ready" if answer.get("ok") and answer.get("payload", {}).get("verified") else "failed"
-
         if not answer.get("ok"):
             self.clear_conversation_state()
             return "failed"
@@ -1145,49 +1114,6 @@ class LoginApp:
             {"username": username},
         )
         create_answer = self.send_recv_answer(create_request)
-
-        if create_answer.get("error", {}).get("code") == "unknown_action":
-            command, desktop_names = self.selected_session_data()
-            password = gtk_ffi.read_password_secret(self.password_entry)
-
-            try:
-                if len(password) == 0:
-                    self.set_status(_("Enter a password."), error=True)
-
-                    if hasattr(self.password_entry, "grab_focus"):
-                        self.password_entry.grab_focus()
-
-                    return
-
-                if wldm.protocol.auth_field_is_too_long(password):
-                    self.set_status(
-                        _("Password must be %(limit)d bytes or less.")
-                        % {"limit": wldm.protocol.AUTH_FIELD_MAX_LENGTH},
-                        error=True,
-                    )
-
-                    if hasattr(self.password_entry, "grab_focus"):
-                        self.password_entry.grab_focus()
-
-                    return
-
-                self.password_entry.set_text("")
-                auth_ok = self.complete_authentication_legacy(username, password, command, desktop_names)
-            finally:
-                password.clear()
-
-            if auth_ok:
-                self.last_username = username.strip()
-                self.last_session_command = command
-                self.username_entry.set_text("")
-                self.set_status(_("Authentication accepted. Waiting for session..."))
-                return
-
-            self.set_auth_state(False)
-            self.set_status(_("Authentication failed."), error=True)
-            if hasattr(self.password_entry, "grab_focus"):
-                self.password_entry.grab_focus()
-            return
 
         self.set_auth_state(False)
         result = self.handle_conversation_answer(create_answer)

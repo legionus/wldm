@@ -1549,18 +1549,6 @@ def test_handle_conversation_answer_rejects_invalid_style(monkeypatch):
     assert result == "failed"
     assert app.conversation_pending is False
     assert any("unsupported auth conversation step" in item for item in warnings)
-
-
-def test_handle_conversation_answer_rejects_legacy_verified_failure(monkeypatch):
-    greeter = load_greeter_module(monkeypatch)
-    app = greeter.LoginApp.__new__(greeter.LoginApp)
-
-    assert greeter.LoginApp.handle_conversation_answer(
-        app,
-        {"ok": True, "payload": {"verified": False}},
-    ) == "failed"
-
-
 def test_handle_conversation_answer_rejects_unsuccessful_reply(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
     app = greeter.LoginApp.__new__(greeter.LoginApp)
@@ -2025,94 +2013,6 @@ def test_on_login_clicked_reports_failed_session_start_after_ready(monkeypatch):
 
     assert app.status_label.text == "Unable to start session."
     assert app.auth_in_progress is False
-
-
-def test_on_login_clicked_legacy_auth_fails_on_empty_password(monkeypatch):
-    greeter = load_greeter_module(monkeypatch)
-
-    class FakeEntry:
-        def __init__(self, text=""):
-            self.text = text
-            self.focused = False
-
-        def get_text(self):
-            return self.text
-
-        def set_text(self, text):
-            self.text = text
-
-        def grab_focus(self):
-            self.focused = True
-
-    class EmptySecret:
-        def __len__(self):
-            return 0
-
-        def clear(self):
-            return None
-
-    app = greeter.LoginApp(client=DummyClient())
-    app.username_entry = FakeEntry("alice")
-    app.password_entry = FakeEntry("")
-    app.status_label = DummyLabel()
-    monkeypatch.setattr(
-        app,
-        "send_recv_answer",
-        lambda data: {"ok": False, "error": {"code": "unknown_action"}, "payload": {}},
-    )
-    monkeypatch.setattr(greeter.gtk_ffi, "read_password_secret", lambda entry: EmptySecret())
-
-    app.on_login_clicked()
-
-    assert app.status_label.text == "Enter a password."
-    assert app.password_entry.focused is True
-    assert app.auth_in_progress is True
-
-
-def test_on_login_clicked_legacy_auth_success_after_unknown_action(monkeypatch):
-    greeter = load_greeter_module(monkeypatch)
-
-    class FakeEntry:
-        def __init__(self, text=""):
-            self.text = text
-
-        def get_text(self):
-            return self.text
-
-        def set_text(self, text):
-            self.text = text
-
-        def grab_focus(self):
-            return None
-
-    app = greeter.LoginApp(client=DummyClient())
-    app.username_entry = FakeEntry("alice")
-    app.password_entry = FakeEntry("secret")
-    app.status_label = DummyLabel()
-    app.sessions = [{"name": "Sway", "command": "sway", "comment": "Sway", "desktop_names": ["sway"]}]
-    app.sessions_entry = types.SimpleNamespace(
-        get_selected_item=lambda: types.SimpleNamespace(get_string=lambda: "Sway")
-    )
-    calls = []
-
-    def fake_send_recv_answer(data):
-        calls.append(data["action"])
-        return {"ok": False, "error": {"code": "unknown_action"}, "payload": {}}
-
-    monkeypatch.setattr(app, "send_recv_answer", fake_send_recv_answer)
-    monkeypatch.setattr(greeter.gtk_ffi, "read_password_secret", lambda entry: greeter.wldm.secret.SecretBytes("secret"))
-    monkeypatch.setattr(app, "complete_authentication_legacy", lambda *args: True)
-
-    app.on_login_clicked()
-
-    assert calls == [greeter.wldm.protocol.ACTION_CREATE_SESSION]
-    assert app.status_label.text == "Authentication accepted. Waiting for session..."
-    assert app.last_username == "alice"
-    assert app.last_session_command == "sway"
-    assert app.username_entry.text == ""
-    assert app.password_entry.text == ""
-
-
 def test_cmd_main_validates_resources_path(monkeypatch, tmp_path):
     greeter = load_greeter_module(monkeypatch)
 

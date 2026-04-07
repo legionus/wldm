@@ -120,25 +120,6 @@ def make_config(user="gdm",
             "log-path": "",
         },
     })
-
-
-def test_verify_creds_requires_username_and_password(monkeypatch):
-    monkeypatch.setattr(wldm.pam, "authenticate", lambda username, password: True)
-
-    assert wldm.daemon.verify_creds(wldm.secret.SecretBytes(b"alice"), wldm.secret.SecretBytes(b"secret")) is True
-    assert wldm.daemon.verify_creds(wldm.secret.SecretBytes(b"alice"), wldm.secret.SecretBytes()) is False
-
-
-def test_verify_creds_returns_false_on_auth_exception(monkeypatch):
-    monkeypatch.setattr(
-        wldm.pam,
-        "authenticate",
-        lambda username, password: (_ for _ in ()).throw(RuntimeError("boom")),
-    )
-
-    assert wldm.daemon.verify_creds(wldm.secret.SecretBytes(b"alice"), wldm.secret.SecretBytes(b"secret")) is False
-
-
 def test_process_request_accepts_poweroff_and_reboot():
     cfg = make_config()
     cfg["daemon"]["poweroff-command"] = "do-poweroff"
@@ -200,118 +181,15 @@ def test_process_request_replies_with_bad_request_for_unknown_payload():
 def test_process_request_rejects_overlong_username():
     state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
     req = wldm.protocol.new_request(
-        wldm.protocol.ACTION_AUTH,
+        wldm.protocol.ACTION_CREATE_SESSION,
         {
             "username": wldm.secret.SecretBytes(b"a" * 257),
-            "password": wldm.secret.SecretBytes(b"secret"),
-            "command": "ignored",
-            "desktop_names": [],
         },
     )
 
     outcome = wldm.daemon.process_request(state, "greeter", req, make_config())
 
     assert outcome.response["error"] == {"code": "bad_request", "message": "Username is too long"}
-
-
-def test_process_request_rejects_overlong_password():
-    state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
-    req = wldm.protocol.new_request(
-        wldm.protocol.ACTION_AUTH,
-        {
-            "username": wldm.secret.SecretBytes(b"alice"),
-            "password": wldm.secret.SecretBytes(b"a" * 257),
-            "command": "ignored",
-            "desktop_names": [],
-        },
-    )
-
-    outcome = wldm.daemon.process_request(state, "greeter", req, make_config())
-
-    assert outcome.response["error"] == {"code": "bad_request", "message": "Password is too long"}
-
-
-def test_process_request_does_not_start_session_for_failed_auth(monkeypatch):
-    state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
-    req = wldm.protocol.new_request(
-        wldm.protocol.ACTION_AUTH,
-        {
-            "username": wldm.secret.SecretBytes(b"alice"),
-            "password": wldm.secret.SecretBytes(b"bad"),
-            "command": "ignored",
-            "desktop_names": ["sway"],
-        },
-    )
-
-    monkeypatch.setattr(wldm.daemon, "verify_creds", lambda username, password: False)
-
-    outcome = wldm.daemon.process_request(state, "greeter", req, make_config())
-
-    assert outcome.response["payload"] == {"verified": False}
-    assert isinstance(req["payload"]["username"], wldm.secret.SecretBytes)
-    assert req["payload"]["username"].as_bytes() == b""
-    assert isinstance(req["payload"]["password"], wldm.secret.SecretBytes)
-    assert req["payload"]["password"].as_bytes() == b""
-    assert outcome.event is None
-    assert outcome.session_username == ""
-
-
-def test_process_request_starts_session_after_successful_auth(monkeypatch):
-    state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
-    req = wldm.protocol.new_request(
-        wldm.protocol.ACTION_AUTH,
-        {
-            "username": wldm.secret.SecretBytes(b"alice"),
-            "password": wldm.secret.SecretBytes(b"secret"),
-            "command": "startplasma-wayland --debug",
-            "desktop_names": ["plasma", "kde"],
-        },
-    )
-
-    monkeypatch.setattr(wldm.daemon, "verify_creds", lambda username, password: True)
-
-    outcome = wldm.daemon.process_request(state, "greeter", req, make_config())
-
-    assert outcome.response["payload"] == {"verified": True}
-    assert isinstance(req["payload"]["username"], wldm.secret.SecretBytes)
-    assert req["payload"]["username"].as_bytes() == b""
-    assert isinstance(req["payload"]["password"], wldm.secret.SecretBytes)
-    assert req["payload"]["password"].as_bytes() == b""
-    assert outcome.event == {
-        "v": 1,
-        "type": "event",
-        "event": wldm.protocol.EVENT_SESSION_STARTING,
-        "payload": {"command": "startplasma-wayland --debug", "desktop_names": ["plasma", "kde"]},
-    }
-    assert outcome.session_username == "alice"
-    assert outcome.session_command == "startplasma-wayland --debug"
-    assert outcome.session_desktop_names == ["plasma", "kde"]
-
-
-def test_process_request_preserves_username_when_auth_clears_secret(monkeypatch):
-    state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
-    req = wldm.protocol.new_request(
-        wldm.protocol.ACTION_AUTH,
-        {
-            "username": wldm.secret.SecretBytes(b"alice"),
-            "password": wldm.secret.SecretBytes(b"secret"),
-            "command": "sway",
-            "desktop_names": ["sway"],
-        },
-    )
-
-    def fake_verify_creds(username, password):
-        username.clear()
-        password.clear()
-        return True
-
-    monkeypatch.setattr(wldm.daemon, "verify_creds", fake_verify_creds)
-
-    outcome = wldm.daemon.process_request(state, "greeter", req, make_config())
-
-    assert outcome.session_username == "alice"
-
-
 def test_process_request_replies_with_unknown_action_error():
     req = wldm.protocol.new_request("mystery", {})
     state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
@@ -501,19 +379,16 @@ def test_process_request_returns_state_snapshot():
 def test_handle_request_async_starts_session_after_auth(monkeypatch):
     state = wldm.daemon.DaemonState(["/usr/bin/python3", "/srv/wldm/src/wldm/command.py"], 3)
     state.clients["greeter"].writer = DummyWriter()
+    state.clients["greeter"].auth_session = wldm.daemon.AuthSessionState(username="alice", verified=True)
     req = wldm.protocol.new_request(
-        wldm.protocol.ACTION_AUTH,
+        wldm.protocol.ACTION_START_SESSION,
         {
-            "username": wldm.secret.SecretBytes(b"alice"),
-            "password": wldm.secret.SecretBytes(b"secret"),
             "command": "startplasma-wayland --debug",
             "desktop_names": ["plasma", "kde"],
         },
     )
     proc = DummyAsyncProc(pid=777, returncode=0)
     task_calls = []
-
-    monkeypatch.setattr(wldm.daemon, "verify_creds", lambda username, password: True)
 
     async def fake_create_subprocess_exec(*cmd, env=None):
         assert cmd == (
