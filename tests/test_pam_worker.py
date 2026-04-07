@@ -27,7 +27,7 @@ def test_prompt_broker_returns_answer_and_cancel():
 
     try:
         left.sendall(pam_worker_protocol.encode_message(pam_worker_protocol.new_answer(b"secret")))
-        broker = pam_worker.PromptBroker(right)
+        broker = pam_worker.PromptBroker(right, service="login", username="alice", tty="/dev/tty7")
         answer = broker.ask("secret", "Password:")
         prompt = pam_worker_protocol.read_message_socket(left)
     finally:
@@ -40,7 +40,7 @@ def test_prompt_broker_returns_answer_and_cancel():
     left, right = socket.socketpair()
     try:
         left.sendall(pam_worker_protocol.encode_message(pam_worker_protocol.new_cancel()))
-        broker = pam_worker.PromptBroker(right)
+        broker = pam_worker.PromptBroker(right, service="login", username="alice", tty="/dev/tty7")
         answer = broker.ask("info", "Continue")
     finally:
         left.close()
@@ -54,7 +54,7 @@ def test_prompt_broker_rejects_unexpected_reply():
 
     try:
         left.sendall(pam_worker_protocol.encode_message(pam_worker_protocol.new_ready()))
-        broker = pam_worker.PromptBroker(right)
+        broker = pam_worker.PromptBroker(right, service="login", username="alice", tty="/dev/tty7")
 
         try:
             broker.ask("secret", "Password:")
@@ -72,7 +72,7 @@ def test_prompt_broker_rejects_closed_channel():
 
     try:
         left.close()
-        broker = pam_worker.PromptBroker(right)
+        broker = pam_worker.PromptBroker(right, service="login", username="alice", tty="/dev/tty7")
 
         try:
             broker.ask("secret", "Password:")

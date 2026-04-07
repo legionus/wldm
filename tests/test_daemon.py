@@ -79,7 +79,9 @@ class DummyAsyncProc:
 
 def dummy_auth_session(username="alice", ready=False):
     return wldm.daemon.AuthSessionState(
+        service="login",
         username=username,
+        tty="/dev/tty7",
         proc=DummyAsyncProc(pid=6000, returncode=0),
         reader=SimpleNamespace(),
         writer=DummyWriter(),

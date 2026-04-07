@@ -22,7 +22,9 @@ logger = wldm.logger
 class AuthSessionState:
     """Track one greeter-side configuring session backed by a PAM worker."""
 
+    service: str
     username: str
+    tty: str
     proc: AsyncProcess
     reader: asyncio.StreamReader
     writer: asyncio.StreamWriter
@@ -65,8 +67,10 @@ async def stop_auth_session(auth_session: AuthSessionState,
         try:
             auth_session.writer.write(pam_worker_protocol.encode_message(pam_worker_protocol.new_cancel()))
             await auth_session.writer.drain()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("unable to send cancel to pam-worker pid=%d service=%s user=%s tty=%s: %s",
+                         auth_session.proc.pid, auth_session.service,
+                         auth_session.username, auth_session.tty, e)
 
     auth_session.writer.close()
 
@@ -78,7 +82,12 @@ async def stop_auth_session(auth_session: AuthSessionState,
 
 async def read_auth_worker_message(auth_session: AuthSessionState) -> dict[str, object] | None:
     """Read one message from the PAM worker channel."""
-    return await pam_worker_protocol.read_message_async(auth_session.reader)
+    message = await pam_worker_protocol.read_message_async(auth_session.reader)
+    if message is not None:
+        logger.debug("pam-worker pid=%d service=%s user=%s tty=%s -> %s",
+                     auth_session.proc.pid, auth_session.service,
+                     auth_session.username, auth_session.tty, message["kind"])
+    return message
 
 
 def conversation_response_from_worker(req: dict[str, Any],
@@ -111,6 +120,7 @@ async def start_auth_session(internal_command: list[str],
                              tty: str,
                              username: str) -> tuple[AuthSessionState, dict[str, object] | None]:
     """Start one PAM worker for a greeter-side configuring session."""
+    service = "login"
     daemon_sock, child_sock = socket.socketpair()
 
     proc = await asyncio.create_subprocess_exec(
@@ -123,7 +133,9 @@ async def start_auth_session(internal_command: list[str],
 
     reader, writer = await asyncio.open_connection(sock=daemon_sock)
     auth_session = AuthSessionState(
+        service=service,
         username=username,
+        tty=tty,
         proc=proc,
         reader=reader,
         writer=writer,
@@ -131,12 +143,14 @@ async def start_auth_session(internal_command: list[str],
 
     writer.write(
         pam_worker_protocol.encode_message(
-            pam_worker_protocol.new_start("login", username, tty)
+            pam_worker_protocol.new_start(service, username, tty)
         )
     )
     await writer.drain()
 
-    logger.info("start pam-worker (pid=%d) for user=%s", proc.pid, username)
+    logger.info("start pam-worker (pid=%d) service=%s user=%s tty=%s",
+                proc.pid, service, username, tty or "<none>")
+
     return auth_session, await read_auth_worker_message(auth_session)
 
 
@@ -144,6 +158,11 @@ async def continue_auth_session(auth_session: AuthSessionState,
                                 response: wldm.secret.SecretBytes) -> dict[str, object] | None:
     """Send one prompt reply to the PAM worker and wait for the next result."""
     try:
+        logger.debug("send prompt reply to pam-worker pid=%d service=%s user=%s tty=%s (%d bytes)",
+                     auth_session.proc.pid, auth_session.service,
+                     auth_session.username, auth_session.tty,
+                     len(response.as_bytes()))
+
         auth_session.writer.write(
             pam_worker_protocol.encode_message(
                 pam_worker_protocol.new_answer(response)

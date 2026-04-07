@@ -446,6 +446,10 @@ async def handle_request_async(state: DaemonState,
             return
 
         if client.auth_session is not None:
+            logger.info("replace in-progress PAM conversation for user=%s with new user=%s",
+                        client.auth_session.username,
+                        username.as_bytes().decode("utf-8", errors="replace"))
+
             await daemon_auth.stop_auth_session(client.auth_session, send_cancel=True)
             client.auth_session = None
 
@@ -460,6 +464,10 @@ async def handle_request_async(state: DaemonState,
         client.auth_session = new_auth_session
 
         if message is None:
+            logger.warning("pam-worker pid=%d service=%s user=%s tty=%s closed before first result",
+                           new_auth_session.proc.pid, new_auth_session.service,
+                           new_auth_session.username, new_auth_session.tty or "<none>")
+
             await daemon_auth.stop_auth_session(new_auth_session)
             client.auth_session = None
             await send_message(
@@ -474,6 +482,11 @@ async def handle_request_async(state: DaemonState,
         response = daemon_auth.conversation_response_from_worker(req, message)
 
         if message["kind"] == pam_worker_protocol.KIND_FAILED:
+            logger.warning("pam-worker pid=%d service=%s user=%s tty=%s failed during create-session: %s",
+                           new_auth_session.proc.pid, new_auth_session.service,
+                           new_auth_session.username, new_auth_session.tty or "<none>",
+                           message.get("message", "Authentication failed"))
+
             await daemon_auth.stop_auth_session(new_auth_session)
             client.auth_session = None
 
@@ -507,6 +520,10 @@ async def handle_request_async(state: DaemonState,
 
         message = await daemon_auth.continue_auth_session(auth_session, payload["response"])
         if message is None:
+            logger.warning("pam-worker pid=%d service=%s user=%s tty=%s closed while waiting for next auth step",
+                           auth_session.proc.pid, auth_session.service,
+                           auth_session.username, auth_session.tty or "<none>")
+
             await daemon_auth.stop_auth_session(auth_session)
             client.auth_session = None
             await send_message(
@@ -521,6 +538,11 @@ async def handle_request_async(state: DaemonState,
         response = daemon_auth.conversation_response_from_worker(req, message)
 
         if message["kind"] == pam_worker_protocol.KIND_FAILED:
+            logger.warning("pam-worker pid=%d service=%s user=%s tty=%s failed during continue-session: %s",
+                           auth_session.proc.pid, auth_session.service,
+                           auth_session.username, auth_session.tty or "<none>",
+                           message.get("message", "Authentication failed"))
+
             await daemon_auth.stop_auth_session(auth_session)
             client.auth_session = None
 

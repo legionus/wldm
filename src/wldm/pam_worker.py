@@ -29,14 +29,22 @@ class ConversationError(RuntimeError):
 class PromptBroker:
     """Bridge blocking PAM callbacks to daemon-driven prompt replies."""
 
-    def __init__(self, sock: Any) -> None:
+    def __init__(self, sock: Any, *, service: str, username: str, tty: str) -> None:
         self.sock = sock
+        self.service = service
+        self.username = username
+        self.tty = tty
 
     def ask(self, style: str, text: str) -> bytes | None:
         """Send one prompt to the daemon and wait for the matching reply."""
+        logger.debug("pam-worker service=%s user=%s tty=%s prompt style=%s text=%r",
+                     self.service, self.username, self.tty or "<none>", style, text)
+
         try:
             self.sock.sendall(worker_protocol.encode_message(worker_protocol.new_prompt(style, text)))
+
             message = worker_protocol.read_message_socket(self.sock)
+
         except OSError as exc:
             raise ConversationError("daemon closed PAM worker channel") from exc
 
@@ -44,16 +52,22 @@ class PromptBroker:
             raise ConversationError("daemon closed PAM worker channel")
 
         if message["kind"] == worker_protocol.KIND_CANCEL:
+            logger.info("pam-worker service=%s user=%s tty=%s cancelled by daemon",
+                        self.service, self.username, self.tty or "<none>")
+
             return None
 
         if message["kind"] != worker_protocol.KIND_ANSWER:
             raise ConversationError(f"unexpected PAM worker reply: {message!r}")
 
         response = message["response"]
+
         if isinstance(response, SecretBytes):
             return response.as_bytes()
+
         if isinstance(response, (bytes, bytearray, memoryview)):
             return bytes(response)
+
         raise ConversationError(f"unexpected PAM worker answer payload: {type(response).__name__}")
 
 
@@ -183,7 +197,10 @@ def inherited_socket_fd() -> int:
 
 def run_auth_session(sock: Any, service: str, username: str, tty: str) -> int:
     """Run one blocking PAM authentication session and report prompts upstream."""
-    broker = PromptBroker(sock)
+    logger.info("pam-worker start service=%s user=%s tty=%s",
+                service, username, tty or "<none>")
+
+    broker = PromptBroker(sock, service=service, username=username, tty=tty)
     broker_id = _register_broker(broker)
     conv = ffi.PamConv(ffi.PAM_CONV_FUNC(_conversation_conv), c_void_p(broker_id))
     pamh = ffi.pam_handle_t()
@@ -204,13 +221,22 @@ def run_auth_session(sock: Any, service: str, username: str, tty: str) -> int:
         if rc != ffi.PAM_SUCCESS:
             raise RuntimeError(f"pam_acct_mgmt failed: {rc} ({wldm.pam.pam_error_str(pamh, rc)})")
 
+        logger.info("pam-worker authentication ready service=%s user=%s tty=%s",
+                    service, username, tty or "<none>")
+
         sock.sendall(worker_protocol.encode_message(worker_protocol.new_ready()))
         return wldm.EX_SUCCESS
 
-    except ConversationError:
+    except ConversationError as e:
+        logger.warning("pam-worker conversation aborted service=%s user=%s tty=%s: %s",
+                       service, username, tty or "<none>", e)
+
         return wldm.EX_FAILURE
 
     except Exception as e:
+        logger.warning("pam-worker authentication failed service=%s user=%s tty=%s: %s",
+                       service, username, tty or "<none>", e)
+
         sock.sendall(worker_protocol.encode_message(worker_protocol.new_failed(str(e))))
         return wldm.EX_FAILURE
 

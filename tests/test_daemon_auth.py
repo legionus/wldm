@@ -37,7 +37,9 @@ class DummyWriter:
 
 def make_auth_session(username="alice", ready=False):
     return wldm.daemon_auth.AuthSessionState(
+        service="login",
         username=username,
+        tty="/dev/tty7",
         proc=DummyProc(pid=321, returncode=0),
         reader=SimpleNamespace(),
         writer=DummyWriter(),
