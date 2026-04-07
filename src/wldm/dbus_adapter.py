@@ -11,7 +11,7 @@ import threading
 from typing import Any
 
 import wldm
-import wldm.protocol
+import wldm.greeter_protocol as greeter_protocol
 
 logger = wldm.logger
 
@@ -172,10 +172,10 @@ class SocketClient:
         self.sock = socket.socket(fileno=fd)
 
     def write_message(self, message: dict[str, object]) -> None:
-        self.sock.sendall(wldm.protocol.encode_message(message))
+        self.sock.sendall(greeter_protocol.encode_message(message))
 
     def read_message(self) -> dict[str, object] | None:
-        return wldm.protocol.read_message_socket(self.sock)
+        return greeter_protocol.read_message_socket(self.sock)
 
     def close(self) -> None:
         self.sock.close()
@@ -190,7 +190,7 @@ def request_state(client: SocketClient) -> dict[str, object]:
     Returns:
         The decoded state snapshot payload returned by the daemon.
     """
-    request = wldm.protocol.new_request(wldm.protocol.ACTION_GET_STATE, {})
+    request = greeter_protocol.new_request(greeter_protocol.ACTION_GET_STATE, {})
     client.write_message(request)
 
     response = client.read_message()
@@ -198,7 +198,7 @@ def request_state(client: SocketClient) -> dict[str, object]:
     if response is None:
         raise RuntimeError("daemon closed the adapter channel")
 
-    if not wldm.protocol.is_response(response, request):
+    if not greeter_protocol.is_response(response, request):
         raise RuntimeError("daemon returned a malformed state response")
 
     if not response.get("ok", False):
@@ -502,7 +502,7 @@ def read_daemon_events(client: SocketClient,
                 GLib.idle_add(schedule_loop_quit, loop)
                 return
 
-            if wldm.protocol.is_event(message, name=wldm.protocol.EVENT_STATE_CHANGED):
+            if greeter_protocol.is_event(message, name=greeter_protocol.EVENT_STATE_CHANGED):
                 payload = message.get("payload", {})
 
                 if isinstance(payload, dict):
@@ -510,10 +510,10 @@ def read_daemon_events(client: SocketClient,
 
                 continue
 
-            if wldm.protocol.is_event(message, name=wldm.protocol.EVENT_SESSION_STARTING):
+            if greeter_protocol.is_event(message, name=greeter_protocol.EVENT_SESSION_STARTING):
                 continue
 
-            if wldm.protocol.is_event(message, name=wldm.protocol.EVENT_SESSION_FINISHED):
+            if greeter_protocol.is_event(message, name=greeter_protocol.EVENT_SESSION_FINISHED):
                 continue
 
             logger.debug("ignoring unexpected adapter message: %r", message)

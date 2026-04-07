@@ -147,7 +147,7 @@ loses the bus name, the daemon keeps running and login still works.
 
 The daemon and its internal clients communicate over inherited `socketpair()`
 file descriptors. The protocol is implemented in
-[`src/wldm/protocol.py`](../src/wldm/protocol.py) and documented in
+[`src/wldm/greeter_protocol.py`](../src/wldm/greeter_protocol.py) and documented in
 [`protocol.md`](protocol.md).
 
 Properties of the current transport:

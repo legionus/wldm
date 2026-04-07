@@ -16,7 +16,7 @@ username/password exchange.
 - There is no pathname listener for the greeter or D-Bus adapter path.
 
 The implementation lives in
-[`src/wldm/protocol.py`](../src/wldm/protocol.py).
+[`src/wldm/greeter_protocol.py`](../src/wldm/greeter_protocol.py).
 
 ## Frame Format
 

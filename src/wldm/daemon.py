@@ -18,7 +18,7 @@ import wldm.config
 import wldm.inifile
 import wldm.pam
 import wldm.policy
-import wldm.protocol
+import wldm.greeter_protocol as greeter_protocol
 import wldm.secret
 import wldm.state
 import wldm.tty
@@ -78,10 +78,10 @@ class ClientState:
 
 
 POWER_ACTION_COMMANDS = {
-    wldm.protocol.ACTION_POWEROFF: "poweroff-command",
-    wldm.protocol.ACTION_REBOOT: "reboot-command",
-    wldm.protocol.ACTION_SUSPEND: "suspend-command",
-    wldm.protocol.ACTION_HIBERNATE: "hibernate-command",
+    greeter_protocol.ACTION_POWEROFF: "poweroff-command",
+    greeter_protocol.ACTION_REBOOT: "reboot-command",
+    greeter_protocol.ACTION_SUSPEND: "suspend-command",
+    greeter_protocol.ACTION_HIBERNATE: "hibernate-command",
 }
 
 KEYBOARD_ENV_OPTIONS = {
@@ -155,26 +155,43 @@ def keyboard_environment(cfg: wldm.inifile.IniFile) -> Dict[str, str]:
             env[env_name] = value
 
     return env
+
+
+def verify_creds(username: wldm.secret.SecretBytes, password: wldm.secret.SecretBytes) -> bool:
+    """Authenticate one username/password pair through PAM."""
+    if not username or not password:
+        return False
+
+    try:
+        if wldm.pam.authenticate(username, password):
+            return True
+
+    except Exception as e:
+        logger.critical("authorization failed: %s", e)
+
+    return False
+
+
 def process_request(state: DaemonState,
                     client_name: str,
                     req: Dict[str, Any],
                     cfg: wldm.inifile.IniFile) -> RequestOutcome:
-    if not wldm.protocol.is_request(req):
+    if not greeter_protocol.is_request(req):
         return RequestOutcome(
-            response=wldm.protocol.new_error(req, "bad_request", "Malformed request")
+            response=greeter_protocol.new_error(req, "bad_request", "Malformed request")
         )
 
-    if req["action"] == wldm.protocol.ACTION_GET_STATE:
+    if req["action"] == greeter_protocol.ACTION_GET_STATE:
         return RequestOutcome(
-            response=wldm.protocol.new_response(req, ok=True, payload=state_snapshot(state))
+            response=greeter_protocol.new_response(req, ok=True, payload=state_snapshot(state))
         )
 
-    if req["action"] == wldm.protocol.ACTION_CREATE_SESSION:
+    if req["action"] == greeter_protocol.ACTION_CREATE_SESSION:
         payload = req["payload"]
 
-        if wldm.protocol.auth_field_is_too_long(payload.get("username", b"")):
+        if greeter_protocol.auth_field_is_too_long(payload.get("username", b"")):
             return RequestOutcome(
-                response=wldm.protocol.new_error(req, "bad_request", "Username is too long")
+                response=greeter_protocol.new_error(req, "bad_request", "Username is too long")
             )
 
         username_bytes = payload["username"].as_bytes()
@@ -184,7 +201,7 @@ def process_request(state: DaemonState,
         payload["username"].clear()
 
         return RequestOutcome(
-            response=wldm.protocol.new_conversation_response(
+            response=greeter_protocol.new_conversation_response(
                 req,
                 "pending",
                 style="secret",
@@ -192,25 +209,25 @@ def process_request(state: DaemonState,
             )
         )
 
-    if req["action"] == wldm.protocol.ACTION_CONTINUE_SESSION:
+    if req["action"] == greeter_protocol.ACTION_CONTINUE_SESSION:
         payload = req["payload"]
         auth_session = client_state(state, client_name).auth_session
 
         if auth_session is None:
             return RequestOutcome(
-                response=wldm.protocol.new_error(req, "session_not_found", "No session is being configured")
+                response=greeter_protocol.new_error(req, "session_not_found", "No session is being configured")
             )
 
         if auth_session.verified:
             payload["response"].clear()
             return RequestOutcome(
-                response=wldm.protocol.new_error(req, "bad_request", "Session is already ready")
+                response=greeter_protocol.new_error(req, "bad_request", "Session is already ready")
             )
 
-        if wldm.protocol.auth_field_is_too_long(payload.get("response", b"")):
+        if greeter_protocol.auth_field_is_too_long(payload.get("response", b"")):
             payload["response"].clear()
             return RequestOutcome(
-                response=wldm.protocol.new_error(req, "bad_request", "Response is too long")
+                response=greeter_protocol.new_error(req, "bad_request", "Response is too long")
             )
 
         username = wldm.secret.SecretBytes(auth_session.username.encode("utf-8"))
@@ -223,38 +240,38 @@ def process_request(state: DaemonState,
         if not verified:
             client_state(state, client_name).auth_session = None
             return RequestOutcome(
-                response=wldm.protocol.new_error(req, "auth_failed", "Authentication failed")
+                response=greeter_protocol.new_error(req, "auth_failed", "Authentication failed")
             )
 
         auth_session.verified = True
         return RequestOutcome(
-            response=wldm.protocol.new_conversation_response(req, "ready")
+            response=greeter_protocol.new_conversation_response(req, "ready")
         )
 
-    if req["action"] == wldm.protocol.ACTION_CANCEL_SESSION:
+    if req["action"] == greeter_protocol.ACTION_CANCEL_SESSION:
         client_state(state, client_name).auth_session = None
         return RequestOutcome(
-            response=wldm.protocol.new_response(req, ok=True, payload={})
+            response=greeter_protocol.new_response(req, ok=True, payload={})
         )
 
-    if req["action"] == wldm.protocol.ACTION_START_SESSION:
+    if req["action"] == greeter_protocol.ACTION_START_SESSION:
         payload = req["payload"]
         auth_session = client_state(state, client_name).auth_session
 
         if auth_session is None:
             return RequestOutcome(
-                response=wldm.protocol.new_error(req, "session_not_found", "No session is being configured")
+                response=greeter_protocol.new_error(req, "session_not_found", "No session is being configured")
             )
 
         if not auth_session.verified:
             return RequestOutcome(
-                response=wldm.protocol.new_error(req, "session_not_ready", "Session is not ready")
+                response=greeter_protocol.new_error(req, "session_not_ready", "Session is not ready")
             )
 
         outcome = RequestOutcome(
-            response=wldm.protocol.new_response(req, ok=True, payload={}),
-            event=wldm.protocol.new_event(
-                wldm.protocol.EVENT_SESSION_STARTING,
+            response=greeter_protocol.new_response(req, ok=True, payload={}),
+            event=greeter_protocol.new_event(
+                greeter_protocol.EVENT_SESSION_STARTING,
                 {
                     "command": payload["command"],
                     "desktop_names": payload.get("desktop_names", []),
@@ -272,16 +289,16 @@ def process_request(state: DaemonState,
         # cannot offer controls that the local policy meant to disable.
         if req["action"] not in configured_power_actions(cfg):
             return RequestOutcome(
-                response=wldm.protocol.new_error(req, "action_disabled", f"Action disabled: {req['action']}")
+                response=greeter_protocol.new_error(req, "action_disabled", f"Action disabled: {req['action']}")
             )
 
         return RequestOutcome(
-            response=wldm.protocol.new_response(req, ok=True, payload={"accepted": True}),
+            response=greeter_protocol.new_response(req, ok=True, payload={"accepted": True}),
             control_action=req["action"],
         )
 
     return RequestOutcome(
-        response=wldm.protocol.new_error(req, "unknown_action", f"Unknown action: {req['action']}"),
+        response=greeter_protocol.new_error(req, "unknown_action", f"Unknown action: {req['action']}"),
     )
 
 
@@ -290,7 +307,7 @@ async def send_message(writer: Optional[asyncio.StreamWriter], message: Dict[str
         return False
 
     try:
-        writer.write(wldm.protocol.encode_message(message))
+        writer.write(greeter_protocol.encode_message(message))
         await writer.drain()
         return True
 
@@ -319,7 +336,7 @@ async def broadcast_state_changed(state: DaemonState) -> None:
     """
     await broadcast_message(
         state,
-        wldm.protocol.new_event(wldm.protocol.EVENT_STATE_CHANGED, state_snapshot(state)),
+        greeter_protocol.new_event(greeter_protocol.EVENT_STATE_CHANGED, state_snapshot(state)),
     )
 
 
@@ -343,8 +360,8 @@ async def send_session_finished(state: DaemonState,
 
     await broadcast_message(
         state,
-        wldm.protocol.new_event(
-            wldm.protocol.EVENT_SESSION_FINISHED,
+        greeter_protocol.new_event(
+            greeter_protocol.EVENT_SESSION_FINISHED,
             {"pid": proc.pid, "returncode": returncode, "failed": failed, "message": message},
         ),
     )
@@ -556,9 +573,9 @@ async def handle_client(state: DaemonState,
     try:
         while True:
             try:
-                req = await wldm.protocol.read_message_async(reader)
+                req = await greeter_protocol.read_message_async(reader)
 
-            except wldm.protocol.ProtocolError as e:
+            except greeter_protocol.ProtocolError as e:
                 logger.critical("bad protocol message from %s: %s; raw=%r", name, e, e.raw)
                 break
 

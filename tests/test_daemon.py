@@ -9,7 +9,7 @@ import wldm.daemon
 import wldm.config
 import wldm.inifile
 import wldm.pam
-import wldm.protocol
+import wldm.greeter_protocol as greeter_protocol
 import wldm.secret
 import wldm.state
 import wldm.tty
@@ -129,26 +129,26 @@ def test_process_request_accepts_poweroff_and_reboot():
 
     state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
     poweroff = wldm.daemon.process_request(
-        state, "greeter", wldm.protocol.new_request(wldm.protocol.ACTION_POWEROFF, {}), cfg
+        state, "greeter", greeter_protocol.new_request(greeter_protocol.ACTION_POWEROFF, {}), cfg
     )
     reboot = wldm.daemon.process_request(
-        state, "greeter", wldm.protocol.new_request(wldm.protocol.ACTION_REBOOT, {}), cfg
+        state, "greeter", greeter_protocol.new_request(greeter_protocol.ACTION_REBOOT, {}), cfg
     )
     suspend = wldm.daemon.process_request(
-        state, "greeter", wldm.protocol.new_request(wldm.protocol.ACTION_SUSPEND, {}), cfg
+        state, "greeter", greeter_protocol.new_request(greeter_protocol.ACTION_SUSPEND, {}), cfg
     )
     hibernate = wldm.daemon.process_request(
-        state, "greeter", wldm.protocol.new_request(wldm.protocol.ACTION_HIBERNATE, {}), cfg
+        state, "greeter", greeter_protocol.new_request(greeter_protocol.ACTION_HIBERNATE, {}), cfg
     )
 
     assert poweroff.response["payload"] == {"accepted": True}
-    assert poweroff.control_action == wldm.protocol.ACTION_POWEROFF
+    assert poweroff.control_action == greeter_protocol.ACTION_POWEROFF
     assert reboot.response["payload"] == {"accepted": True}
-    assert reboot.control_action == wldm.protocol.ACTION_REBOOT
+    assert reboot.control_action == greeter_protocol.ACTION_REBOOT
     assert suspend.response["payload"] == {"accepted": True}
-    assert suspend.control_action == wldm.protocol.ACTION_SUSPEND
+    assert suspend.control_action == greeter_protocol.ACTION_SUSPEND
     assert hibernate.response["payload"] == {"accepted": True}
-    assert hibernate.control_action == wldm.protocol.ACTION_HIBERNATE
+    assert hibernate.control_action == greeter_protocol.ACTION_HIBERNATE
 
 
 def test_process_request_rejects_disabled_control_actions():
@@ -156,7 +156,7 @@ def test_process_request_rejects_disabled_control_actions():
     state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
 
     outcome = wldm.daemon.process_request(
-        state, "greeter", wldm.protocol.new_request(wldm.protocol.ACTION_SUSPEND, {}), cfg
+        state, "greeter", greeter_protocol.new_request(greeter_protocol.ACTION_SUSPEND, {}), cfg
     )
 
     assert outcome.response["error"]["code"] == "action_disabled"
@@ -180,8 +180,8 @@ def test_process_request_replies_with_bad_request_for_unknown_payload():
 
 def test_process_request_rejects_overlong_username():
     state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
-    req = wldm.protocol.new_request(
-        wldm.protocol.ACTION_CREATE_SESSION,
+    req = greeter_protocol.new_request(
+        greeter_protocol.ACTION_CREATE_SESSION,
         {
             "username": wldm.secret.SecretBytes(b"a" * 257),
         },
@@ -191,7 +191,7 @@ def test_process_request_rejects_overlong_username():
 
     assert outcome.response["error"] == {"code": "bad_request", "message": "Username is too long"}
 def test_process_request_replies_with_unknown_action_error():
-    req = wldm.protocol.new_request("mystery", {})
+    req = greeter_protocol.new_request("mystery", {})
     state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
 
     outcome = wldm.daemon.process_request(state, "greeter", req, make_config())
@@ -201,8 +201,8 @@ def test_process_request_replies_with_unknown_action_error():
 
 def test_process_request_create_session_returns_secret_prompt():
     state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
-    req = wldm.protocol.new_request(
-        wldm.protocol.ACTION_CREATE_SESSION,
+    req = greeter_protocol.new_request(
+        greeter_protocol.ACTION_CREATE_SESSION,
         {"username": wldm.secret.SecretBytes(b"alice")},
     )
 
@@ -218,8 +218,8 @@ def test_process_request_create_session_returns_secret_prompt():
 
 def test_process_request_continue_session_requires_configured_session():
     state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
-    req = wldm.protocol.new_request(
-        wldm.protocol.ACTION_CONTINUE_SESSION,
+    req = greeter_protocol.new_request(
+        greeter_protocol.ACTION_CONTINUE_SESSION,
         {"response": wldm.secret.SecretBytes(b"secret")},
     )
 
@@ -234,8 +234,8 @@ def test_process_request_continue_session_requires_configured_session():
 def test_process_request_continue_session_marks_session_ready(monkeypatch):
     state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
     state.clients["greeter"].auth_session = wldm.daemon.AuthSessionState(username="alice", verified=False)
-    req = wldm.protocol.new_request(
-        wldm.protocol.ACTION_CONTINUE_SESSION,
+    req = greeter_protocol.new_request(
+        greeter_protocol.ACTION_CONTINUE_SESSION,
         {"response": wldm.secret.SecretBytes(b"secret")},
     )
 
@@ -251,8 +251,8 @@ def test_process_request_continue_session_marks_session_ready(monkeypatch):
 def test_process_request_start_session_requires_ready_state():
     state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
     state.clients["greeter"].auth_session = wldm.daemon.AuthSessionState(username="alice", verified=False)
-    req = wldm.protocol.new_request(
-        wldm.protocol.ACTION_START_SESSION,
+    req = greeter_protocol.new_request(
+        greeter_protocol.ACTION_START_SESSION,
         {"command": "sway", "desktop_names": ["sway"]},
     )
 
@@ -267,8 +267,8 @@ def test_process_request_start_session_requires_ready_state():
 def test_process_request_start_session_after_ready():
     state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
     state.clients["greeter"].auth_session = wldm.daemon.AuthSessionState(username="alice", verified=True)
-    req = wldm.protocol.new_request(
-        wldm.protocol.ACTION_START_SESSION,
+    req = greeter_protocol.new_request(
+        greeter_protocol.ACTION_START_SESSION,
         {"command": "startplasma-wayland --debug", "desktop_names": ["plasma", "kde"]},
     )
 
@@ -278,7 +278,7 @@ def test_process_request_start_session_after_ready():
     assert outcome.event == {
         "v": 1,
         "type": "event",
-        "event": wldm.protocol.EVENT_SESSION_STARTING,
+        "event": greeter_protocol.EVENT_SESSION_STARTING,
         "payload": {"command": "startplasma-wayland --debug", "desktop_names": ["plasma", "kde"]},
     }
     assert outcome.session_username == "alice"
@@ -290,7 +290,7 @@ def test_process_request_start_session_after_ready():
 def test_process_request_cancel_session_clears_auth_state():
     state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
     state.clients["greeter"].auth_session = wldm.daemon.AuthSessionState(username="alice", verified=False)
-    req = wldm.protocol.new_request(wldm.protocol.ACTION_CANCEL_SESSION, {})
+    req = greeter_protocol.new_request(greeter_protocol.ACTION_CANCEL_SESSION, {})
 
     outcome = wldm.daemon.process_request(state, "greeter", req, make_config())
 
@@ -326,10 +326,10 @@ def test_control_command_uses_configured_system_commands():
     cfg["daemon"]["suspend-command"] = "do-suspend"
     cfg["daemon"]["hibernate-command"] = "do-hibernate --deep"
 
-    assert wldm.daemon.control_command(cfg, wldm.protocol.ACTION_POWEROFF) == "do-poweroff --now"
-    assert wldm.daemon.control_command(cfg, wldm.protocol.ACTION_REBOOT) == "do-reboot --cold"
-    assert wldm.daemon.control_command(cfg, wldm.protocol.ACTION_SUSPEND) == "do-suspend"
-    assert wldm.daemon.control_command(cfg, wldm.protocol.ACTION_HIBERNATE) == "do-hibernate --deep"
+    assert wldm.daemon.control_command(cfg, greeter_protocol.ACTION_POWEROFF) == "do-poweroff --now"
+    assert wldm.daemon.control_command(cfg, greeter_protocol.ACTION_REBOOT) == "do-reboot --cold"
+    assert wldm.daemon.control_command(cfg, greeter_protocol.ACTION_SUSPEND) == "do-suspend"
+    assert wldm.daemon.control_command(cfg, greeter_protocol.ACTION_HIBERNATE) == "do-hibernate --deep"
 
 
 def test_configured_power_actions_only_includes_enabled_actions():
@@ -337,20 +337,20 @@ def test_configured_power_actions_only_includes_enabled_actions():
     cfg["daemon"]["suspend-command"] = "do-suspend"
 
     assert wldm.daemon.configured_power_actions(cfg) == [
-        wldm.protocol.ACTION_POWEROFF,
-        wldm.protocol.ACTION_REBOOT,
-        wldm.protocol.ACTION_SUSPEND,
+        greeter_protocol.ACTION_POWEROFF,
+        greeter_protocol.ACTION_REBOOT,
+        greeter_protocol.ACTION_SUSPEND,
     ]
 
 
 def test_send_message_writes_encoded_line():
     writer = DummyWriter()
-    message = wldm.protocol.new_request(wldm.protocol.ACTION_REBOOT, {})
+    message = greeter_protocol.new_request(greeter_protocol.ACTION_REBOOT, {})
 
     result = asyncio.run(wldm.daemon.send_message(writer, message))
 
     assert result is True
-    assert writer.lines == [wldm.protocol.encode_message(message)]
+    assert writer.lines == [greeter_protocol.encode_message(message)]
 
 
 def test_process_request_returns_state_snapshot():
@@ -365,7 +365,7 @@ def test_process_request_returns_state_snapshot():
     outcome = wldm.daemon.process_request(
         state,
         "greeter",
-        wldm.protocol.new_request(wldm.protocol.ACTION_GET_STATE, {}),
+        greeter_protocol.new_request(greeter_protocol.ACTION_GET_STATE, {}),
         make_config(seat="seat9"),
     )
 
@@ -380,8 +380,8 @@ def test_handle_request_async_starts_session_after_auth(monkeypatch):
     state = wldm.daemon.DaemonState(["/usr/bin/python3", "/srv/wldm/src/wldm/command.py"], 3)
     state.clients["greeter"].writer = DummyWriter()
     state.clients["greeter"].auth_session = wldm.daemon.AuthSessionState(username="alice", verified=True)
-    req = wldm.protocol.new_request(
-        wldm.protocol.ACTION_START_SESSION,
+    req = greeter_protocol.new_request(
+        greeter_protocol.ACTION_START_SESSION,
         {
             "command": "startplasma-wayland --debug",
             "desktop_names": ["plasma", "kde"],
@@ -414,7 +414,7 @@ def test_handle_request_async_starts_session_after_auth(monkeypatch):
 
     assert 777 in state.active_sessions or task_calls
     assert any(
-        wldm.protocol.decode_message(line).get("event") == wldm.protocol.EVENT_SESSION_STARTING
+        greeter_protocol.decode_message(line).get("event") == greeter_protocol.EVENT_SESSION_STARTING
         for line in state.clients["greeter"].writer.lines
     )
 
@@ -422,7 +422,7 @@ def test_handle_request_async_starts_session_after_auth(monkeypatch):
 def test_handle_request_async_runs_control_command(monkeypatch):
     state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
     state.clients["greeter"].writer = DummyWriter()
-    req = wldm.protocol.new_request(wldm.protocol.ACTION_POWEROFF, {})
+    req = greeter_protocol.new_request(greeter_protocol.ACTION_POWEROFF, {})
     calls = {}
     proc = DummyAsyncProc(pid=888, returncode=0)
 
@@ -438,20 +438,20 @@ def test_handle_request_async_runs_control_command(monkeypatch):
     asyncio.run(wldm.daemon.handle_request_async(state, "greeter", req, cfg))
 
     assert calls["cmd"] == ("/bin/sh", "-c", "do-poweroff --now")
-    assert wldm.protocol.decode_message(state.clients["greeter"].writer.lines[0])["payload"] == {"accepted": True}
+    assert greeter_protocol.decode_message(state.clients["greeter"].writer.lines[0])["payload"] == {"accepted": True}
 
 
 def test_handle_request_async_returns_get_state_to_requesting_client(monkeypatch):
     state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
     state.clients["greeter"].writer = DummyWriter()
     state.clients["adapter"] = wldm.daemon.ClientState(writer=DummyWriter())
-    req = wldm.protocol.new_request(wldm.protocol.ACTION_GET_STATE, {})
+    req = greeter_protocol.new_request(greeter_protocol.ACTION_GET_STATE, {})
 
     asyncio.run(wldm.daemon.handle_request_async(state, "adapter", req, make_config()))
 
     assert len(state.clients["adapter"].writer.lines) == 1
-    assert wldm.protocol.decode_message(state.clients["adapter"].writer.lines[0])["action"] == (
-        wldm.protocol.ACTION_GET_STATE
+    assert greeter_protocol.decode_message(state.clients["adapter"].writer.lines[0])["action"] == (
+        greeter_protocol.ACTION_GET_STATE
     )
 
 
@@ -463,8 +463,8 @@ def test_broadcast_state_changed_sends_snapshot_to_all_clients():
     asyncio.run(wldm.daemon.broadcast_state_changed(state))
 
     for name in ["greeter", "adapter"]:
-        message = wldm.protocol.decode_message(state.clients[name].writer.lines[0])
-        assert message["event"] == wldm.protocol.EVENT_STATE_CHANGED
+        message = greeter_protocol.decode_message(state.clients[name].writer.lines[0])
+        assert message["event"] == greeter_protocol.EVENT_STATE_CHANGED
         assert message["payload"]["seat"] == "seat9"
 
 
@@ -483,9 +483,9 @@ def test_send_session_finished_switches_back_to_greeter_tty(monkeypatch):
 
     assert changes == [(77, 7)]
     assert 333 not in state.active_sessions
-    events = [wldm.protocol.decode_message(line) for line in state.clients["greeter"].writer.lines]
-    assert any(event.get("event") == wldm.protocol.EVENT_SESSION_FINISHED for event in events)
-    finished = next(event for event in events if event.get("event") == wldm.protocol.EVENT_SESSION_FINISHED)
+    events = [greeter_protocol.decode_message(line) for line in state.clients["greeter"].writer.lines]
+    assert any(event.get("event") == greeter_protocol.EVENT_SESSION_FINISHED for event in events)
+    finished = next(event for event in events if event.get("event") == greeter_protocol.EVENT_SESSION_FINISHED)
     assert finished["payload"]["failed"] is False
     assert finished["payload"]["message"] == "Session finished."
 
@@ -499,7 +499,7 @@ def test_send_session_finished_reports_failed_session(monkeypatch):
 
     asyncio.run(wldm.daemon.send_session_finished(state, state.active_sessions[444]))
 
-    event = next(wldm.protocol.decode_message(line) for line in state.clients["greeter"].writer.lines)
+    event = next(greeter_protocol.decode_message(line) for line in state.clients["greeter"].writer.lines)
     assert event["payload"]["failed"] is True
     assert event["payload"]["message"] == "Session failed with exit status 7."
 
@@ -507,8 +507,8 @@ def test_send_session_finished_reports_failed_session(monkeypatch):
 def test_handle_client_marks_client_ready(monkeypatch):
     state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
     writer = DummyWriter()
-    req = wldm.protocol.new_request(wldm.protocol.ACTION_REBOOT, {})
-    encoded = wldm.protocol.encode_message(req)
+    req = greeter_protocol.new_request(greeter_protocol.ACTION_REBOOT, {})
+    encoded = greeter_protocol.encode_message(req)
     reader = DummyReader([encoded[:4], encoded[4:], b""])
     calls = []
 
@@ -522,7 +522,7 @@ def test_handle_client_marks_client_ready(monkeypatch):
 
     assert state.clients["greeter"].ready is True
     assert calls[0][1] == "greeter"
-    assert calls[0][2]["action"] == wldm.protocol.ACTION_REBOOT
+    assert calls[0][2]["action"] == greeter_protocol.ACTION_REBOOT
     assert calls[0][3] is cfg
     assert writer.closed is True
 

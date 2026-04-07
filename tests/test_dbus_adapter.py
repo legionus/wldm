@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pwd
 
 import wldm.dbus_adapter
-import wldm.protocol
+import wldm.greeter_protocol as greeter_protocol
 
 
 class DummyClient:
@@ -54,11 +54,11 @@ def test_name_lifecycle_callbacks_update_service_state():
 
 
 def test_request_state_reads_valid_snapshot(monkeypatch):
-    request = {"v": 1, "id": "req-1", "type": "request", "action": wldm.protocol.ACTION_GET_STATE, "payload": {}}
-    monkeypatch.setattr(wldm.dbus_adapter.wldm.protocol, "new_request", lambda action, payload: dict(request))
+    request = {"v": 1, "id": "req-1", "type": "request", "action": greeter_protocol.ACTION_GET_STATE, "payload": {}}
+    monkeypatch.setattr(wldm.dbus_adapter.greeter_protocol, "new_request", lambda action, payload: dict(request))
 
     client = DummyClient([
-        wldm.protocol.new_response(
+        greeter_protocol.new_response(
             request,
             ok=True,
             payload={
@@ -116,14 +116,14 @@ def test_adapter_ipc_fd_marks_fd_inheritable(monkeypatch):
 
 
 def test_request_state_rejects_bad_responses(monkeypatch):
-    request = {"v": 1, "id": "req-1", "type": "request", "action": wldm.protocol.ACTION_GET_STATE, "payload": {}}
-    monkeypatch.setattr(wldm.dbus_adapter.wldm.protocol, "new_request", lambda action, payload: dict(request))
+    request = {"v": 1, "id": "req-1", "type": "request", "action": greeter_protocol.ACTION_GET_STATE, "payload": {}}
+    monkeypatch.setattr(wldm.dbus_adapter.greeter_protocol, "new_request", lambda action, payload: dict(request))
 
     for response in (
         None,
         {"v": 1, "type": "event", "event": "x", "payload": {}},
-        wldm.protocol.new_response(request, ok=False, error={"code": "x", "message": "no"}),
-        wldm.protocol.new_response(request, ok=True, payload=[]),
+        greeter_protocol.new_response(request, ok=False, error={"code": "x", "message": "no"}),
+        greeter_protocol.new_response(request, ok=True, payload=[]),
     ):
         client = DummyClient([response])
 
@@ -138,8 +138,8 @@ def test_request_state_rejects_bad_responses(monkeypatch):
 def test_read_daemon_events_ignores_non_state_events():
     snapshot = {"seat": "seat0", "greeter_ready": True, "active_sessions": []}
     client = DummyClient([
-        wldm.protocol.new_event(wldm.protocol.EVENT_SESSION_STARTING, {"command": "sway", "desktop_names": []}),
-        wldm.protocol.new_event(wldm.protocol.EVENT_SESSION_FINISHED, {"pid": 1, "returncode": 0, "failed": False, "message": ""}),
+        greeter_protocol.new_event(greeter_protocol.EVENT_SESSION_STARTING, {"command": "sway", "desktop_names": []}),
+        greeter_protocol.new_event(greeter_protocol.EVENT_SESSION_FINISHED, {"pid": 1, "returncode": 0, "failed": False, "message": ""}),
         None,
     ])
     service = DummyService()
@@ -299,7 +299,7 @@ def test_read_daemon_events_applies_state_changes(monkeypatch):
         "active_sessions": [],
     }
     client = DummyClient([
-        wldm.protocol.new_event(wldm.protocol.EVENT_STATE_CHANGED, snapshot),
+        greeter_protocol.new_event(greeter_protocol.EVENT_STATE_CHANGED, snapshot),
         None,
     ])
     service = DummyService()
@@ -328,9 +328,9 @@ def test_read_daemon_events_applies_state_changes(monkeypatch):
 
 def test_run_adapter_drops_privileges_and_runs_loop(monkeypatch):
     calls = {}
-    request = {"v": 1, "id": "req-1", "type": "request", "action": wldm.protocol.ACTION_GET_STATE, "payload": {}}
+    request = {"v": 1, "id": "req-1", "type": "request", "action": greeter_protocol.ACTION_GET_STATE, "payload": {}}
     client = DummyClient([
-        wldm.protocol.new_response(
+        greeter_protocol.new_response(
             request,
             ok=True,
             payload={
@@ -374,7 +374,7 @@ def test_run_adapter_drops_privileges_and_runs_loop(monkeypatch):
             {"service": service_name, "snapshot": snapshot, "gio": Gio, "glib": GLib}
         ) or service,
     )
-    monkeypatch.setattr(wldm.dbus_adapter.wldm.protocol, "new_request", lambda action, payload: dict(request))
+    monkeypatch.setattr(wldm.dbus_adapter.greeter_protocol, "new_request", lambda action, payload: dict(request))
     monkeypatch.setattr(
         wldm.dbus_adapter.wldm,
         "drop_privileges",

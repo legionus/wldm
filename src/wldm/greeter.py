@@ -33,7 +33,7 @@ import wldm.inifile
 # pylint: disable-next=wrong-import-position
 import wldm.policy
 # pylint: disable-next=wrong-import-position
-import wldm.protocol
+import wldm.greeter_protocol as greeter_protocol
 # pylint: disable-next=wrong-import-position
 import wldm.sessions
 # pylint: disable-next=wrong-import-position
@@ -96,10 +96,10 @@ class SocketClient:
         self.sock = socket.socket(fileno=fd)
 
     def write_message(self, message: Dict[str, Any]) -> None:
-        self.sock.sendall(wldm.protocol.encode_message(message))
+        self.sock.sendall(greeter_protocol.encode_message(message))
 
     def read_message(self) -> Dict[str, Any] | None:
-        return wldm.protocol.read_message_socket(self.sock)
+        return greeter_protocol.read_message_socket(self.sock)
 
     def can_read(self) -> bool:
         readable, _, _ = select.select([self.sock], [], [], 0.0)
@@ -668,10 +668,10 @@ class LoginApp:
 
     def update_action_buttons(self) -> None:
         button_actions = [
-            (getattr(self, "quit_button", None), wldm.protocol.ACTION_POWEROFF),
-            (getattr(self, "reboot_button", None), wldm.protocol.ACTION_REBOOT),
-            (getattr(self, "suspend_button", None), wldm.protocol.ACTION_SUSPEND),
-            (getattr(self, "hibernate_button", None), wldm.protocol.ACTION_HIBERNATE),
+            (getattr(self, "quit_button", None), greeter_protocol.ACTION_POWEROFF),
+            (getattr(self, "reboot_button", None), greeter_protocol.ACTION_REBOOT),
+            (getattr(self, "suspend_button", None), greeter_protocol.ACTION_SUSPEND),
+            (getattr(self, "hibernate_button", None), greeter_protocol.ACTION_HIBERNATE),
         ]
 
         for button, action in button_actions:
@@ -727,7 +727,7 @@ class LoginApp:
                 try:
                     message = self.client.read_message()
 
-                except wldm.protocol.ProtocolError as e:
+                except greeter_protocol.ProtocolError as e:
                     self.log_protocol_error("bad greeter event message", e.raw, e)
                     connection_lost = True
                     break
@@ -736,7 +736,7 @@ class LoginApp:
                     connection_lost = True
                     break
 
-                if wldm.protocol.is_event(message):
+                if greeter_protocol.is_event(message):
                     self.handle_event(message)
                     continue
 
@@ -754,7 +754,7 @@ class LoginApp:
             self.handle_connection_lost()
 
     def handle_event(self, event: Dict[str, Any]) -> None:
-        if not wldm.protocol.is_event(event):
+        if not greeter_protocol.is_event(event):
             return
 
         payload = event["payload"]
@@ -762,12 +762,12 @@ class LoginApp:
 
         logger.debug("protocol event: %s", event)
 
-        if event_name == wldm.protocol.EVENT_SESSION_STARTING:
+        if event_name == greeter_protocol.EVENT_SESSION_STARTING:
             self.set_auth_state(True)
             self.set_status(_("Starting session..."))
             return
 
-        if event_name == wldm.protocol.EVENT_SESSION_FINISHED:
+        if event_name == greeter_protocol.EVENT_SESSION_FINISHED:
             self.set_auth_state(False)
             self.clear_conversation_state()
 
@@ -929,7 +929,7 @@ class LoginApp:
                 try:
                     message = self.client.read_message()
 
-                except wldm.protocol.ProtocolError as e:
+                except greeter_protocol.ProtocolError as e:
                     self.log_protocol_error("bad greeter response message", e.raw, e)
                     connection_lost = True
                     break
@@ -938,11 +938,11 @@ class LoginApp:
                     connection_lost = True
                     break
 
-                if wldm.protocol.is_event(message):
+                if greeter_protocol.is_event(message):
                     self.handle_event(message)
                     continue
 
-                if wldm.protocol.is_response(message, data):
+                if greeter_protocol.is_response(message, data):
                     answer = message
                     break
 
@@ -980,10 +980,10 @@ class LoginApp:
             response.clear()
             return None
 
-        if wldm.protocol.auth_field_is_too_long(response):
+        if greeter_protocol.auth_field_is_too_long(response):
             self.set_status(
                 _("Response must be %(limit)d bytes or less.")
-                % {"limit": wldm.protocol.AUTH_FIELD_MAX_LENGTH},
+                % {"limit": greeter_protocol.AUTH_FIELD_MAX_LENGTH},
                 error=True,
             )
 
@@ -997,8 +997,8 @@ class LoginApp:
 
     def start_selected_session(self, command: str, desktop_names: list[str]) -> bool:
         """Ask the daemon to start one already-authenticated session."""
-        start_request = wldm.protocol.new_request(
-            wldm.protocol.ACTION_START_SESSION,
+        start_request = greeter_protocol.new_request(
+            greeter_protocol.ACTION_START_SESSION,
             {
                 "command": command,
                 "desktop_names": desktop_names,
@@ -1071,8 +1071,8 @@ class LoginApp:
 
             try:
                 answer = self.send_recv_answer(
-                    wldm.protocol.new_request(
-                        wldm.protocol.ACTION_CONTINUE_SESSION,
+                    greeter_protocol.new_request(
+                        greeter_protocol.ACTION_CONTINUE_SESSION,
                         {"response": response},
                     )
                 )
@@ -1099,18 +1099,18 @@ class LoginApp:
             self.set_status(_("Enter a username."), error=True)
             return
 
-        if wldm.protocol.auth_field_is_too_long(username):
+        if greeter_protocol.auth_field_is_too_long(username):
             self.set_status(
                 _("Username must be %(limit)d bytes or less.")
-                % {"limit": wldm.protocol.AUTH_FIELD_MAX_LENGTH},
+                % {"limit": greeter_protocol.AUTH_FIELD_MAX_LENGTH},
                 error=True,
             )
             return
         self.set_auth_state(True)
         self.auth_username = username
 
-        create_request = wldm.protocol.new_request(
-            wldm.protocol.ACTION_CREATE_SESSION,
+        create_request = greeter_protocol.new_request(
+            greeter_protocol.ACTION_CREATE_SESSION,
             {"username": username},
         )
         create_answer = self.send_recv_answer(create_request)
@@ -1135,7 +1135,7 @@ class LoginApp:
     def request_system_action(self, action: str, status_message: str) -> None:
         self.set_status(status_message)
 
-        answer = self.send_recv_answer(wldm.protocol.new_request(action, {}))
+        answer = self.send_recv_answer(greeter_protocol.new_request(action, {}))
         logger.debug("client %s answer: %s", action, answer)
 
         if not answer.get("ok") or not answer.get("payload", {}).get("accepted"):
@@ -1143,19 +1143,19 @@ class LoginApp:
 
     # pylint: disable-next=unused-argument
     def on_poweroff_clicked(self, *args: Any) -> None:
-        self.request_system_action(wldm.protocol.ACTION_POWEROFF, _("Powering off..."))
+        self.request_system_action(greeter_protocol.ACTION_POWEROFF, _("Powering off..."))
 
     # pylint: disable-next=unused-argument
     def on_reboot_clicked(self, *args: Any) -> None:
-        self.request_system_action(wldm.protocol.ACTION_REBOOT, _("Rebooting..."))
+        self.request_system_action(greeter_protocol.ACTION_REBOOT, _("Rebooting..."))
 
     # pylint: disable-next=unused-argument
     def on_suspend_clicked(self, *args: Any) -> None:
-        self.request_system_action(wldm.protocol.ACTION_SUSPEND, _("Suspending..."))
+        self.request_system_action(greeter_protocol.ACTION_SUSPEND, _("Suspending..."))
 
     # pylint: disable-next=unused-argument
     def on_hibernate_clicked(self, *args: Any) -> None:
-        self.request_system_action(wldm.protocol.ACTION_HIBERNATE, _("Hibernating..."))
+        self.request_system_action(greeter_protocol.ACTION_HIBERNATE, _("Hibernating..."))
 
 
 def cmd_main(_parser: argparse.Namespace) -> int:

@@ -606,19 +606,19 @@ def test_send_recv_answer_round_trips_protocol_messages(monkeypatch):
         def close(self):
             return None
 
-    request = greeter.wldm.protocol.new_request(greeter.wldm.protocol.ACTION_REBOOT, {})
+    request = greeter.greeter_protocol.new_request(greeter.greeter_protocol.ACTION_REBOOT, {})
     client = FakeClient([
         {
             "v": 1,
             "type": "event",
-            "event": greeter.wldm.protocol.EVENT_SESSION_FINISHED,
+            "event": greeter.greeter_protocol.EVENT_SESSION_FINISHED,
             "payload": {"pid": 1, "returncode": 0},
         },
         {
             "v": 1,
             "id": request["id"],
             "type": "response",
-            "action": greeter.wldm.protocol.ACTION_REBOOT,
+            "action": greeter.greeter_protocol.ACTION_REBOOT,
             "ok": True,
             "payload": {"accepted": True},
         },
@@ -631,14 +631,14 @@ def test_send_recv_answer_round_trips_protocol_messages(monkeypatch):
         "v": 1,
         "id": request["id"],
         "type": "response",
-        "action": greeter.wldm.protocol.ACTION_REBOOT,
+        "action": greeter.greeter_protocol.ACTION_REBOOT,
         "ok": True,
         "payload": {"accepted": True},
     }
     sent = client.sent[0]
     assert sent["v"] == 1
     assert sent["type"] == "request"
-    assert sent["action"] == greeter.wldm.protocol.ACTION_REBOOT
+    assert sent["action"] == greeter.greeter_protocol.ACTION_REBOOT
     assert sent["payload"] == {}
 
 
@@ -685,13 +685,13 @@ def test_handle_event_updates_status_label(monkeypatch):
 
     greeter.LoginApp.handle_event(
         app,
-        {"v": 1, "type": "event", "event": greeter.wldm.protocol.EVENT_SESSION_STARTING, "payload": {}},
+        {"v": 1, "type": "event", "event": greeter.greeter_protocol.EVENT_SESSION_STARTING, "payload": {}},
     )
     assert app.status_label.text == "Starting session..."
 
     greeter.LoginApp.handle_event(
         app,
-        {"v": 1, "type": "event", "event": greeter.wldm.protocol.EVENT_SESSION_FINISHED, "payload": {"pid": 1, "returncode": 0}},
+        {"v": 1, "type": "event", "event": greeter.greeter_protocol.EVENT_SESSION_FINISHED, "payload": {"pid": 1, "returncode": 0}},
     )
     assert app.status_label.text == "Session finished."
 
@@ -700,7 +700,7 @@ def test_handle_event_updates_status_label(monkeypatch):
         {
             "v": 1,
             "type": "event",
-            "event": greeter.wldm.protocol.EVENT_SESSION_FINISHED,
+            "event": greeter.greeter_protocol.EVENT_SESSION_FINISHED,
             "payload": {"pid": 1, "returncode": 7, "failed": True, "message": "Session failed with exit status 7."},
         },
     )
@@ -766,7 +766,7 @@ def test_handle_event_saves_last_session_state_on_success(monkeypatch):
         {
             "v": 1,
             "type": "event",
-            "event": greeter.wldm.protocol.EVENT_SESSION_FINISHED,
+            "event": greeter.greeter_protocol.EVENT_SESSION_FINISHED,
             "payload": {"pid": 1, "returncode": 0, "failed": False, "message": "Session finished."},
         },
     )
@@ -819,7 +819,7 @@ def test_handle_event_saves_last_session_state_when_username_entry_was_cleared(m
         {
             "v": 1,
             "type": "event",
-            "event": greeter.wldm.protocol.EVENT_SESSION_FINISHED,
+            "event": greeter.greeter_protocol.EVENT_SESSION_FINISHED,
             "payload": {"pid": 1, "returncode": 0, "failed": False, "message": "Session finished."},
         },
     )
@@ -872,7 +872,7 @@ def test_handle_event_keeps_remembered_session_command_when_current_selection_ch
         {
             "v": 1,
             "type": "event",
-            "event": greeter.wldm.protocol.EVENT_SESSION_FINISHED,
+            "event": greeter.greeter_protocol.EVENT_SESSION_FINISHED,
             "payload": {"pid": 1, "returncode": 0, "failed": False, "message": "Session finished."},
         },
     )
@@ -915,9 +915,9 @@ def test_login_click_remembers_selected_session_before_username_clear(monkeypatc
     app.get_selected_session = lambda: {"desktop_names": ["labwc"]}
     app.send_recv_answer = lambda data: (
         {"ok": True, "payload": {"state": "pending", "message": {"style": "secret", "text": "Password:"}}}
-        if data["action"] == greeter.wldm.protocol.ACTION_CREATE_SESSION else
+        if data["action"] == greeter.greeter_protocol.ACTION_CREATE_SESSION else
         {"ok": True, "payload": {"state": "ready"}}
-        if data["action"] == greeter.wldm.protocol.ACTION_CONTINUE_SESSION else
+        if data["action"] == greeter.greeter_protocol.ACTION_CONTINUE_SESSION else
         {"ok": True, "payload": {}}
     )
 
@@ -1009,7 +1009,7 @@ def test_on_clock_tick_polls_session_finished_event_and_reenables_inputs(monkeyp
             return {
                 "v": 1,
                 "type": "event",
-                "event": greeter.wldm.protocol.EVENT_SESSION_FINISHED,
+                "event": greeter.greeter_protocol.EVENT_SESSION_FINISHED,
                 "payload": {"pid": 1, "returncode": 0, "failed": False, "message": "Session finished."},
             }
 
@@ -1059,7 +1059,7 @@ def test_poll_events_treats_bad_protocol_as_connection_loss(monkeypatch):
 
         def read_message(self):
             self.reads += 1
-            raise greeter.wldm.protocol.ProtocolError("broken frame", b"\x00\x01bad")
+            raise greeter.greeter_protocol.ProtocolError("broken frame", b"\x00\x01bad")
 
         def close(self):
             return None
@@ -1092,7 +1092,7 @@ def test_send_recv_answer_returns_empty_dict_on_bad_protocol(monkeypatch):
             return None
 
         def read_message(self):
-            raise greeter.wldm.protocol.ProtocolError("broken frame", b"\x00\x01bad")
+            raise greeter.greeter_protocol.ProtocolError("broken frame", b"\x00\x01bad")
 
         def can_read(self):
             return False
@@ -1102,10 +1102,10 @@ def test_send_recv_answer_returns_empty_dict_on_bad_protocol(monkeypatch):
 
     app = greeter.LoginApp(client=FakeClient())
 
-    request = greeter.wldm.protocol.new_request(greeter.wldm.protocol.ACTION_REBOOT, {})
+    request = greeter.greeter_protocol.new_request(greeter.greeter_protocol.ACTION_REBOOT, {})
 
     assert app.send_recv_answer(request) == {}
-    assert request["action"] == greeter.wldm.protocol.ACTION_REBOOT
+    assert request["action"] == greeter.greeter_protocol.ACTION_REBOOT
 
 
 def test_send_recv_answer_treats_bad_protocol_as_connection_loss(monkeypatch):
@@ -1119,7 +1119,7 @@ def test_send_recv_answer_treats_bad_protocol_as_connection_loss(monkeypatch):
             return None
 
         def read_message(self):
-            raise greeter.wldm.protocol.ProtocolError("broken frame", b"\x00\x01bad")
+            raise greeter.greeter_protocol.ProtocolError("broken frame", b"\x00\x01bad")
 
         def can_read(self):
             return False
@@ -1136,7 +1136,7 @@ def test_send_recv_answer_treats_bad_protocol_as_connection_loss(monkeypatch):
         lambda msg, *args: events.append(("log", msg % args if args else msg)),
     )
 
-    request = greeter.wldm.protocol.new_request(greeter.wldm.protocol.ACTION_REBOOT, {})
+    request = greeter.greeter_protocol.new_request(greeter.greeter_protocol.ACTION_REBOOT, {})
 
     assert app.send_recv_answer(request) == {}
     assert ("status", "Connection to daemon lost.") in events
@@ -1251,11 +1251,11 @@ def test_on_login_clicked_includes_desktop_names_in_auth_request(monkeypatch):
 
     def fake_send_recv_answer(data):
         sent.append(data)
-        if data["action"] == greeter.wldm.protocol.ACTION_CREATE_SESSION:
+        if data["action"] == greeter.greeter_protocol.ACTION_CREATE_SESSION:
             return {"ok": True, "payload": {"state": "pending", "message": {"style": "secret", "text": "Password:"}}}
-        if data["action"] == greeter.wldm.protocol.ACTION_CONTINUE_SESSION:
+        if data["action"] == greeter.greeter_protocol.ACTION_CONTINUE_SESSION:
             return {"ok": True, "payload": {"state": "ready"}}
-        if data["action"] == greeter.wldm.protocol.ACTION_START_SESSION:
+        if data["action"] == greeter.greeter_protocol.ACTION_START_SESSION:
             return {"ok": True, "payload": {}}
         raise AssertionError(f"unexpected action {data['action']}")
 
@@ -1266,7 +1266,7 @@ def test_on_login_clicked_includes_desktop_names_in_auth_request(monkeypatch):
     app.on_login_clicked()
     app.on_login_clicked()
 
-    assert sent[-1]["action"] == greeter.wldm.protocol.ACTION_START_SESSION
+    assert sent[-1]["action"] == greeter.greeter_protocol.ACTION_START_SESSION
     assert sent[-1]["payload"]["desktop_names"] == ["sway", "wlroots"]
 
 
@@ -1304,7 +1304,7 @@ def test_on_login_clicked_rejects_overlong_username(monkeypatch):
     app.on_login_clicked()
 
     assert app.status_label.text == (
-        f"Username must be {greeter.wldm.protocol.AUTH_FIELD_MAX_LENGTH} bytes or less."
+        f"Username must be {greeter.greeter_protocol.AUTH_FIELD_MAX_LENGTH} bytes or less."
     )
 
 
@@ -1346,7 +1346,7 @@ def test_on_login_clicked_rejects_overlong_password(monkeypatch):
     app.on_login_clicked()
 
     assert app.status_label.text == (
-        f"Response must be {greeter.wldm.protocol.AUTH_FIELD_MAX_LENGTH} bytes or less."
+        f"Response must be {greeter.greeter_protocol.AUTH_FIELD_MAX_LENGTH} bytes or less."
     )
     assert app.password_entry.focused is True
 
@@ -1386,9 +1386,9 @@ def test_on_login_clicked_sets_success_message_and_clears_username(monkeypatch):
         "send_recv_answer",
         lambda data: (
             {"ok": True, "payload": {"state": "pending", "message": {"style": "secret", "text": "Password:"}}}
-            if data["action"] == greeter.wldm.protocol.ACTION_CREATE_SESSION else
+            if data["action"] == greeter.greeter_protocol.ACTION_CREATE_SESSION else
             {"ok": True, "payload": {"state": "ready"}}
-            if data["action"] == greeter.wldm.protocol.ACTION_CONTINUE_SESSION else
+            if data["action"] == greeter.greeter_protocol.ACTION_CONTINUE_SESSION else
             {"ok": True, "payload": {}}
         ),
     )
@@ -1474,7 +1474,7 @@ def test_start_selected_session_sends_start_request(monkeypatch):
     app.send_recv_answer = lambda data: sent.update(data) or {"ok": True, "payload": {}}
 
     assert greeter.LoginApp.start_selected_session(app, "sway", ["sway", "wlroots"]) is True
-    assert sent["action"] == greeter.wldm.protocol.ACTION_START_SESSION
+    assert sent["action"] == greeter.greeter_protocol.ACTION_START_SESSION
     assert sent["payload"] == {"command": "sway", "desktop_names": ["sway", "wlroots"]}
 
 
@@ -2700,10 +2700,10 @@ def test_system_action_buttons_send_requests(monkeypatch):
     app.on_hibernate_clicked()
     assert app.status_label.text == "Hibernating..."
     assert calls == [
-        greeter.wldm.protocol.ACTION_REBOOT,
-        greeter.wldm.protocol.ACTION_POWEROFF,
-        greeter.wldm.protocol.ACTION_SUSPEND,
-        greeter.wldm.protocol.ACTION_HIBERNATE,
+        greeter.greeter_protocol.ACTION_REBOOT,
+        greeter.greeter_protocol.ACTION_POWEROFF,
+        greeter.greeter_protocol.ACTION_SUSPEND,
+        greeter.greeter_protocol.ACTION_HIBERNATE,
     ]
 
 
