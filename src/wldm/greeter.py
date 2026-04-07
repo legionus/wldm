@@ -305,6 +305,9 @@ class LoginApp:
         self.state_file = configured_state_file()
         self.last_username = ""
         self.last_session_command = ""
+        self.auth_username = ""
+        self.pending_session_command = ""
+        self.pending_desktop_names: list[str] = []
 
         if self.state_file:
             self.last_username, self.last_session_command = wldm.state.load_last_session_file(self.state_file)
@@ -502,6 +505,24 @@ class LoginApp:
                                         % {"description": description, "command": item})
         else:
             self.session_label.set_text(_("Session command: %(command)s") % {"command": item})
+
+    def selected_session_data(self) -> tuple[str, list[str]]:
+        """Return the current session command and desktop names.
+
+        Args:
+            None.
+
+        Returns:
+            Tuple of selected session command and desktop name list.
+        """
+        command = self.get_session_command()
+        desktop_names: list[str] = []
+        session_entry = self.get_selected_session()
+
+        if session_entry is not None:
+            desktop_names = list(session_entry.get("desktop_names", []))
+
+        return command, desktop_names
 
     def refresh_sessions(self, username: str = "", preferred_command: str = "") -> None:
         current_name = ""
@@ -852,6 +873,90 @@ class LoginApp:
 
         return answer
 
+    def complete_authentication(self,
+                                username: str,
+                                password: wldm.secret.SecretBytes,
+                                command: str,
+                                desktop_names: list[str]) -> bool:
+        """Drive the conversation auth flow for the current username/password UI.
+
+        Args:
+            username: Login name from the greeter entry.
+            command: Selected session command.
+            desktop_names: Selected DesktopNames list.
+
+        Returns:
+            `True` if the daemon accepted the session start request.
+        """
+        create_request = wldm.protocol.new_request(
+            wldm.protocol.ACTION_CREATE_SESSION,
+            {"username": username},
+        )
+        create_answer = self.send_recv_answer(create_request)
+
+        if create_answer.get("error", {}).get("code") == "unknown_action":
+            return self.complete_authentication_legacy(username, password, command, desktop_names)
+
+        if create_answer.get("payload", {}).get("verified") is not None:
+            return bool(create_answer.get("ok") and create_answer.get("payload", {}).get("verified"))
+
+        if not create_answer.get("ok"):
+            return False
+
+        payload = create_answer.get("payload", {})
+        message = payload.get("message", {})
+
+        if payload.get("state") != "pending" or message.get("style") != "secret":
+            logger.warning("unsupported auth conversation step: %s", create_answer)
+            return False
+
+        continue_request = wldm.protocol.new_request(
+            wldm.protocol.ACTION_CONTINUE_SESSION,
+            {"response": password},
+        )
+        continue_answer = self.send_recv_answer(continue_request)
+
+        if not continue_answer.get("ok") or continue_answer.get("payload", {}).get("state") != "ready":
+            if self.password_entry is not None and hasattr(self.password_entry, "grab_focus"):
+                self.password_entry.grab_focus()
+            return False
+
+        start_request = wldm.protocol.new_request(
+            wldm.protocol.ACTION_START_SESSION,
+            {"command": command, "desktop_names": desktop_names},
+        )
+        start_answer = self.send_recv_answer(start_request)
+
+        return bool(start_answer.get("ok"))
+
+    def complete_authentication_legacy(self,
+                                       username: str,
+                                       password: wldm.secret.SecretBytes,
+                                       command: str,
+                                       desktop_names: list[str]) -> bool:
+        """Authenticate through the legacy one-shot request.
+
+        Args:
+            username: Login name from the greeter entry.
+            command: Selected session command.
+            desktop_names: Selected DesktopNames list.
+
+        Returns:
+            `True` if the daemon accepted the legacy auth request.
+        """
+        request = wldm.protocol.new_request(
+            wldm.protocol.ACTION_AUTH,
+            {
+                "username": username,
+                "password": password,
+                "command": command,
+                "desktop_names": desktop_names,
+            },
+        )
+        answer = self.send_recv_answer(request)
+
+        return bool(answer.get("ok") and answer.get("payload", {}).get("verified"))
+
     # pylint: disable-next=unused-argument
     def on_login_clicked(self, *args: Any) -> None:
         if self.username_entry is None or self.password_entry is None:
@@ -861,26 +966,16 @@ class LoginApp:
             return
 
         username = self.username_entry.get_text()
-        # NOTE: GtkPasswordEntry.get_text() already materializes a Python string
-        # here whenever the native GtkEditable FFI path is not available.
+        command, desktop_names = self.selected_session_data()
         password = gtk_ffi.read_password_secret(self.password_entry)
 
-        data = {
-                "username": username,
-                "password": password,
-                "command":  self.get_session_command(),
-                "desktop_names": [],
-                }
-        session_entry = self.get_selected_session()
-
-        if session_entry is not None:
-            data["desktop_names"] = list(session_entry.get("desktop_names", []))
-
-        if len(data["username"]) == 0:
+        if len(username) == 0:
+            password.clear()
             self.set_status(_("Enter a username."), error=True)
             return
 
-        if wldm.protocol.auth_field_is_too_long(data["username"]):
+        if wldm.protocol.auth_field_is_too_long(username):
+            password.clear()
             self.set_status(
                 _("Username must be %(limit)d bytes or less.")
                 % {"limit": wldm.protocol.AUTH_FIELD_MAX_LENGTH},
@@ -888,16 +983,16 @@ class LoginApp:
             )
             return
 
-        if len(data["password"]) == 0:
+        if len(password) == 0:
             self.set_status(_("Enter a password."), error=True)
 
             if hasattr(self.password_entry, "grab_focus"):
                 self.password_entry.grab_focus()
 
-            data["password"].clear()
+            password.clear()
             return
 
-        if wldm.protocol.auth_field_is_too_long(data["password"]):
+        if wldm.protocol.auth_field_is_too_long(password):
             self.set_status(
                 _("Password must be %(limit)d bytes or less.")
                 % {"limit": wldm.protocol.AUTH_FIELD_MAX_LENGTH},
@@ -907,25 +1002,20 @@ class LoginApp:
             if hasattr(self.password_entry, "grab_focus"):
                 self.password_entry.grab_focus()
 
-            data["password"].clear()
+            password.clear()
             return
 
         self.password_entry.set_text("")
         self.set_auth_state(True)
 
-        request = wldm.protocol.new_request(wldm.protocol.ACTION_AUTH, data)
-
         try:
-            answer = self.send_recv_answer(request)
-
+            auth_ok = self.complete_authentication(username, password, command, desktop_names)
         finally:
-            request["payload"]["password"].clear()
+            password.clear()
 
-        logger.debug("client answer: %s", answer)
-
-        if answer.get("ok") and answer.get("payload", {}).get("verified"):
+        if auth_ok:
             self.last_username = username.strip()
-            self.last_session_command = self.get_session_command()
+            self.last_session_command = command
             self.username_entry.set_text("")
             status_message = _("Authentication accepted. Waiting for session...")
             status_error = False
@@ -933,7 +1023,8 @@ class LoginApp:
             self.set_auth_state(False)
             status_message = _("Authentication failed.")
             status_error = True
-            self.password_entry.grab_focus()
+            if hasattr(self.password_entry, "grab_focus"):
+                self.password_entry.grab_focus()
 
         self.set_status(status_message, error=status_error)
 

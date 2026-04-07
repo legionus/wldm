@@ -1223,16 +1223,24 @@ def test_on_login_clicked_includes_desktop_names_in_auth_request(monkeypatch):
     app.sessions_entry = types.SimpleNamespace(
         get_selected_item=lambda: types.SimpleNamespace(get_string=lambda: "Sway")
     )
-    sent = {}
-    monkeypatch.setattr(
-        app,
-        "send_recv_answer",
-        lambda data: sent.update(data) or {"ok": False},
-    )
+    sent = []
+
+    def fake_send_recv_answer(data):
+        sent.append(data)
+        if data["action"] == greeter.wldm.protocol.ACTION_CREATE_SESSION:
+            return {"ok": True, "payload": {"state": "pending", "message": {"style": "secret", "text": "Password:"}}}
+        if data["action"] == greeter.wldm.protocol.ACTION_CONTINUE_SESSION:
+            return {"ok": True, "payload": {"state": "ready"}}
+        if data["action"] == greeter.wldm.protocol.ACTION_START_SESSION:
+            return {"ok": True, "payload": {}}
+        raise AssertionError(f"unexpected action {data['action']}")
+
+    monkeypatch.setattr(app, "send_recv_answer", fake_send_recv_answer)
 
     app.on_login_clicked()
 
-    assert sent["payload"]["desktop_names"] == ["sway", "wlroots"]
+    assert sent[-1]["action"] == greeter.wldm.protocol.ACTION_START_SESSION
+    assert sent[-1]["payload"]["desktop_names"] == ["sway", "wlroots"]
 
 
 def test_on_login_clicked_rejects_overlong_username(monkeypatch):
