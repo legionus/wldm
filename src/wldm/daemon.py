@@ -367,8 +367,8 @@ async def wait_for_stop_or_process(proc: AsyncProcess,
 
         ret = stop_task in done and stop_event.is_set()
 
-    except Exception:
-        logger.exception("unexpected failure while waiting for the process")
+    except Exception as e:
+        logger.exception("unexpected failure while waiting for process pid=%d: %s", proc.pid, e)
 
     for task in [proc_task, stop_task]:
         if task.done():
@@ -424,8 +424,8 @@ async def wait_for_stop_or_client(state: DaemonState,
                     ret = (False, name)
                     break
 
-    except Exception:
-        logger.exception("unexpected failure while waiting for managed clients")
+    except Exception as e:
+        logger.exception("unexpected failure while waiting for managed clients %s: %s", client_names, e)
 
     for task in [*client_tasks, stop_task]:
         if task.done():
@@ -664,7 +664,8 @@ async def start_dbus_adapter(state: DaemonState,
         )
 
     except Exception as e:
-        logger.warning("unable to start dbus-adapter: %s", e)
+        logger.warning("unable to start dbus-adapter for user=%s service=%s log-path=%r: %s",
+                       user, service, log_path, e)
         return None
 
 
@@ -741,21 +742,23 @@ async def run_daemon_async(parser: argparse.Namespace, cfg: wldm.inifile.IniFile
     # greeter back to a known console after a session exits.
     console = wldm.tty.open_console()
     if console is None:
-        logger.critical("unable to open tty device")
+        logger.critical("unable to open console tty for seat %s", cfg.get_str("daemon", "seat"))
         return wldm.EX_FAILURE
 
     if not greeter_tty:
         num = wldm.tty.available(console)
 
         if num is None:
-            logger.critical("unable to get available tty device for greeter")
+            logger.critical("unable to find an available tty for greeter on seat %s",
+                            cfg.get_str("daemon", "seat"))
             os.close(console)
             return wldm.EX_FAILURE
 
         greeter_tty = num
 
     if not wldm.tty.change(console, greeter_tty):
-        logger.critical("unable to switch to tty%d for greeter", greeter_tty)
+        logger.critical("unable to switch console to tty%d for greeter user %s",
+                        greeter_tty, cfg.get_str("greeter", "user"))
         os.close(console)
         return wldm.EX_FAILURE
 
@@ -827,8 +830,9 @@ async def run_daemon_async(parser: argparse.Namespace, cfg: wldm.inifile.IniFile
         await cleanup_async(state)
         raise
 
-    except Exception:
-        logger.exception("unexpected daemon failure")
+    except Exception as e:
+        logger.exception("unexpected daemon failure on seat=%s greeter_tty=%d: %s",
+                         state.seat, state.greeter_tty, e)
         exit_code = wldm.EX_FAILURE
         await cleanup_async(state)
 

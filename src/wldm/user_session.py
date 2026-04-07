@@ -228,8 +228,11 @@ def run_user_session(pw: pwd.struct_passwd,
                                               pw.pw_name, pw.pw_uid, pw.pw_gid, pw.pw_dir,
                                               shell, wrapper, env)
                         except Exception as e:
-                            logger.critical("[child] Failed to exec session command %r: %r",
-                                            env.get("WLDM_SESSION_COMMAND", ""), e)
+                            logger.critical(
+                                "[child] failed to exec user session on %s for user=%s shell=%s wrapper=%r command=%r: %r",
+                                ttydev.filename, pw.pw_name, shell, wrapper,
+                                env.get("WLDM_SESSION_COMMAND", ""),
+                                e)
                             os._exit(1)
                     else:
                         wtmp_line = ttydev.filename
@@ -239,8 +242,10 @@ def run_user_session(pw: pwd.struct_passwd,
                         exitcode = process_exit_status(status)
 
                         if exitcode != 0:
-                            logger.critical("[+] Child exited. status=%s, exitcode=%s",
-                                            status, exitcode)
+                            logger.critical(
+                                "user session child on %s for user=%s exited abnormally: status=%s exitcode=%s",
+                                ttydev.filename, pw.pw_name, status, exitcode,
+                            )
 
                         run_session_hook("post", post_execute, pw, env, ttydev, env.get("WLDM_SESSION_COMMAND", ""))
 

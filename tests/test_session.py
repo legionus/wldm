@@ -376,7 +376,7 @@ def test_run_user_session_parent_path_logs_nonzero_exit(monkeypatch):
     result = wldm.user_session.run_user_session(pw, "login")
 
     assert result == 7
-    assert any("Child exited" in message for message in criticals)
+    assert any("exited abnormally" in message for message in criticals)
 
 
 def test_run_user_session_aborts_when_pre_hook_fails(monkeypatch):

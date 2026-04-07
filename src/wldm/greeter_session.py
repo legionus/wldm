@@ -218,7 +218,10 @@ def run_greeter_session(pw: pwd.struct_passwd,
                             os.execvpe(prog_args[0], prog_args, env)
 
                         except Exception as e:
-                            logger.critical("Failed to exec `%s %s': %r", prog_args[0], prog_args, e)
+                            logger.critical(
+                                "failed to exec greeter command on %s as user=%s gid=%d cwd=%s argv=%r: %r",
+                                ttydev.filename, pw.pw_name, gid, pw.pw_dir, prog_args, e,
+                            )
                             os._exit(1)
 
                     os.close(ipc_fd)
@@ -262,6 +265,7 @@ def cmd_main(parser: argparse.Namespace) -> int:
     try:
         return run_greeter_session(pw, gid, parser.pam_service, parser.tty)
 
-    except Exception:
-        logger.exception("unexpected greeter session failure")
+    except Exception as e:
+        logger.exception("unexpected greeter session failure for user=%s group=%s tty=%s pam-service=%s: %s",
+                         parser.username, parser.group, parser.tty, parser.pam_service, e)
         return wldm.EX_FAILURE

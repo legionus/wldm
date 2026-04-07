@@ -72,7 +72,8 @@ def account_service_profile(username: str) -> Dict[str, str] | None:
     except OverflowError:
         logger.warning("ignoring oversized AccountsService profile: %s", path)
         return None
-    except (OSError, RuntimeError, UnicodeError, ValueError):
+    except (OSError, RuntimeError, UnicodeError, ValueError) as e:
+        logger.debug("unable to read AccountsService profile %s: %s", path, e)
         return None
 
     display_name = data.get("User", "RealName", default="").strip()
@@ -170,7 +171,8 @@ def keyboard_state() -> tuple[list[KeyboardLayout], int]:
         layout_names = keyboard.get_layout_names()
         active_index = keyboard.get_active_layout_index()
 
-    except Exception:
+    except Exception as e:
+        logger.debug("unable to read keyboard layout state: %s", e)
         return [], -1
 
     if not layout_names or not isinstance(active_index, int):
@@ -225,8 +227,8 @@ def setup_greeter_i18n() -> None:
     try:
         locale.setlocale(locale.LC_ALL, "")
 
-    except locale.Error:
-        pass
+    except locale.Error as e:
+        logger.debug("unable to set process locale from environment: %s", e)
 
     gettext.bindtextdomain(GETTEXT_DOMAIN, greeter_locale_path())
     gettext.textdomain(GETTEXT_DOMAIN)

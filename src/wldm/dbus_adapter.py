@@ -587,9 +587,11 @@ def cmd_main(parser: argparse.Namespace) -> int:
         return run_adapter(parser.username, pw.pw_uid, pw.pw_gid, pw.pw_dir, parser.service)
 
     except RuntimeError as e:
-        logger.critical("[!] %s", e)
+        logger.critical("dbus-adapter startup failed for user=%s service=%s: %s",
+                        parser.username, parser.service, e)
         return wldm.EX_FAILURE
 
-    except Exception:
-        logger.exception("unexpected dbus adapter failure")
+    except Exception as e:
+        logger.exception("unexpected dbus adapter failure for user=%s service=%s: %s",
+                         parser.username, parser.service, e)
         return wldm.EX_FAILURE

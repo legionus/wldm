@@ -7,11 +7,13 @@ from ctypes import c_char_p, c_void_p, create_string_buffer
 from ctypes.util import find_library
 from typing import Any
 
+import wldm
 from wldm._libc import strlen
 from wldm.secret import SecretBytes
 
 
 _gtk: ctypes.CDLL | None = None
+logger = wldm.logger
 
 
 def _load_library(name: str) -> ctypes.CDLL | None:
@@ -58,7 +60,8 @@ def _editable_pointer(editable: Any) -> c_void_p | None:
 
     try:
         return c_void_p(_pycapsule_get_pointer(pointer, None))
-    except Exception:
+    except Exception as e:
+        logger.debug("unable to extract Gtk editable pointer, using text fallback: %s", e)
         return None
 
 
