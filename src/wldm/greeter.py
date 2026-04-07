@@ -504,7 +504,7 @@ class LoginApp:
         if password_entry is not None and hasattr(password_entry, "set_sensitive"):
             password_entry.set_sensitive(prompt_requires_input and not self.auth_in_progress)
         if password_entry is not None and hasattr(password_entry, "set_visible"):
-            password_entry.set_visible(conversation_pending)
+            password_entry.set_visible(prompt_requires_input)
         if password_entry is not None and hasattr(password_entry, "set_visibility"):
             password_entry.set_visibility(not prompt_is_secret)
         if password_entry is not None and hasattr(password_entry, "set_placeholder_text"):
@@ -513,7 +513,7 @@ class LoginApp:
             elif prompt_style == "visible":
                 password_entry.set_placeholder_text(prompt_text or _("Response"))
             else:
-                password_entry.set_placeholder_text(_("Response"))
+                password_entry.set_placeholder_text("")
 
         login_button = getattr(self, "login_button", None)
         if login_button is not None and hasattr(login_button, "set_sensitive"):
@@ -551,9 +551,9 @@ class LoginApp:
             self.password_entry.set_text("")
 
         if text:
-            self.set_status(text)
+            self.set_status(text, error=style == "error")
 
-        if self.password_entry is not None and hasattr(self.password_entry, "grab_focus"):
+        if self.password_entry is not None and style in {"secret", "visible"} and hasattr(self.password_entry, "grab_focus"):
             self.password_entry.grab_focus()
 
     def set_session_ready(self) -> None:

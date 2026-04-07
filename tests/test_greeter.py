@@ -1653,7 +1653,7 @@ def test_update_auth_widgets_for_initial_stage(monkeypatch):
     assert app.password_entry.sensitive is False
     assert app.password_entry.visible is False
     assert app.password_entry.visibility is True
-    assert app.password_entry.placeholder_text == "Response"
+    assert app.password_entry.placeholder_text == ""
     assert app.sessions_entry.sensitive is False
     assert app.sessions_entry.visible is False
     assert app.login_button.sensitive is True
@@ -1727,6 +1727,149 @@ def test_set_conversation_prompt_updates_visible_prompt_widgets(monkeypatch):
     assert app.sessions_entry.visible is False
     assert app.login_button.label == "Continue"
     assert app.status_label.text == "Verification code"
+
+
+def test_set_conversation_prompt_hides_entry_for_info_prompt(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+
+    class FakeEntry:
+        def __init__(self):
+            self.text = "old"
+            self.focused = False
+            self.sensitive = None
+            self.visible = None
+            self.visibility = None
+            self.placeholder_text = None
+
+        def set_text(self, text):
+            self.text = text
+
+        def grab_focus(self):
+            self.focused = True
+
+        def set_sensitive(self, value):
+            self.sensitive = value
+
+        def set_visible(self, value):
+            self.visible = value
+
+        def set_visibility(self, value):
+            self.visibility = value
+
+        def set_placeholder_text(self, text):
+            self.placeholder_text = text
+
+    class FakeButton:
+        def __init__(self):
+            self.sensitive = None
+            self.label = None
+
+        def set_sensitive(self, value):
+            self.sensitive = value
+
+        def set_label(self, text):
+            self.label = text
+
+    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app.auth_in_progress = False
+    app.conversation_pending = False
+    app.conversation_prompt_style = ""
+    app.conversation_prompt_text = ""
+    app.session_ready = False
+    app.username_entry = FakeEntry()
+    app.password_entry = FakeEntry()
+    app.sessions_entry = FakeEntry()
+    app.login_button = FakeButton()
+    app.session_label = DummyLabel()
+    app.status_label = DummyLabel()
+
+    greeter.LoginApp.set_conversation_prompt(app, "info", "Use your hardware token")
+
+    assert app.password_entry.text == ""
+    assert app.password_entry.focused is False
+    assert app.password_entry.sensitive is False
+    assert app.password_entry.visible is False
+    assert app.password_entry.placeholder_text == ""
+    assert app.login_button.label == "Continue"
+    assert app.status_label.text == "Use your hardware token"
+
+
+def test_set_conversation_prompt_marks_error_prompt_as_error(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+
+    class FakeEntry:
+        def __init__(self):
+            self.text = "old"
+            self.focused = False
+            self.sensitive = None
+            self.visible = None
+            self.visibility = None
+            self.placeholder_text = None
+
+        def set_text(self, text):
+            self.text = text
+
+        def grab_focus(self):
+            self.focused = True
+
+        def set_sensitive(self, value):
+            self.sensitive = value
+
+        def set_visible(self, value):
+            self.visible = value
+
+        def set_visibility(self, value):
+            self.visibility = value
+
+        def set_placeholder_text(self, text):
+            self.placeholder_text = text
+
+    class FakeButton:
+        def __init__(self):
+            self.sensitive = None
+            self.label = None
+
+        def set_sensitive(self, value):
+            self.sensitive = value
+
+        def set_label(self, text):
+            self.label = text
+
+    class FakeStatusLabel:
+        def __init__(self):
+            self.text = None
+            self.added = []
+            self.removed = []
+
+        def set_text(self, text):
+            self.text = text
+
+        def add_css_class(self, name):
+            self.added.append(name)
+
+        def remove_css_class(self, name):
+            self.removed.append(name)
+
+    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app.auth_in_progress = False
+    app.conversation_pending = False
+    app.conversation_prompt_style = ""
+    app.conversation_prompt_text = ""
+    app.session_ready = False
+    app.username_entry = FakeEntry()
+    app.password_entry = FakeEntry()
+    app.sessions_entry = FakeEntry()
+    app.login_button = FakeButton()
+    app.session_label = DummyLabel()
+    app.status_label = FakeStatusLabel()
+
+    greeter.LoginApp.set_conversation_prompt(app, "error", "Authentication failed")
+
+    assert app.password_entry.visible is False
+    assert app.password_entry.focused is False
+    assert app.login_button.label == "Continue"
+    assert app.status_label.text == "Authentication failed"
+    assert app.status_label.added == ["status-error"]
 
 
 def test_set_session_ready_updates_post_auth_widgets(monkeypatch):
