@@ -899,15 +899,27 @@ def test_login_click_remembers_selected_session_before_username_clear(monkeypatc
 
     app = greeter.LoginApp.__new__(greeter.LoginApp)
     app.auth_in_progress = False
+    app.conversation_pending = False
+    app.conversation_prompt_style = ""
+    app.conversation_prompt_text = ""
+    app.session_ready = False
+    app.auth_username = ""
     app.last_username = ""
     app.last_session_command = ""
     app.username_entry = FakeEntry("alice")
     app.password_entry = FakeEntry("secret")
-    app.set_auth_state = lambda busy: None
+    app.set_auth_state = lambda busy: setattr(app, "auth_in_progress", busy)
+    app.update_auth_widgets = lambda: None
     app.set_status = lambda message, error=False: None
-    app.send_recv_answer = lambda data: {"ok": True, "payload": {"verified": True}}
     app.get_session_command = lambda: "labwc"
     app.get_selected_session = lambda: {"desktop_names": ["labwc"]}
+    app.send_recv_answer = lambda data: (
+        {"ok": True, "payload": {"state": "pending", "message": {"style": "secret", "text": "Password:"}}}
+        if data["action"] == greeter.wldm.protocol.ACTION_CREATE_SESSION else
+        {"ok": True, "payload": {"state": "ready"}}
+        if data["action"] == greeter.wldm.protocol.ACTION_CONTINUE_SESSION else
+        {"ok": True, "payload": {}}
+    )
 
     class DummySecret:
         def __len__(self):
@@ -918,6 +930,8 @@ def test_login_click_remembers_selected_session_before_username_clear(monkeypatc
 
     monkeypatch.setattr(greeter.gtk_ffi, "read_password_secret", lambda entry: DummySecret())
 
+    greeter.LoginApp.on_login_clicked(app)
+    greeter.LoginApp.on_login_clicked(app)
     greeter.LoginApp.on_login_clicked(app)
 
     assert app.last_username == "alice"
@@ -1006,6 +1020,11 @@ def test_on_clock_tick_polls_session_finished_event_and_reenables_inputs(monkeyp
     app.client = FakeClient()
     app.quit = False
     app.auth_in_progress = True
+    app.conversation_pending = False
+    app.conversation_prompt_style = ""
+    app.conversation_prompt_text = ""
+    app.session_ready = False
+    app.auth_username = ""
     app.last_username = ""
     app.last_session_command = ""
     app.username_entry = FakeEntry("alice")
@@ -1023,7 +1042,7 @@ def test_on_clock_tick_polls_session_finished_event_and_reenables_inputs(monkeyp
     assert app.password_entry.text == ""
     assert app.username_entry.focused is True
     assert app.username_entry.sensitive is True
-    assert app.password_entry.sensitive is True
+    assert app.password_entry.sensitive is False
     assert app.status_label.text == "Session finished."
 
 
@@ -1188,6 +1207,11 @@ def test_on_login_clicked_sets_failure_and_clears_password(monkeypatch):
     app.sessions_entry = types.SimpleNamespace(
         get_selected_item=lambda: types.SimpleNamespace(get_string=lambda: "Default")
     )
+    app.conversation_pending = True
+    app.conversation_prompt_style = "secret"
+    app.conversation_prompt_text = "Password:"
+    app.session_ready = False
+    app.auth_username = "alice"
     monkeypatch.setattr(app, "send_recv_answer", lambda data: {"ok": False})
 
     app.on_login_clicked()
@@ -1237,6 +1261,9 @@ def test_on_login_clicked_includes_desktop_names_in_auth_request(monkeypatch):
 
     monkeypatch.setattr(app, "send_recv_answer", fake_send_recv_answer)
 
+    app.on_login_clicked()
+    app.password_entry.set_text("secret")
+    app.on_login_clicked()
     app.on_login_clicked()
 
     assert sent[-1]["action"] == greeter.wldm.protocol.ACTION_START_SESSION
@@ -1310,12 +1337,16 @@ def test_on_login_clicked_rejects_overlong_password(monkeypatch):
     app.username_entry = FakeEntry("alice")
     app.password_entry = FakeEntry("a" * 257)
     app.status_label = FakeLabel()
+    app.conversation_pending = True
+    app.conversation_prompt_style = "secret"
+    app.conversation_prompt_text = "Password:"
+    app.session_ready = False
     monkeypatch.setattr(app, "send_recv_answer", lambda data: (_ for _ in ()).throw(AssertionError("unexpected send")))
 
     app.on_login_clicked()
 
     assert app.status_label.text == (
-        f"Password must be {greeter.wldm.protocol.AUTH_FIELD_MAX_LENGTH} bytes or less."
+        f"Response must be {greeter.wldm.protocol.AUTH_FIELD_MAX_LENGTH} bytes or less."
     )
     assert app.password_entry.focused is True
 
@@ -1346,15 +1377,392 @@ def test_on_login_clicked_sets_success_message_and_clears_username(monkeypatch):
     app.username_entry = FakeEntry("alice")
     app.password_entry = FakeEntry("secret")
     app.status_label = FakeLabel()
-    app.sessions = []
+    app.sessions = [{"name": "Sway", "command": "sway", "comment": "Sway", "desktop_names": ["sway"]}]
+    app.sessions_entry = types.SimpleNamespace(
+        get_selected_item=lambda: types.SimpleNamespace(get_string=lambda: "Sway")
+    )
+    monkeypatch.setattr(
+        app,
+        "send_recv_answer",
+        lambda data: (
+            {"ok": True, "payload": {"state": "pending", "message": {"style": "secret", "text": "Password:"}}}
+            if data["action"] == greeter.wldm.protocol.ACTION_CREATE_SESSION else
+            {"ok": True, "payload": {"state": "ready"}}
+            if data["action"] == greeter.wldm.protocol.ACTION_CONTINUE_SESSION else
+            {"ok": True, "payload": {}}
+        ),
+    )
+
+    app.on_login_clicked()
+    app.password_entry.set_text("secret")
+    app.on_login_clicked()
+    assert app.status_label.text == "Authentication accepted. Select a session."
+    app.on_login_clicked()
+
+    assert app.status_label.text == "Authentication accepted. Waiting for session..."
+    assert app.last_username == "alice"
+    assert app.username_entry.text == ""
+    assert app.password_entry.text == ""
+
+
+def test_read_prompt_response_returns_none_without_password_entry(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app.password_entry = None
+    app.conversation_prompt_style = "secret"
+    app.conversation_prompt_text = "Password:"
+
+    assert greeter.LoginApp.read_prompt_response(app) is None
+
+
+def test_read_prompt_response_returns_empty_secret_for_info_prompt(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+
+    class FakeEntry:
+        def __init__(self):
+            self.text = "ignored"
+
+        def set_text(self, text):
+            self.text = text
+
+    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app.password_entry = FakeEntry()
+    app.conversation_prompt_style = "info"
+    app.conversation_prompt_text = "Info"
+
+    response = greeter.LoginApp.read_prompt_response(app)
+
+    assert response is not None
+    assert response.as_bytes() == b""
+    assert app.password_entry.text == ""
+
+
+def test_read_prompt_response_rejects_empty_secret_prompt(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+
+    class FakeEntry:
+        def __init__(self):
+            self.focused = False
+
+        def grab_focus(self):
+            self.focused = True
+
+    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app.password_entry = FakeEntry()
+    app.conversation_prompt_style = "secret"
+    app.conversation_prompt_text = "Password:"
+    app.status_label = DummyLabel()
+
+    class EmptySecret:
+        def __len__(self):
+            return 0
+
+        def clear(self):
+            return None
+
+    monkeypatch.setattr(greeter.gtk_ffi, "read_password_secret", lambda entry: EmptySecret())
+
+    assert greeter.LoginApp.read_prompt_response(app) is None
+    assert app.status_label.text == "Password:"
+    assert app.password_entry.focused is True
+
+
+def test_start_selected_session_sends_start_request(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    sent = {}
+    app.send_recv_answer = lambda data: sent.update(data) or {"ok": True, "payload": {}}
+
+    assert greeter.LoginApp.start_selected_session(app, "sway", ["sway", "wlroots"]) is True
+    assert sent["action"] == greeter.wldm.protocol.ACTION_START_SESSION
+    assert sent["payload"] == {"command": "sway", "desktop_names": ["sway", "wlroots"]}
+
+
+def test_handle_conversation_answer_sets_pending_prompt(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app.password_entry = types.SimpleNamespace(set_text=lambda text: None, grab_focus=lambda: None)
+    app.status_label = DummyLabel()
+    app.username_entry = None
     app.sessions_entry = None
-    monkeypatch.setattr(app, "send_recv_answer",
-                        lambda data: {"ok": True, "payload": {"verified": True}})
+    app.login_button = None
+    app.auth_in_progress = False
+    app.conversation_pending = False
+    app.session_ready = False
+    app.auth_username = "alice"
+
+    result = greeter.LoginApp.handle_conversation_answer(
+        app,
+        {"ok": True, "payload": {"state": "pending", "message": {"style": "visible", "text": "Code:"}}},
+    )
+
+    assert result == "pending"
+    assert app.conversation_pending is True
+    assert app.conversation_prompt_style == "visible"
+    assert app.status_label.text == "Code:"
+
+
+def test_handle_conversation_answer_marks_session_ready(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app.password_entry = None
+    app.status_label = DummyLabel()
+    app.username_entry = None
+    app.sessions_entry = None
+    app.login_button = None
+    app.auth_in_progress = False
+    app.conversation_pending = True
+    app.conversation_prompt_style = "secret"
+    app.conversation_prompt_text = "Password:"
+    app.session_ready = False
+    app.auth_username = "alice"
+
+    result = greeter.LoginApp.handle_conversation_answer(app, {"ok": True, "payload": {"state": "ready"}})
+
+    assert result == "ready"
+    assert app.session_ready is True
+    assert app.conversation_pending is False
+    assert app.status_label.text == "Authentication accepted. Select a session."
+
+
+def test_handle_conversation_answer_rejects_invalid_style(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app.password_entry = None
+    app.status_label = DummyLabel()
+    app.username_entry = None
+    app.sessions_entry = None
+    app.login_button = None
+    app.auth_in_progress = False
+    app.conversation_pending = False
+    app.session_ready = False
+    app.auth_username = "alice"
+    warnings = []
+
+    monkeypatch.setattr(greeter.logger, "warning", lambda msg, *args: warnings.append(msg % args if args else msg))
+
+    result = greeter.LoginApp.handle_conversation_answer(
+        app,
+        {"ok": True, "payload": {"state": "pending", "message": {"style": "otp", "text": "Code:"}}},
+    )
+
+    assert result == "failed"
+    assert app.conversation_pending is False
+    assert any("unsupported auth conversation step" in item for item in warnings)
+
+
+def test_handle_conversation_answer_rejects_legacy_verified_failure(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+    app = greeter.LoginApp.__new__(greeter.LoginApp)
+
+    assert greeter.LoginApp.handle_conversation_answer(
+        app,
+        {"ok": True, "payload": {"verified": False}},
+    ) == "failed"
+
+
+def test_handle_conversation_answer_rejects_unsuccessful_reply(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    cleared = []
+    app.clear_conversation_state = lambda: cleared.append(True)
+
+    result = greeter.LoginApp.handle_conversation_answer(
+        app,
+        {"ok": False, "payload": {}},
+    )
+
+    assert result == "failed"
+    assert cleared == [True]
+
+
+def test_handle_conversation_answer_rejects_unexpected_state(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    cleared = []
+    warnings = []
+    app.clear_conversation_state = lambda: cleared.append(True)
+
+    monkeypatch.setattr(greeter.logger, "warning", lambda msg, *args: warnings.append(msg % args if args else msg))
+
+    result = greeter.LoginApp.handle_conversation_answer(
+        app,
+        {"ok": True, "payload": {"state": "mystery"}},
+    )
+
+    assert result == "failed"
+    assert cleared == [True]
+    assert any("unexpected auth conversation state" in item for item in warnings)
+
+
+def test_on_login_clicked_starts_selected_session_after_ready(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+
+    class FakeEntry:
+        def __init__(self, text=""):
+            self.text = text
+
+        def get_text(self):
+            return self.text
+
+        def set_text(self, text):
+            self.text = text
+
+    app = greeter.LoginApp(client=DummyClient())
+    app.username_entry = FakeEntry("alice")
+    app.password_entry = FakeEntry("")
+    app.status_label = DummyLabel()
+    app.auth_username = "alice"
+    app.session_ready = True
+    app.conversation_pending = False
+    app.sessions = [{"name": "Sway", "command": "sway", "comment": "Sway", "desktop_names": ["sway"]}]
+    app.sessions_entry = types.SimpleNamespace(
+        get_selected_item=lambda: types.SimpleNamespace(get_string=lambda: "Sway")
+    )
+    monkeypatch.setattr(app, "send_recv_answer", lambda data: {"ok": True, "payload": {}})
 
     app.on_login_clicked()
 
     assert app.status_label.text == "Authentication accepted. Waiting for session..."
     assert app.last_username == "alice"
+    assert app.last_session_command == "sway"
+    assert app.username_entry.text == ""
+
+
+def test_on_login_clicked_returns_early_without_entries(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app.username_entry = None
+    app.password_entry = None
+    app.auth_in_progress = False
+
+    assert greeter.LoginApp.on_login_clicked(app) is None
+
+
+def test_on_login_clicked_returns_early_when_auth_is_in_progress(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app.username_entry = types.SimpleNamespace()
+    app.password_entry = types.SimpleNamespace()
+    app.auth_in_progress = True
+
+    assert greeter.LoginApp.on_login_clicked(app) is None
+
+
+def test_on_login_clicked_reports_failed_session_start_after_ready(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+
+    class FakeEntry:
+        def __init__(self, text=""):
+            self.text = text
+
+        def get_text(self):
+            return self.text
+
+        def set_text(self, text):
+            self.text = text
+
+    app = greeter.LoginApp(client=DummyClient())
+    app.username_entry = FakeEntry("alice")
+    app.password_entry = FakeEntry("")
+    app.status_label = DummyLabel()
+    app.auth_username = "alice"
+    app.session_ready = True
+    app.conversation_pending = False
+    app.sessions = [{"name": "Sway", "command": "sway", "comment": "Sway", "desktop_names": ["sway"]}]
+    app.sessions_entry = types.SimpleNamespace(
+        get_selected_item=lambda: types.SimpleNamespace(get_string=lambda: "Sway")
+    )
+    monkeypatch.setattr(app, "send_recv_answer", lambda data: {"ok": False, "payload": {}})
+
+    app.on_login_clicked()
+
+    assert app.status_label.text == "Unable to start session."
+    assert app.auth_in_progress is False
+
+
+def test_on_login_clicked_legacy_auth_fails_on_empty_password(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+
+    class FakeEntry:
+        def __init__(self, text=""):
+            self.text = text
+            self.focused = False
+
+        def get_text(self):
+            return self.text
+
+        def set_text(self, text):
+            self.text = text
+
+        def grab_focus(self):
+            self.focused = True
+
+    class EmptySecret:
+        def __len__(self):
+            return 0
+
+        def clear(self):
+            return None
+
+    app = greeter.LoginApp(client=DummyClient())
+    app.username_entry = FakeEntry("alice")
+    app.password_entry = FakeEntry("")
+    app.status_label = DummyLabel()
+    monkeypatch.setattr(
+        app,
+        "send_recv_answer",
+        lambda data: {"ok": False, "error": {"code": "unknown_action"}, "payload": {}},
+    )
+    monkeypatch.setattr(greeter.gtk_ffi, "read_password_secret", lambda entry: EmptySecret())
+
+    app.on_login_clicked()
+
+    assert app.status_label.text == "Enter a password."
+    assert app.password_entry.focused is True
+    assert app.auth_in_progress is True
+
+
+def test_on_login_clicked_legacy_auth_success_after_unknown_action(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+
+    class FakeEntry:
+        def __init__(self, text=""):
+            self.text = text
+
+        def get_text(self):
+            return self.text
+
+        def set_text(self, text):
+            self.text = text
+
+        def grab_focus(self):
+            return None
+
+    app = greeter.LoginApp(client=DummyClient())
+    app.username_entry = FakeEntry("alice")
+    app.password_entry = FakeEntry("secret")
+    app.status_label = DummyLabel()
+    app.sessions = [{"name": "Sway", "command": "sway", "comment": "Sway", "desktop_names": ["sway"]}]
+    app.sessions_entry = types.SimpleNamespace(
+        get_selected_item=lambda: types.SimpleNamespace(get_string=lambda: "Sway")
+    )
+    calls = []
+
+    def fake_send_recv_answer(data):
+        calls.append(data["action"])
+        return {"ok": False, "error": {"code": "unknown_action"}, "payload": {}}
+
+    monkeypatch.setattr(app, "send_recv_answer", fake_send_recv_answer)
+    monkeypatch.setattr(greeter.gtk_ffi, "read_password_secret", lambda entry: greeter.wldm.secret.SecretBytes("secret"))
+    monkeypatch.setattr(app, "complete_authentication_legacy", lambda *args: True)
+
+    app.on_login_clicked()
+
+    assert calls == [greeter.wldm.protocol.ACTION_CREATE_SESSION]
+    assert app.status_label.text == "Authentication accepted. Waiting for session..."
+    assert app.last_username == "alice"
+    assert app.last_session_command == "sway"
     assert app.username_entry.text == ""
     assert app.password_entry.text == ""
 
