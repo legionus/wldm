@@ -9,6 +9,11 @@ This is an internal protocol, not a public compatibility promise.
 The authentication model is a request/response PAM conversation, not a single
 username/password exchange.
 
+The daemon drives that conversation through a private `pam-worker` helper. The
+greeter never talks to PAM directly and the daemon does not try to resume PAM
+callbacks in place. The daemon/worker wire contract is documented separately in
+[`pam-worker-protocol.md`](pam-worker-protocol.md).
+
 ## Transport
 
 - The daemon creates one private connected `socketpair()` per internal client.

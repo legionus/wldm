@@ -14,6 +14,8 @@ whole login flow in one privileged address space.
 The main pieces are:
 
 - `wldm` daemon: root-owned supervisor and source of truth
+- `wldm pam-worker`: blocking PAM authentication worker for one greeter
+  conversation
 - `wldm greeter-session`: PAM-backed launcher and supervisor for the greeter
   compositor
 - `wldm greeter`: GTK login UI
@@ -28,6 +30,7 @@ Typical runtime layout:
 ```text
 systemd
 └─ wldm                 (root daemon)
+   ├─ wldm pam-worker
    └─ wldm greeter-session
       └─ cage
          └─ wldm greeter
@@ -38,6 +41,7 @@ When D-Bus integration is enabled, the daemon also starts the adapter:
 ```text
 systemd
 └─ wldm                 (root daemon)
+   ├─ wldm pam-worker
    ├─ wldm greeter-session
    │  └─ cage
    │     └─ wldm greeter
@@ -65,13 +69,32 @@ The daemon in [`src/wldm/daemon.py`](../src/wldm/daemon.py):
 
 - reads configuration
 - opens and switches virtual terminals
-- authenticates users through PAM
+- brokers greeter authentication conversations through `pam-worker`
 - starts greeter, user-session, and optional D-Bus adapter subprocesses
 - supervises child processes and restart limits
 - exposes a small read-only state snapshot to internal clients
 - handles power actions such as reboot and poweroff
 
 The daemon is the only process expected to run as `root`.
+
+### PAM Worker
+
+[`src/wldm/pam_worker.py`](../src/wldm/pam_worker.py) is a small privileged
+helper dedicated to one in-progress greeter authentication attempt.
+Its private daemon-facing wire contract is documented in
+[`pam-worker-protocol.md`](pam-worker-protocol.md).
+
+It is responsible for:
+
+- starting a PAM authentication transaction for the requested username
+- setting PAM items such as `PAM_TTY`
+- translating PAM conversation callbacks into greeter prompt styles
+- blocking inside the PAM callback until the daemon forwards the next greeter
+  answer
+- reporting `prompt`, `ready`, or `failed` results back to the daemon
+
+The worker does not open user sessions, does not switch VTs, and does not
+launch user programs. It only owns the blocking PAM authentication flow.
 
 ### Greeter Session Wrapper
 
@@ -160,7 +183,10 @@ Properties of the current transport:
 
 Current actions include:
 
-- `auth`
+- `create-session`
+- `continue-session`
+- `cancel-session`
+- `start-session`
 - `get-state`
 - `poweroff`
 - `reboot`
