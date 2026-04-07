@@ -147,10 +147,18 @@ def test_process_request_accepts_poweroff_and_reboot():
     cfg["daemon"]["hibernate-command"] = "do-hibernate"
 
     state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
-    poweroff = wldm.daemon.process_request(state, wldm.protocol.new_request(wldm.protocol.ACTION_POWEROFF, {}), cfg)
-    reboot = wldm.daemon.process_request(state, wldm.protocol.new_request(wldm.protocol.ACTION_REBOOT, {}), cfg)
-    suspend = wldm.daemon.process_request(state, wldm.protocol.new_request(wldm.protocol.ACTION_SUSPEND, {}), cfg)
-    hibernate = wldm.daemon.process_request(state, wldm.protocol.new_request(wldm.protocol.ACTION_HIBERNATE, {}), cfg)
+    poweroff = wldm.daemon.process_request(
+        state, "greeter", wldm.protocol.new_request(wldm.protocol.ACTION_POWEROFF, {}), cfg
+    )
+    reboot = wldm.daemon.process_request(
+        state, "greeter", wldm.protocol.new_request(wldm.protocol.ACTION_REBOOT, {}), cfg
+    )
+    suspend = wldm.daemon.process_request(
+        state, "greeter", wldm.protocol.new_request(wldm.protocol.ACTION_SUSPEND, {}), cfg
+    )
+    hibernate = wldm.daemon.process_request(
+        state, "greeter", wldm.protocol.new_request(wldm.protocol.ACTION_HIBERNATE, {}), cfg
+    )
 
     assert poweroff.response["payload"] == {"accepted": True}
     assert poweroff.control_action == wldm.protocol.ACTION_POWEROFF
@@ -166,13 +174,17 @@ def test_process_request_rejects_disabled_control_actions():
     cfg = make_config()
     state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
 
-    outcome = wldm.daemon.process_request(state, wldm.protocol.new_request(wldm.protocol.ACTION_SUSPEND, {}), cfg)
+    outcome = wldm.daemon.process_request(
+        state, "greeter", wldm.protocol.new_request(wldm.protocol.ACTION_SUSPEND, {}), cfg
+    )
 
     assert outcome.response["error"]["code"] == "action_disabled"
 
 
 def test_process_request_replies_with_bad_request_for_unknown_payload():
-    outcome = wldm.daemon.process_request(wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3), {}, make_config())
+    outcome = wldm.daemon.process_request(
+        wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3), "greeter", {}, make_config()
+    )
 
     assert outcome.response == {
         "v": 1,
@@ -197,7 +209,7 @@ def test_process_request_rejects_overlong_username():
         },
     )
 
-    outcome = wldm.daemon.process_request(state, req, make_config())
+    outcome = wldm.daemon.process_request(state, "greeter", req, make_config())
 
     assert outcome.response["error"] == {"code": "bad_request", "message": "Username is too long"}
 
@@ -214,7 +226,7 @@ def test_process_request_rejects_overlong_password():
         },
     )
 
-    outcome = wldm.daemon.process_request(state, req, make_config())
+    outcome = wldm.daemon.process_request(state, "greeter", req, make_config())
 
     assert outcome.response["error"] == {"code": "bad_request", "message": "Password is too long"}
 
@@ -233,7 +245,7 @@ def test_process_request_does_not_start_session_for_failed_auth(monkeypatch):
 
     monkeypatch.setattr(wldm.daemon, "verify_creds", lambda username, password: False)
 
-    outcome = wldm.daemon.process_request(state, req, make_config())
+    outcome = wldm.daemon.process_request(state, "greeter", req, make_config())
 
     assert outcome.response["payload"] == {"verified": False}
     assert isinstance(req["payload"]["username"], wldm.secret.SecretBytes)
@@ -258,7 +270,7 @@ def test_process_request_starts_session_after_successful_auth(monkeypatch):
 
     monkeypatch.setattr(wldm.daemon, "verify_creds", lambda username, password: True)
 
-    outcome = wldm.daemon.process_request(state, req, make_config())
+    outcome = wldm.daemon.process_request(state, "greeter", req, make_config())
 
     assert outcome.response["payload"] == {"verified": True}
     assert isinstance(req["payload"]["username"], wldm.secret.SecretBytes)
@@ -295,7 +307,7 @@ def test_process_request_preserves_username_when_auth_clears_secret(monkeypatch)
 
     monkeypatch.setattr(wldm.daemon, "verify_creds", fake_verify_creds)
 
-    outcome = wldm.daemon.process_request(state, req, make_config())
+    outcome = wldm.daemon.process_request(state, "greeter", req, make_config())
 
     assert outcome.session_username == "alice"
 
@@ -304,9 +316,108 @@ def test_process_request_replies_with_unknown_action_error():
     req = wldm.protocol.new_request("mystery", {})
     state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
 
-    outcome = wldm.daemon.process_request(state, req, make_config())
+    outcome = wldm.daemon.process_request(state, "greeter", req, make_config())
 
     assert outcome.response["error"]["code"] == "unknown_action"
+
+
+def test_process_request_create_session_returns_secret_prompt():
+    state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
+    req = wldm.protocol.new_request(
+        wldm.protocol.ACTION_CREATE_SESSION,
+        {"username": wldm.secret.SecretBytes(b"alice")},
+    )
+
+    outcome = wldm.daemon.process_request(state, "greeter", req, make_config())
+
+    assert outcome.response["payload"] == {
+        "state": "pending",
+        "message": {"style": "secret", "text": "Password:"},
+    }
+    assert state.clients["greeter"].auth_session == wldm.daemon.AuthSessionState(username="alice", verified=False)
+    assert req["payload"]["username"].as_bytes() == b""
+
+
+def test_process_request_continue_session_requires_configured_session():
+    state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
+    req = wldm.protocol.new_request(
+        wldm.protocol.ACTION_CONTINUE_SESSION,
+        {"response": wldm.secret.SecretBytes(b"secret")},
+    )
+
+    outcome = wldm.daemon.process_request(state, "greeter", req, make_config())
+
+    assert outcome.response["error"] == {
+        "code": "session_not_found",
+        "message": "No session is being configured",
+    }
+
+
+def test_process_request_continue_session_marks_session_ready(monkeypatch):
+    state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
+    state.clients["greeter"].auth_session = wldm.daemon.AuthSessionState(username="alice", verified=False)
+    req = wldm.protocol.new_request(
+        wldm.protocol.ACTION_CONTINUE_SESSION,
+        {"response": wldm.secret.SecretBytes(b"secret")},
+    )
+
+    monkeypatch.setattr(wldm.daemon, "verify_creds", lambda username, password: True)
+
+    outcome = wldm.daemon.process_request(state, "greeter", req, make_config())
+
+    assert outcome.response["payload"] == {"state": "ready"}
+    assert state.clients["greeter"].auth_session == wldm.daemon.AuthSessionState(username="alice", verified=True)
+    assert req["payload"]["response"].as_bytes() == b""
+
+
+def test_process_request_start_session_requires_ready_state():
+    state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
+    state.clients["greeter"].auth_session = wldm.daemon.AuthSessionState(username="alice", verified=False)
+    req = wldm.protocol.new_request(
+        wldm.protocol.ACTION_START_SESSION,
+        {"command": "sway", "desktop_names": ["sway"]},
+    )
+
+    outcome = wldm.daemon.process_request(state, "greeter", req, make_config())
+
+    assert outcome.response["error"] == {
+        "code": "session_not_ready",
+        "message": "Session is not ready",
+    }
+
+
+def test_process_request_start_session_after_ready():
+    state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
+    state.clients["greeter"].auth_session = wldm.daemon.AuthSessionState(username="alice", verified=True)
+    req = wldm.protocol.new_request(
+        wldm.protocol.ACTION_START_SESSION,
+        {"command": "startplasma-wayland --debug", "desktop_names": ["plasma", "kde"]},
+    )
+
+    outcome = wldm.daemon.process_request(state, "greeter", req, make_config())
+
+    assert outcome.response["ok"] is True
+    assert outcome.event == {
+        "v": 1,
+        "type": "event",
+        "event": wldm.protocol.EVENT_SESSION_STARTING,
+        "payload": {"command": "startplasma-wayland --debug", "desktop_names": ["plasma", "kde"]},
+    }
+    assert outcome.session_username == "alice"
+    assert outcome.session_command == "startplasma-wayland --debug"
+    assert outcome.session_desktop_names == ["plasma", "kde"]
+    assert state.clients["greeter"].auth_session is None
+
+
+def test_process_request_cancel_session_clears_auth_state():
+    state = wldm.daemon.DaemonState("/srv/wldm/wldm.sh", 3)
+    state.clients["greeter"].auth_session = wldm.daemon.AuthSessionState(username="alice", verified=False)
+    req = wldm.protocol.new_request(wldm.protocol.ACTION_CANCEL_SESSION, {})
+
+    outcome = wldm.daemon.process_request(state, "greeter", req, make_config())
+
+    assert outcome.response["ok"] is True
+    assert state.clients["greeter"].auth_session is None
 
 
 def test_load_last_session_reads_state_file(tmp_path):
@@ -375,6 +486,7 @@ def test_process_request_returns_state_snapshot():
 
     outcome = wldm.daemon.process_request(
         state,
+        "greeter",
         wldm.protocol.new_request(wldm.protocol.ACTION_GET_STATE, {}),
         make_config(seat="seat9"),
     )

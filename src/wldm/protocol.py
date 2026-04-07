@@ -15,6 +15,10 @@ from wldm.secret import SecretBytes
 PROTOCOL_VERSION = 1
 
 ACTION_AUTH = "auth"
+ACTION_CREATE_SESSION = "create-session"
+ACTION_CONTINUE_SESSION = "continue-session"
+ACTION_CANCEL_SESSION = "cancel-session"
+ACTION_START_SESSION = "start-session"
 ACTION_GET_STATE = "get-state"
 ACTION_POWEROFF = "poweroff"
 ACTION_REBOOT = "reboot"
@@ -125,6 +129,18 @@ def new_event(name: str, payload: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def new_conversation_response(request: Dict[str, Any],
+                              state: str,
+                              style: str = "",
+                              text: str = "") -> Dict[str, Any]:
+    payload: Dict[str, Any] = {"state": state}
+
+    if style or text:
+        payload["message"] = {"style": style, "text": text}
+
+    return new_response(request, ok=True, payload=payload)
+
+
 def _encode_bool(value: bool) -> bytes:
     return bytes([1 if value else 0])
 
@@ -225,6 +241,17 @@ def _encode_response_payload(body: bytearray, action: str, payload: Dict[str, An
     if action == ACTION_AUTH:
         body.extend(_encode_bool(bool(payload.get("verified", False))))
 
+    elif action in {ACTION_CREATE_SESSION, ACTION_CONTINUE_SESSION}:
+        body.extend(_encode_text(str(payload.get("state", ""))))
+        message = payload.get("message")
+        if isinstance(message, dict):
+            body.extend(_encode_bool(True))
+            message_payload = message
+            body.extend(_encode_text(str(message_payload.get("style", ""))))
+            body.extend(_encode_text(str(message_payload.get("text", ""))))
+        else:
+            body.extend(_encode_bool(False))
+
     elif action == ACTION_GET_STATE:
         body.extend(_encode_text(str(payload.get("seat", ""))))
         body.extend(_encode_bool(bool(payload.get("greeter_ready", False))))
@@ -245,6 +272,18 @@ def _decode_response_payload(action: str, payload: memoryview, offset: int) -> t
     if action == ACTION_AUTH:
         verified, offset = _decode_bool(payload, offset)
         return {"verified": verified}, offset
+
+    if action in {ACTION_CREATE_SESSION, ACTION_CONTINUE_SESSION}:
+        state, offset = _decode_text(payload, offset)
+        has_message, offset = _decode_bool(payload, offset)
+        decoded: Dict[str, Any] = {"state": state}
+
+        if has_message:
+            style, offset = _decode_text(payload, offset)
+            text, offset = _decode_text(payload, offset)
+            decoded["message"] = {"style": style, "text": text}
+
+        return decoded, offset
 
     if action == ACTION_GET_STATE:
         seat, offset = _decode_text(payload, offset)
@@ -311,6 +350,13 @@ def encode_message(message: Dict[str, Any]) -> bytes:
         if message.get("action") == ACTION_AUTH:
             body.extend(_encode_blob(payload.get("username", b"")))
             body.extend(_encode_blob(payload.get("password", b"")))
+            body.extend(_encode_text(str(payload.get("command", ""))))
+            body.extend(_encode_string_list(list(payload.get("desktop_names", []))))
+        elif message.get("action") == ACTION_CREATE_SESSION:
+            body.extend(_encode_blob(payload.get("username", b"")))
+        elif message.get("action") == ACTION_CONTINUE_SESSION:
+            body.extend(_encode_blob(payload.get("response", b"")))
+        elif message.get("action") == ACTION_START_SESSION:
             body.extend(_encode_text(str(payload.get("command", ""))))
             body.extend(_encode_string_list(list(payload.get("desktop_names", []))))
 
@@ -406,6 +452,19 @@ def decode_message(raw: bytes | str) -> Dict[str, Any]:
             decoded["payload"] = {
                 "username": username,
                 "password": password,
+                "command": command,
+                "desktop_names": desktop_names,
+            }
+        elif action == ACTION_CREATE_SESSION:
+            username, offset = _decode_secbytes(payload, offset)
+            decoded["payload"] = {"username": username}
+        elif action == ACTION_CONTINUE_SESSION:
+            response, offset = _decode_secbytes(payload, offset)
+            decoded["payload"] = {"response": response}
+        elif action == ACTION_START_SESSION:
+            command, offset = _decode_text(payload, offset)
+            desktop_names, offset = _decode_string_list(payload, offset)
+            decoded["payload"] = {
                 "command": command,
                 "desktop_names": desktop_names,
             }

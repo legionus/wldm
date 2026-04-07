@@ -62,12 +62,19 @@ class SessionState:
 
 
 @dataclass
+class AuthSessionState:
+    username: str
+    verified: bool = False
+
+
+@dataclass
 class ClientState:
     proc: Optional[AsyncProcess] = None
     writer: Optional[asyncio.StreamWriter] = None
     task: Optional[asyncio.Task[None]] = None
     failures: int = 0
     ready: bool = False
+    auth_session: Optional[AuthSessionState] = None
 
 
 POWER_ACTION_COMMANDS = {
@@ -165,6 +172,7 @@ def verify_creds(username: wldm.secret.SecretBytes, password: wldm.secret.Secret
 
 
 def process_request(state: DaemonState,
+                    client_name: str,
                     req: Dict[str, Any],
                     cfg: wldm.inifile.IniFile) -> RequestOutcome:
     if not wldm.protocol.is_request(req):
@@ -215,6 +223,104 @@ def process_request(state: DaemonState,
             outcome.session_command = payload["command"]
             outcome.session_desktop_names = list(payload.get("desktop_names", []))
 
+        return outcome
+
+    if req["action"] == wldm.protocol.ACTION_CREATE_SESSION:
+        payload = req["payload"]
+
+        if wldm.protocol.auth_field_is_too_long(payload.get("username", b"")):
+            return RequestOutcome(
+                response=wldm.protocol.new_error(req, "bad_request", "Username is too long")
+            )
+
+        username_bytes = payload["username"].as_bytes()
+        client_state(state, client_name).auth_session = AuthSessionState(
+            username=username_bytes.decode("utf-8", errors="replace"),
+        )
+        payload["username"].clear()
+
+        return RequestOutcome(
+            response=wldm.protocol.new_conversation_response(
+                req,
+                "pending",
+                style="secret",
+                text="Password:",
+            )
+        )
+
+    if req["action"] == wldm.protocol.ACTION_CONTINUE_SESSION:
+        payload = req["payload"]
+        auth_session = client_state(state, client_name).auth_session
+
+        if auth_session is None:
+            return RequestOutcome(
+                response=wldm.protocol.new_error(req, "session_not_found", "No session is being configured")
+            )
+
+        if auth_session.verified:
+            payload["response"].clear()
+            return RequestOutcome(
+                response=wldm.protocol.new_error(req, "bad_request", "Session is already ready")
+            )
+
+        if wldm.protocol.auth_field_is_too_long(payload.get("response", b"")):
+            payload["response"].clear()
+            return RequestOutcome(
+                response=wldm.protocol.new_error(req, "bad_request", "Response is too long")
+            )
+
+        username = wldm.secret.SecretBytes(auth_session.username.encode("utf-8"))
+
+        try:
+            verified = verify_creds(username, payload["response"])
+        finally:
+            payload["response"].clear()
+
+        if not verified:
+            client_state(state, client_name).auth_session = None
+            return RequestOutcome(
+                response=wldm.protocol.new_error(req, "auth_failed", "Authentication failed")
+            )
+
+        auth_session.verified = True
+        return RequestOutcome(
+            response=wldm.protocol.new_conversation_response(req, "ready")
+        )
+
+    if req["action"] == wldm.protocol.ACTION_CANCEL_SESSION:
+        client_state(state, client_name).auth_session = None
+        return RequestOutcome(
+            response=wldm.protocol.new_response(req, ok=True, payload={})
+        )
+
+    if req["action"] == wldm.protocol.ACTION_START_SESSION:
+        payload = req["payload"]
+        auth_session = client_state(state, client_name).auth_session
+
+        if auth_session is None:
+            return RequestOutcome(
+                response=wldm.protocol.new_error(req, "session_not_found", "No session is being configured")
+            )
+
+        if not auth_session.verified:
+            return RequestOutcome(
+                response=wldm.protocol.new_error(req, "session_not_ready", "Session is not ready")
+            )
+
+        outcome = RequestOutcome(
+            response=wldm.protocol.new_response(req, ok=True, payload={}),
+            event=wldm.protocol.new_event(
+                wldm.protocol.EVENT_SESSION_STARTING,
+                {
+                    "command": payload["command"],
+                    "desktop_names": payload.get("desktop_names", []),
+                },
+            ),
+            session_username=auth_session.username,
+            session_command=payload["command"],
+            session_desktop_names=list(payload.get("desktop_names", [])),
+        )
+        client_state(state, client_name).auth_session = None
         return outcome
 
     if req["action"] in POWER_ACTION_COMMANDS:
@@ -452,7 +558,7 @@ async def handle_request_async(state: DaemonState,
         cfg: Loaded daemon configuration.
     """
     client = client_state(state, client_name)
-    outcome = process_request(state, req, cfg)
+    outcome = process_request(state, client_name, req, cfg)
     await send_message(client.writer, outcome.response)
 
     if outcome.event is not None:
@@ -519,6 +625,8 @@ async def handle_client(state: DaemonState,
             await handle_request_async(state, name, req, cfg)
 
     finally:
+        client.auth_session = None
+
         if client.writer is writer:
             client.writer = None
 

@@ -50,6 +50,54 @@ def test_encode_and_decode_round_trip():
     assert decoded["payload"]["desktop_names"] == ["sway"]
 
 
+def test_encode_and_decode_create_session_request():
+    msg = wldm.protocol.new_request(
+        wldm.protocol.ACTION_CREATE_SESSION,
+        {"username": "alice"},
+    )
+
+    decoded = wldm.protocol.decode_message(wldm.protocol.encode_message(msg))
+
+    assert decoded["action"] == wldm.protocol.ACTION_CREATE_SESSION
+    assert decoded["payload"]["username"].as_bytes() == b"alice"
+
+
+def test_encode_and_decode_continue_session_request():
+    msg = wldm.protocol.new_request(
+        wldm.protocol.ACTION_CONTINUE_SESSION,
+        {"response": "secret"},
+    )
+
+    decoded = wldm.protocol.decode_message(wldm.protocol.encode_message(msg))
+
+    assert decoded["action"] == wldm.protocol.ACTION_CONTINUE_SESSION
+    assert decoded["payload"]["response"].as_bytes() == b"secret"
+
+
+def test_encode_and_decode_start_session_request():
+    msg = wldm.protocol.new_request(
+        wldm.protocol.ACTION_START_SESSION,
+        {"command": "sway", "desktop_names": ["sway", "wlroots"]},
+    )
+
+    decoded = wldm.protocol.decode_message(wldm.protocol.encode_message(msg))
+
+    assert decoded["action"] == wldm.protocol.ACTION_START_SESSION
+    assert decoded["payload"] == {"command": "sway", "desktop_names": ["sway", "wlroots"]}
+
+
+def test_encode_and_decode_conversation_response():
+    req = wldm.protocol.new_request(wldm.protocol.ACTION_CREATE_SESSION, {"username": "alice"})
+    msg = wldm.protocol.new_conversation_response(req, "pending", style="secret", text="Password:")
+
+    decoded = wldm.protocol.decode_message(wldm.protocol.encode_message(msg))
+
+    assert decoded["payload"] == {
+        "state": "pending",
+        "message": {"style": "secret", "text": "Password:"},
+    }
+
+
 def test_auth_field_is_too_long_checks_wire_length():
     assert wldm.protocol.auth_field_is_too_long("a" * 256) is False
     assert wldm.protocol.auth_field_is_too_long("a" * 257) is True
