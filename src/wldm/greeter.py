@@ -507,6 +507,8 @@ class LoginApp:
             password_entry.set_visible(prompt_requires_input)
         if password_entry is not None and hasattr(password_entry, "set_visibility"):
             password_entry.set_visibility(not prompt_is_secret)
+        if password_entry is not None and hasattr(password_entry, "set_show_peek_icon"):
+            password_entry.set_show_peek_icon(prompt_requires_input)
         if password_entry is not None and hasattr(password_entry, "set_placeholder_text"):
             if prompt_style == "secret":
                 password_entry.set_placeholder_text(prompt_text or _("Password"))
@@ -550,8 +552,11 @@ class LoginApp:
         if self.password_entry is not None:
             self.password_entry.set_text("")
 
-        if text:
+        if style in {"info", "error"} and text:
             self.set_status(text, error=style == "error")
+
+        elif style in {"secret"}:
+            self.set_status("")
 
         if self.password_entry is not None and style in {"secret", "visible"} and hasattr(self.password_entry, "grab_focus"):
             self.password_entry.grab_focus()

@@ -121,7 +121,6 @@ class DummyLabel:
     def set_width_chars(self, value):
         self.width_chars = value
 
-
 def test_desktop_sessions_filters_and_sorts_entries(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
 
@@ -1499,7 +1498,7 @@ def test_handle_conversation_answer_sets_pending_prompt(monkeypatch):
     assert result == "pending"
     assert app.conversation_pending is True
     assert app.conversation_prompt_style == "visible"
-    assert app.status_label.text == "Code:"
+    assert app.status_label.text == ""
 
 
 def test_handle_conversation_answer_marks_session_ready(monkeypatch):
@@ -1596,6 +1595,7 @@ def test_update_auth_widgets_for_initial_stage(monkeypatch):
             self.sensitive = None
             self.visible = None
             self.visibility = None
+            self.show_peek_icon = None
             self.placeholder_text = None
 
         def set_sensitive(self, value):
@@ -1606,6 +1606,9 @@ def test_update_auth_widgets_for_initial_stage(monkeypatch):
 
         def set_visibility(self, value):
             self.visibility = value
+
+        def set_show_peek_icon(self, value):
+            self.show_peek_icon = value
 
         def set_placeholder_text(self, text):
             self.placeholder_text = text
@@ -1646,6 +1649,7 @@ def test_update_auth_widgets_for_initial_stage(monkeypatch):
     assert app.password_entry.sensitive is False
     assert app.password_entry.visible is False
     assert app.password_entry.visibility is True
+    assert app.password_entry.show_peek_icon is False
     assert app.password_entry.placeholder_text == ""
     assert app.sessions_entry.sensitive is False
     assert app.sessions_entry.visible is False
@@ -1664,6 +1668,7 @@ def test_set_conversation_prompt_updates_visible_prompt_widgets(monkeypatch):
             self.sensitive = None
             self.visible = None
             self.visibility = None
+            self.show_peek_icon = None
             self.placeholder_text = None
 
         def set_text(self, text):
@@ -1680,6 +1685,9 @@ def test_set_conversation_prompt_updates_visible_prompt_widgets(monkeypatch):
 
         def set_visibility(self, value):
             self.visibility = value
+
+        def set_show_peek_icon(self, value):
+            self.show_peek_icon = value
 
         def set_placeholder_text(self, text):
             self.placeholder_text = text
@@ -1716,10 +1724,11 @@ def test_set_conversation_prompt_updates_visible_prompt_widgets(monkeypatch):
     assert app.password_entry.sensitive is True
     assert app.password_entry.visible is True
     assert app.password_entry.visibility is True
+    assert app.password_entry.show_peek_icon is True
     assert app.password_entry.placeholder_text == "Verification code"
     assert app.sessions_entry.visible is False
     assert app.login_button.label == "Continue"
-    assert app.status_label.text == "Verification code"
+    assert app.status_label.text == ""
 
 
 def test_set_conversation_prompt_hides_entry_for_info_prompt(monkeypatch):
@@ -1732,6 +1741,7 @@ def test_set_conversation_prompt_hides_entry_for_info_prompt(monkeypatch):
             self.sensitive = None
             self.visible = None
             self.visibility = None
+            self.show_peek_icon = None
             self.placeholder_text = None
 
         def set_text(self, text):
@@ -1748,6 +1758,9 @@ def test_set_conversation_prompt_hides_entry_for_info_prompt(monkeypatch):
 
         def set_visibility(self, value):
             self.visibility = value
+
+        def set_show_peek_icon(self, value):
+            self.show_peek_icon = value
 
         def set_placeholder_text(self, text):
             self.placeholder_text = text
@@ -1782,6 +1795,7 @@ def test_set_conversation_prompt_hides_entry_for_info_prompt(monkeypatch):
     assert app.password_entry.focused is False
     assert app.password_entry.sensitive is False
     assert app.password_entry.visible is False
+    assert app.password_entry.show_peek_icon is False
     assert app.password_entry.placeholder_text == ""
     assert app.login_button.label == "Continue"
     assert app.status_label.text == "Use your hardware token"
@@ -1797,6 +1811,7 @@ def test_set_conversation_prompt_marks_error_prompt_as_error(monkeypatch):
             self.sensitive = None
             self.visible = None
             self.visibility = None
+            self.show_peek_icon = None
             self.placeholder_text = None
 
         def set_text(self, text):
@@ -1813,6 +1828,9 @@ def test_set_conversation_prompt_marks_error_prompt_as_error(monkeypatch):
 
         def set_visibility(self, value):
             self.visibility = value
+
+        def set_show_peek_icon(self, value):
+            self.show_peek_icon = value
 
         def set_placeholder_text(self, text):
             self.placeholder_text = text
@@ -1860,6 +1878,7 @@ def test_set_conversation_prompt_marks_error_prompt_as_error(monkeypatch):
 
     assert app.password_entry.visible is False
     assert app.password_entry.focused is False
+    assert app.password_entry.show_peek_icon is False
     assert app.login_button.label == "Continue"
     assert app.status_label.text == "Authentication failed"
     assert app.status_label.added == ["status-error"]
@@ -1873,6 +1892,7 @@ def test_set_session_ready_updates_post_auth_widgets(monkeypatch):
             self.sensitive = None
             self.visible = None
             self.visibility = None
+            self.show_peek_icon = None
             self.placeholder_text = None
 
         def set_sensitive(self, value):
@@ -1883,6 +1903,9 @@ def test_set_session_ready_updates_post_auth_widgets(monkeypatch):
 
         def set_visibility(self, value):
             self.visibility = value
+
+        def set_show_peek_icon(self, value):
+            self.show_peek_icon = value
 
         def set_placeholder_text(self, text):
             self.placeholder_text = text
@@ -1927,6 +1950,7 @@ def test_set_session_ready_updates_post_auth_widgets(monkeypatch):
     assert app.conversation_pending is False
     assert app.session_ready is True
     assert app.password_entry.visible is False
+    assert app.password_entry.show_peek_icon is False
     assert app.sessions_entry.sensitive is True
     assert app.sessions_entry.visible is True
     assert app.login_button.label == "Start session"
