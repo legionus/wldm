@@ -1553,15 +1553,18 @@ def test_handle_conversation_answer_rejects_unsuccessful_reply(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
     app = greeter.LoginApp.__new__(greeter.LoginApp)
     cleared = []
+    statuses = []
     app.clear_conversation_state = lambda: cleared.append(True)
+    app.set_status = lambda text, error=False: statuses.append((text, error))
 
     result = greeter.LoginApp.handle_conversation_answer(
         app,
-        {"ok": False, "payload": {}},
+        {"ok": False, "error": {"message": "Account locked"}},
     )
 
     assert result == "failed"
     assert cleared == [True]
+    assert statuses == [("Account locked", True)]
 
 
 def test_handle_conversation_answer_rejects_unexpected_state(monkeypatch):
@@ -1570,6 +1573,7 @@ def test_handle_conversation_answer_rejects_unexpected_state(monkeypatch):
     cleared = []
     warnings = []
     app.clear_conversation_state = lambda: cleared.append(True)
+    app.set_status = lambda text, error=False: warnings.append(f"status:{text}:{error}")
 
     monkeypatch.setattr(greeter.logger, "warning", lambda msg, *args: warnings.append(msg % args if args else msg))
 
@@ -1581,6 +1585,7 @@ def test_handle_conversation_answer_rejects_unexpected_state(monkeypatch):
     assert result == "failed"
     assert cleared == [True]
     assert any("unexpected auth conversation state" in item for item in warnings)
+    assert any(item == "status:Authentication failed.:True" for item in warnings)
 
 
 def test_update_auth_widgets_for_initial_stage(monkeypatch):

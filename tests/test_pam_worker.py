@@ -180,7 +180,15 @@ def test_run_auth_session_reports_ready_and_failures(monkeypatch):
     monkeypatch.setattr(pam_worker.wldm.pam, "pam_error_str", lambda pamh_arg, rc: "bad auth")
 
     assert pam_worker.run_auth_session(sock, "login", "alice", "") == pam_worker.wldm.EX_FAILURE
-    assert calls[0] == {"v": 1, "kind": "failed", "message": "pam_authenticate failed: 19 (bad auth)"}
+    assert calls[0] == {"v": 1, "kind": "failed", "message": "Authentication failed."}
+
+
+def test_user_facing_error_maps_common_pam_codes():
+    assert pam_worker.user_facing_error("auth", ffi.PAM_AUTH_ERR) == "Authentication failed."
+    assert pam_worker.user_facing_error("auth", ffi.PAM_MAXTRIES) == "Authentication failed."
+    assert pam_worker.user_facing_error("acct", ffi.PAM_NEW_AUTHTOK_REQD) == "Password change required."
+    assert pam_worker.user_facing_error("acct", ffi.PAM_ACCT_EXPIRED) == "Account expired."
+    assert pam_worker.user_facing_error("acct", ffi.PAM_ABORT) == "Authentication service unavailable."
 
 
 def test_cmd_main_reads_start_message_and_calls_run_auth_session(monkeypatch):

@@ -1011,7 +1011,9 @@ class LoginApp:
     def handle_conversation_answer(self, answer: Dict[str, Any]) -> str:
         """Advance the current greeter-side conversation state from one reply."""
         if not answer.get("ok"):
+            error_message = str(answer.get("error", {}).get("message", "")) or _("Authentication failed.")
             self.clear_conversation_state()
+            self.set_status(error_message, error=True)
             return "failed"
 
         payload = answer.get("payload", {})
@@ -1025,6 +1027,7 @@ class LoginApp:
             if style not in {"secret", "visible", "info", "error"}:
                 logger.warning("unsupported auth conversation step: %s", answer)
                 self.clear_conversation_state()
+                self.set_status(_("Authentication failed."), error=True)
                 return "failed"
 
             self.set_conversation_prompt(style, text)
@@ -1036,6 +1039,7 @@ class LoginApp:
 
         logger.warning("unexpected auth conversation state: %s", answer)
         self.clear_conversation_state()
+        self.set_status(_("Authentication failed."), error=True)
         return "failed"
 
     # pylint: disable-next=unused-argument
@@ -1090,7 +1094,6 @@ class LoginApp:
 
             if hasattr(self.password_entry, "grab_focus"):
                 self.password_entry.grab_focus()
-            self.set_status(_("Authentication failed."), error=True)
             return
 
         username = self.username_entry.get_text()
@@ -1121,7 +1124,6 @@ class LoginApp:
             return
         if result == "ready":
             return
-        self.set_status(_("Authentication failed."), error=True)
         if hasattr(self.password_entry, "grab_focus"):
             self.password_entry.grab_focus()
 
