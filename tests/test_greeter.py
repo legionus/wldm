@@ -121,6 +121,26 @@ class DummyLabel:
     def set_width_chars(self, value):
         self.width_chars = value
 
+
+class DummyButton:
+    def __init__(self):
+        self.label = None
+        self.visible = None
+        self.sensitive = None
+        self.connections = []
+
+    def set_label(self, text):
+        self.label = text
+
+    def set_visible(self, value):
+        self.visible = value
+
+    def set_sensitive(self, value):
+        self.sensitive = value
+
+    def connect(self, signal, callback):
+        self.connections.append((signal, callback))
+
 def test_desktop_sessions_filters_and_sorts_entries(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
 
@@ -1641,6 +1661,7 @@ def test_update_auth_widgets_for_initial_stage(monkeypatch):
     app.password_entry = FakeEntry()
     app.sessions_entry = FakeEntry()
     app.login_button = FakeButton()
+    app.cancel_button = DummyButton()
     app.session_label = FakeLabel()
 
     greeter.LoginApp.update_auth_widgets(app)
@@ -1655,6 +1676,8 @@ def test_update_auth_widgets_for_initial_stage(monkeypatch):
     assert app.sessions_entry.visible is False
     assert app.login_button.sensitive is True
     assert app.login_button.label == "Next"
+    assert app.cancel_button.visible is False
+    assert app.cancel_button.sensitive is True
     assert app.session_label.visible is False
 
 
@@ -1713,6 +1736,7 @@ def test_set_conversation_prompt_updates_visible_prompt_widgets(monkeypatch):
     app.password_entry = FakeEntry()
     app.sessions_entry = FakeEntry()
     app.login_button = FakeButton()
+    app.cancel_button = DummyButton()
     app.session_label = DummyLabel()
     app.status_label = DummyLabel()
 
@@ -1728,6 +1752,8 @@ def test_set_conversation_prompt_updates_visible_prompt_widgets(monkeypatch):
     assert app.password_entry.placeholder_text == "Verification code"
     assert app.sessions_entry.visible is False
     assert app.login_button.label == "Continue"
+    assert app.cancel_button.visible is True
+    assert app.cancel_button.sensitive is True
     assert app.status_label.text == ""
 
 
@@ -1786,6 +1812,7 @@ def test_set_conversation_prompt_hides_entry_for_info_prompt(monkeypatch):
     app.password_entry = FakeEntry()
     app.sessions_entry = FakeEntry()
     app.login_button = FakeButton()
+    app.cancel_button = DummyButton()
     app.session_label = DummyLabel()
     app.status_label = DummyLabel()
 
@@ -1798,6 +1825,8 @@ def test_set_conversation_prompt_hides_entry_for_info_prompt(monkeypatch):
     assert app.password_entry.show_peek_icon is False
     assert app.password_entry.placeholder_text == ""
     assert app.login_button.label == "Continue"
+    assert app.cancel_button.visible is True
+    assert app.cancel_button.sensitive is True
     assert app.status_label.text == "Use your hardware token"
 
 
@@ -1871,6 +1900,7 @@ def test_set_conversation_prompt_marks_error_prompt_as_error(monkeypatch):
     app.password_entry = FakeEntry()
     app.sessions_entry = FakeEntry()
     app.login_button = FakeButton()
+    app.cancel_button = DummyButton()
     app.session_label = DummyLabel()
     app.status_label = FakeStatusLabel()
 
@@ -1880,6 +1910,8 @@ def test_set_conversation_prompt_marks_error_prompt_as_error(monkeypatch):
     assert app.password_entry.focused is False
     assert app.password_entry.show_peek_icon is False
     assert app.login_button.label == "Continue"
+    assert app.cancel_button.visible is True
+    assert app.cancel_button.sensitive is True
     assert app.status_label.text == "Authentication failed"
     assert app.status_label.added == ["status-error"]
 
@@ -1942,6 +1974,7 @@ def test_set_session_ready_updates_post_auth_widgets(monkeypatch):
     app.password_entry = FakeEntry()
     app.sessions_entry = FakeEntry()
     app.login_button = FakeButton()
+    app.cancel_button = DummyButton()
     app.session_label = FakeLabel()
     app.status_label = FakeLabel()
 
@@ -1954,8 +1987,63 @@ def test_set_session_ready_updates_post_auth_widgets(monkeypatch):
     assert app.sessions_entry.sensitive is True
     assert app.sessions_entry.visible is True
     assert app.login_button.label == "Start session"
+    assert app.cancel_button.visible is True
+    assert app.cancel_button.sensitive is True
     assert app.session_label.visible is True
     assert app.status_label.text == "Authentication accepted. Select a session."
+
+
+def test_on_cancel_clicked_cancels_pending_auth_and_restores_username(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+
+    class FakeEntry:
+        def __init__(self, text=""):
+            self.text = text
+            self.focused = False
+
+        def get_text(self):
+            return self.text
+
+        def set_text(self, text):
+            self.text = text
+
+        def grab_focus(self):
+            self.focused = True
+
+    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app.auth_in_progress = False
+    app.conversation_pending = True
+    app.session_ready = False
+    app.auth_username = "alice"
+    app.last_session_command = "sway"
+    app.username_entry = FakeEntry("")
+    app.password_entry = FakeEntry("secret")
+    app.set_status = lambda text, error=False: None
+    app.set_auth_state = lambda value: None
+    app.clear_conversation_state = lambda: (
+        setattr(app, "conversation_pending", False),
+        setattr(app, "conversation_prompt_style", ""),
+        setattr(app, "conversation_prompt_text", ""),
+        setattr(app, "session_ready", False),
+        setattr(app, "auth_username", ""),
+    )
+    calls = []
+    refreshed = []
+    updated = []
+    monkeypatch.setattr(greeter, "clear_entry_selection", lambda entry: calls.append(("clear-selection", entry.text)))
+    app.send_recv_answer = lambda data: calls.append(data) or {"ok": True}
+    app.refresh_sessions = lambda username, preferred_command="": refreshed.append((username, preferred_command))
+    app.update_identity_preview = lambda: updated.append(True)
+
+    greeter.LoginApp.on_cancel_clicked(app)
+
+    assert calls[0]["type"] == "request"
+    assert calls[0]["action"] == greeter.greeter_protocol.ACTION_CANCEL_SESSION
+    assert app.username_entry.text == "alice"
+    assert app.username_entry.focused is True
+    assert app.password_entry.text == ""
+    assert refreshed == [("alice", "sway")]
+    assert updated == [True]
 
 
 def test_on_login_clicked_starts_selected_session_after_ready(monkeypatch):
@@ -2556,6 +2644,7 @@ def test_on_activate_binds_widgets_and_populates_sessions(monkeypatch):
     status_label = types.SimpleNamespace(set_text=lambda text: None)
     sessions_entry = FakeSessionsEntry()
     login_button = FakeButton()
+    cancel_button = FakeButton()
     quit_button = FakeButton()
     reboot_button = FakeButton()
     suspend_button = FakeButton()
@@ -2573,6 +2662,7 @@ def test_on_activate_binds_widgets_and_populates_sessions(monkeypatch):
         "sessions_entry": sessions_entry,
         "status_label": status_label,
         "login_button": login_button,
+        "cancel_button": cancel_button,
         "quit_button": quit_button,
         "reboot_button": reboot_button,
         "suspend_button": suspend_button,
@@ -2616,6 +2706,7 @@ def test_on_activate_binds_widgets_and_populates_sessions(monkeypatch):
     assert sessions_entry.model.items == ["Alpha", "Beta"]
     assert sessions_entry.selected == 0
     assert login_button.connections == [("clicked", app.on_login_clicked)]
+    assert cancel_button.connections == [("clicked", app.on_cancel_clicked)]
     assert quit_button.connections == [("clicked", app.on_poweroff_clicked)]
     assert reboot_button.connections == [("clicked", app.on_reboot_clicked)]
     assert suspend_button.connections == [("clicked", app.on_suspend_clicked)]

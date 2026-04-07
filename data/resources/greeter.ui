@@ -224,6 +224,17 @@
 													</object>
 												</child>
 
+												<child>
+													<object class="GtkButton" id="cancel_button">
+														<property name="label">✕</property>
+														<property name="tooltip-text" translatable="yes">Cancel</property>
+														<property name="visible">false</property>
+														<style>
+															<class name="secondary-button"/>
+														</style>
+													</object>
+												</child>
+
 											</object>
 										</child>
 

@@ -284,6 +284,7 @@ class LoginApp:
         self.status_label:   Optional[Any] = None
         self.sessions_entry: Optional[Any] = None
         self.login_button:   Optional[Any] = None
+        self.cancel_button:  Optional[Any] = None
         self.quit_button:    Optional[Any] = None
         self.reboot_button:  Optional[Any] = None
         self.suspend_button: Optional[Any] = None
@@ -353,6 +354,11 @@ class LoginApp:
                 "required": True,
                 "methods": ("connect", "set_sensitive"),
                 "signals": (("clicked", self.on_login_clicked),),
+            },
+            {
+                "name": "cancel_button",
+                "methods": ("connect", "set_sensitive", "set_visible"),
+                "signals": (("clicked", self.on_cancel_clicked),),
             },
             {
                 "name": "quit_button",
@@ -528,6 +534,12 @@ class LoginApp:
             else:
                 login_button.set_label(_("Next"))
 
+        cancel_button = getattr(self, "cancel_button", None)
+        if cancel_button is not None and hasattr(cancel_button, "set_visible"):
+            cancel_button.set_visible(conversation_pending or session_ready)
+        if cancel_button is not None and hasattr(cancel_button, "set_sensitive"):
+            cancel_button.set_sensitive(not self.auth_in_progress)
+
         session_label = getattr(self, "session_label", None)
         if session_label is not None and hasattr(session_label, "set_visible"):
             session_label.set_visible(session_ready)
@@ -554,8 +566,7 @@ class LoginApp:
 
         if style in {"info", "error"} and text:
             self.set_status(text, error=style == "error")
-
-        elif style in {"secret"}:
+        elif style in {"secret", "visible"}:
             self.set_status("")
 
         if self.password_entry is not None and style in {"secret", "visible"} and hasattr(self.password_entry, "grab_focus"):
@@ -569,6 +580,28 @@ class LoginApp:
         self.session_ready = True
         self.update_auth_widgets()
         self.set_status(_("Authentication accepted. Select a session."))
+
+    def reset_auth_flow(self) -> None:
+        """Return the greeter to the initial username entry stage."""
+        username = self.auth_username.strip()
+        self.set_auth_state(False)
+        self.clear_conversation_state()
+        self.set_status("")
+
+        if self.password_entry is not None:
+            self.password_entry.set_text("")
+
+        if self.username_entry is not None:
+            self.username_entry.set_text(username)
+
+            if hasattr(self.username_entry, "grab_focus"):
+                self.username_entry.grab_focus()
+
+            if username:
+                clear_entry_selection(self.username_entry)
+
+        self.refresh_sessions(username, preferred_command=self.last_session_command)
+        self.update_identity_preview()
 
     def update_session_summary(self) -> None:
         if self.session_label is None:
@@ -921,6 +954,18 @@ class LoginApp:
 
         self.refresh_sessions(username)
         self.update_identity_preview()
+
+    # pylint: disable-next=unused-argument
+    def on_cancel_clicked(self, *args: Any) -> None:
+        if not (self.conversation_pending or self.session_ready or self.auth_username):
+            return
+
+        self.set_auth_state(True)
+        try:
+            if self.conversation_pending or self.session_ready:
+                self.send_recv_answer(greeter_protocol.new_request(greeter_protocol.ACTION_CANCEL_SESSION, {}))
+        finally:
+            self.reset_auth_flow()
 
     def send_recv_answer(self, data: Dict[str, Any]) -> Dict[str, Any]:
         answer = {}
