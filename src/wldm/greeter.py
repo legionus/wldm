@@ -261,6 +261,14 @@ def themed_resource_path() -> str:
     return base
 
 
+def load_builder_from_resource_path() -> Any:
+    """Create a GtkBuilder loaded from the current greeter resource path."""
+    builder = Gtk.Builder.new()
+    builder.set_translation_domain(GETTEXT_DOMAIN)
+    builder.add_from_file(os.path.join(resource_path, "greeter.ui"))
+    return builder
+
+
 class LoginApp:
     def __init__(self, client: Optional[Any]=None) -> None:
         self.app = Gtk.Application(application_id=wldm.policy.GREETER_APP_ID,
@@ -690,11 +698,26 @@ class LoginApp:
         self.app.run()
 
     def on_activate(self, app: Gtk.Application) -> None:
-        builder = Gtk.Builder.new()
-        builder.set_translation_domain(GETTEXT_DOMAIN)
-        builder.add_from_file(os.path.join(resource_path, "greeter.ui"))
+        global resource_path
 
-        bindings = self.collect_theme_widgets(builder)
+        try:
+            builder = load_builder_from_resource_path()
+            bindings = self.collect_theme_widgets(builder)
+
+        except Exception as exc:
+            fallback_path = default_resource_path()
+            theme = greeter_theme()
+
+            if theme == "default" or not fallback_path or fallback_path == resource_path:
+                raise
+
+            logger.warning("theme '%s' is invalid, falling back to default: %s", theme, exc)
+            resource_path = fallback_path
+            setup_greeter_i18n()
+
+            builder = load_builder_from_resource_path()
+            bindings = self.collect_theme_widgets(builder)
+
         window: Any = None
 
         for spec, widget in bindings:

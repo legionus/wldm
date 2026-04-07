@@ -1542,6 +1542,246 @@ def test_collect_theme_widgets_rejects_invalid_required_widget_type(monkeypatch)
         raise AssertionError("collect_theme_widgets() should reject invalid required widgets")
 
 
+def test_on_activate_falls_back_to_default_theme_when_theme_ui_is_invalid(monkeypatch, tmp_path):
+    greeter = load_greeter_module(monkeypatch)
+    greeter.resource_path = str(tmp_path / "themes" / "retro")
+    fallback_path = str(tmp_path / "resources")
+    warnings = []
+    i18n_calls = []
+
+    class FakeWindow:
+        def __init__(self):
+            self.application = None
+            self.default_widget = None
+            self.presented = False
+
+        def set_application(self, app):
+            self.application = app
+
+        def set_default_widget(self, widget):
+            self.default_widget = widget
+
+        def present(self):
+            self.presented = True
+
+    class FakeEntry:
+        def __init__(self):
+            self.connections = []
+
+        def connect(self, signal, callback):
+            self.connections.append((signal, callback))
+
+        def get_text(self):
+            return ""
+
+        def set_text(self, text):
+            return None
+
+        def grab_focus(self):
+            return None
+
+    class FakeButton:
+        def __init__(self):
+            self.connections = []
+            self.visible = None
+
+        def connect(self, signal, callback):
+            self.connections.append((signal, callback))
+
+        def set_visible(self, visible):
+            self.visible = visible
+
+        def set_sensitive(self, value):
+            return None
+
+    window = FakeWindow()
+    objects = {
+        "main_window": window,
+        "username_entry": FakeEntry(),
+        "password_entry": FakeEntry(),
+        "sessions_entry": types.SimpleNamespace(
+            connect=lambda *args: None,
+            set_model=lambda model: None,
+            set_selected=lambda idx: None,
+            get_selected_item=lambda: None,
+        ),
+        "status_label": types.SimpleNamespace(set_text=lambda text: None),
+        "login_button": FakeButton(),
+        "quit_button": FakeButton(),
+        "reboot_button": FakeButton(),
+        "suspend_button": FakeButton(),
+        "hibernate_button": FakeButton(),
+        "hostname_label": types.SimpleNamespace(set_text=lambda text: None),
+        "date_label": types.SimpleNamespace(set_text=lambda text: None),
+        "time_label": types.SimpleNamespace(set_text=lambda text: None),
+        "keyboard_label": types.SimpleNamespace(
+            set_text=lambda text: None,
+            set_visible=lambda value: None,
+            set_tooltip_text=lambda text: None,
+            set_width_chars=lambda value: None,
+        ),
+        "session_label": types.SimpleNamespace(set_text=lambda text: None),
+        "identity_preview": types.SimpleNamespace(set_visible=lambda value: None),
+        "identity_label": types.SimpleNamespace(set_text=lambda text: None),
+        "avatar_label": types.SimpleNamespace(set_text=lambda text: None),
+    }
+    loaded_paths = []
+
+    class FailingBuilder:
+        def set_translation_domain(self, domain):
+            return None
+
+        def add_from_file(self, path):
+            loaded_paths.append(path)
+            raise RuntimeError("broken themed greeter.ui")
+
+    class WorkingBuilder:
+        def set_translation_domain(self, domain):
+            return None
+
+        def add_from_file(self, path):
+            loaded_paths.append(path)
+
+        def get_object(self, name):
+            return objects[name]
+
+    builders = iter([FailingBuilder(), WorkingBuilder()])
+    monkeypatch.setattr(greeter.Gtk.Builder, "new", lambda: next(builders))
+    monkeypatch.setattr(greeter, "greeter_theme", lambda: "retro")
+    monkeypatch.setattr(greeter, "default_resource_path", lambda: fallback_path)
+    monkeypatch.setattr(greeter, "setup_greeter_i18n", lambda: i18n_calls.append("i18n"))
+    monkeypatch.setattr(greeter.logger, "warning", lambda msg, *args: warnings.append(msg % args if args else msg))
+    monkeypatch.setattr(greeter.wldm.sessions, "desktop_sessions", lambda username="": [])
+    monkeypatch.setenv("WLDM_ACTIONS", "")
+
+    app = greeter.LoginApp(client=DummyClient())
+    app.on_activate(app.app)
+
+    assert loaded_paths == [
+        str(tmp_path / "themes" / "retro" / "greeter.ui"),
+        str(tmp_path / "resources" / "greeter.ui"),
+    ]
+    assert greeter.resource_path == fallback_path
+    assert i18n_calls == ["i18n"]
+    assert any("falling back to default" in message for message in warnings)
+    assert window.application is app.app
+    assert window.presented is True
+
+
+def test_on_activate_falls_back_to_default_theme_when_required_widgets_are_invalid(monkeypatch, tmp_path):
+    greeter = load_greeter_module(monkeypatch)
+    greeter.resource_path = str(tmp_path / "themes" / "retro")
+    fallback_path = str(tmp_path / "resources")
+    warnings = []
+    i18n_calls = []
+
+    class FakeWindow:
+        def __init__(self):
+            self.application = None
+            self.default_widget = None
+            self.presented = False
+
+        def set_application(self, app):
+            self.application = app
+
+        def set_default_widget(self, widget):
+            self.default_widget = widget
+
+        def present(self):
+            self.presented = True
+
+    class FakeEntry:
+        def __init__(self):
+            self.connections = []
+
+        def connect(self, signal, callback):
+            self.connections.append((signal, callback))
+
+        def get_text(self):
+            return ""
+
+        def set_text(self, text):
+            return None
+
+        def grab_focus(self):
+            return None
+
+    class InvalidBuilder:
+        def set_translation_domain(self, domain):
+            return None
+
+        def add_from_file(self, path):
+            return None
+
+        def get_object(self, name):
+            if name == "password_entry":
+                return object()
+            if name == "main_window":
+                return FakeWindow()
+            if name == "username_entry":
+                return FakeEntry()
+            if name == "login_button":
+                return types.SimpleNamespace(connect=lambda *args: None, set_sensitive=lambda value: None)
+            return None
+
+    class WorkingBuilder:
+        def __init__(self):
+            self.window = FakeWindow()
+
+        def set_translation_domain(self, domain):
+            return None
+
+        def add_from_file(self, path):
+            return None
+
+        def get_object(self, name):
+            objects = {
+                "main_window": self.window,
+                "username_entry": FakeEntry(),
+                "password_entry": FakeEntry(),
+                "sessions_entry": types.SimpleNamespace(
+                    connect=lambda *args: None,
+                    set_model=lambda model: None,
+                    set_selected=lambda idx: None,
+                    get_selected_item=lambda: None,
+                ),
+                "status_label": types.SimpleNamespace(set_text=lambda text: None),
+                "login_button": types.SimpleNamespace(connect=lambda *args: None, set_sensitive=lambda value: None),
+                "quit_button": types.SimpleNamespace(connect=lambda *args: None, set_visible=lambda value: None),
+                "reboot_button": types.SimpleNamespace(connect=lambda *args: None, set_visible=lambda value: None),
+                "suspend_button": types.SimpleNamespace(connect=lambda *args: None, set_visible=lambda value: None),
+                "hibernate_button": types.SimpleNamespace(connect=lambda *args: None, set_visible=lambda value: None),
+                "hostname_label": types.SimpleNamespace(set_text=lambda text: None),
+                "date_label": types.SimpleNamespace(set_text=lambda text: None),
+                "time_label": types.SimpleNamespace(set_text=lambda text: None),
+                "keyboard_label": types.SimpleNamespace(
+                    set_text=lambda text: None,
+                    set_visible=lambda value: None,
+                    set_tooltip_text=lambda text: None,
+                    set_width_chars=lambda value: None,
+                ),
+                "session_label": types.SimpleNamespace(set_text=lambda text: None),
+                "identity_preview": types.SimpleNamespace(set_visible=lambda value: None),
+                "identity_label": types.SimpleNamespace(set_text=lambda text: None),
+                "avatar_label": types.SimpleNamespace(set_text=lambda text: None),
+            }
+            return objects[name]
+
+    builders = iter([InvalidBuilder(), WorkingBuilder()])
+    monkeypatch.setattr(greeter.Gtk.Builder, "new", lambda: next(builders))
+    monkeypatch.setattr(greeter, "greeter_theme", lambda: "retro")
+    monkeypatch.setattr(greeter, "default_resource_path", lambda: fallback_path)
+    monkeypatch.setattr(greeter, "setup_greeter_i18n", lambda: i18n_calls.append("i18n"))
+    monkeypatch.setattr(greeter.logger, "warning", lambda msg, *args: warnings.append(msg % args if args else msg))
+    monkeypatch.setattr(greeter.wldm.sessions, "desktop_sessions", lambda username="": [])
+    monkeypatch.setenv("WLDM_ACTIONS", "")
+
+    app = greeter.LoginApp(client=DummyClient())
+    app.on_activate(app.app)
+
+    assert greeter.resource_path == fallback_path
+    assert i18n_calls == ["i18n"]
+    assert any("falling back to default" in message for message in warnings)
 def test_on_activate_binds_widgets_and_populates_sessions(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
     greeter.resource_path = "/tmp/resources"
