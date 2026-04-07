@@ -484,6 +484,10 @@ class LoginApp:
         """Apply the current auth/conversation sensitivity policy to widgets."""
         conversation_pending = getattr(self, "conversation_pending", False)
         session_ready = getattr(self, "session_ready", False)
+        prompt_style = getattr(self, "conversation_prompt_style", "")
+        prompt_text = getattr(self, "conversation_prompt_text", "")
+        prompt_requires_input = conversation_pending and prompt_style in {"secret", "visible"}
+        prompt_is_secret = prompt_style == "secret"
         username_locked = self.auth_in_progress or conversation_pending or session_ready
 
         username_entry = getattr(self, "username_entry", None)
@@ -493,14 +497,38 @@ class LoginApp:
         sessions_entry = getattr(self, "sessions_entry", None)
         if sessions_entry is not None and hasattr(sessions_entry, "set_sensitive"):
             sessions_entry.set_sensitive(session_ready and not self.auth_in_progress)
+        if sessions_entry is not None and hasattr(sessions_entry, "set_visible"):
+            sessions_entry.set_visible(session_ready)
 
         password_entry = getattr(self, "password_entry", None)
         if password_entry is not None and hasattr(password_entry, "set_sensitive"):
-            password_entry.set_sensitive(conversation_pending and not self.auth_in_progress)
+            password_entry.set_sensitive(prompt_requires_input and not self.auth_in_progress)
+        if password_entry is not None and hasattr(password_entry, "set_visible"):
+            password_entry.set_visible(conversation_pending)
+        if password_entry is not None and hasattr(password_entry, "set_visibility"):
+            password_entry.set_visibility(not prompt_is_secret)
+        if password_entry is not None and hasattr(password_entry, "set_placeholder_text"):
+            if prompt_style == "secret":
+                password_entry.set_placeholder_text(prompt_text or _("Password"))
+            elif prompt_style == "visible":
+                password_entry.set_placeholder_text(prompt_text or _("Response"))
+            else:
+                password_entry.set_placeholder_text(_("Response"))
 
         login_button = getattr(self, "login_button", None)
         if login_button is not None and hasattr(login_button, "set_sensitive"):
             login_button.set_sensitive(not self.auth_in_progress)
+        if login_button is not None and hasattr(login_button, "set_label"):
+            if session_ready:
+                login_button.set_label(_("Start session"))
+            elif conversation_pending:
+                login_button.set_label(_("Continue"))
+            else:
+                login_button.set_label(_("Next"))
+
+        session_label = getattr(self, "session_label", None)
+        if session_label is not None and hasattr(session_label, "set_visible"):
+            session_label.set_visible(session_ready)
 
     def clear_conversation_state(self) -> None:
         """Forget the current multi-step authentication state."""

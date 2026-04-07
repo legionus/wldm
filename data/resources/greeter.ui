@@ -190,9 +190,9 @@
 										</child>
 
 										<child>
-											<object class="GtkPasswordEntry" id="password_entry">
+											<object class="GtkEntry" id="password_entry">
 												<property name="placeholder-text" translatable="yes">Password</property>
-												<property name="show-peek-icon">true</property>
+												<property name="visibility">false</property>
 												<property name="hexpand">true</property>
 												<style>
 													<class name="greeter-entry"/>

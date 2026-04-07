@@ -1595,6 +1595,209 @@ def test_handle_conversation_answer_rejects_unexpected_state(monkeypatch):
     assert any("unexpected auth conversation state" in item for item in warnings)
 
 
+def test_update_auth_widgets_for_initial_stage(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+
+    class FakeEntry:
+        def __init__(self):
+            self.sensitive = None
+            self.visible = None
+            self.visibility = None
+            self.placeholder_text = None
+
+        def set_sensitive(self, value):
+            self.sensitive = value
+
+        def set_visible(self, value):
+            self.visible = value
+
+        def set_visibility(self, value):
+            self.visibility = value
+
+        def set_placeholder_text(self, text):
+            self.placeholder_text = text
+
+    class FakeButton:
+        def __init__(self):
+            self.sensitive = None
+            self.label = None
+
+        def set_sensitive(self, value):
+            self.sensitive = value
+
+        def set_label(self, text):
+            self.label = text
+
+    class FakeLabel:
+        def __init__(self):
+            self.visible = None
+
+        def set_visible(self, value):
+            self.visible = value
+
+    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app.auth_in_progress = False
+    app.conversation_pending = False
+    app.conversation_prompt_style = ""
+    app.conversation_prompt_text = ""
+    app.session_ready = False
+    app.username_entry = FakeEntry()
+    app.password_entry = FakeEntry()
+    app.sessions_entry = FakeEntry()
+    app.login_button = FakeButton()
+    app.session_label = FakeLabel()
+
+    greeter.LoginApp.update_auth_widgets(app)
+
+    assert app.username_entry.sensitive is True
+    assert app.password_entry.sensitive is False
+    assert app.password_entry.visible is False
+    assert app.password_entry.visibility is True
+    assert app.password_entry.placeholder_text == "Response"
+    assert app.sessions_entry.sensitive is False
+    assert app.sessions_entry.visible is False
+    assert app.login_button.sensitive is True
+    assert app.login_button.label == "Next"
+    assert app.session_label.visible is False
+
+
+def test_set_conversation_prompt_updates_visible_prompt_widgets(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+
+    class FakeEntry:
+        def __init__(self):
+            self.text = "old"
+            self.focused = False
+            self.sensitive = None
+            self.visible = None
+            self.visibility = None
+            self.placeholder_text = None
+
+        def set_text(self, text):
+            self.text = text
+
+        def grab_focus(self):
+            self.focused = True
+
+        def set_sensitive(self, value):
+            self.sensitive = value
+
+        def set_visible(self, value):
+            self.visible = value
+
+        def set_visibility(self, value):
+            self.visibility = value
+
+        def set_placeholder_text(self, text):
+            self.placeholder_text = text
+
+    class FakeButton:
+        def __init__(self):
+            self.sensitive = None
+            self.label = None
+
+        def set_sensitive(self, value):
+            self.sensitive = value
+
+        def set_label(self, text):
+            self.label = text
+
+    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app.auth_in_progress = False
+    app.conversation_pending = False
+    app.conversation_prompt_style = ""
+    app.conversation_prompt_text = ""
+    app.session_ready = False
+    app.username_entry = FakeEntry()
+    app.password_entry = FakeEntry()
+    app.sessions_entry = FakeEntry()
+    app.login_button = FakeButton()
+    app.session_label = DummyLabel()
+    app.status_label = DummyLabel()
+
+    greeter.LoginApp.set_conversation_prompt(app, "visible", "Verification code")
+
+    assert app.conversation_pending is True
+    assert app.password_entry.text == ""
+    assert app.password_entry.focused is True
+    assert app.password_entry.sensitive is True
+    assert app.password_entry.visible is True
+    assert app.password_entry.visibility is True
+    assert app.password_entry.placeholder_text == "Verification code"
+    assert app.sessions_entry.visible is False
+    assert app.login_button.label == "Continue"
+    assert app.status_label.text == "Verification code"
+
+
+def test_set_session_ready_updates_post_auth_widgets(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+
+    class FakeEntry:
+        def __init__(self):
+            self.sensitive = None
+            self.visible = None
+            self.visibility = None
+            self.placeholder_text = None
+
+        def set_sensitive(self, value):
+            self.sensitive = value
+
+        def set_visible(self, value):
+            self.visible = value
+
+        def set_visibility(self, value):
+            self.visibility = value
+
+        def set_placeholder_text(self, text):
+            self.placeholder_text = text
+
+    class FakeButton:
+        def __init__(self):
+            self.sensitive = None
+            self.label = None
+
+        def set_sensitive(self, value):
+            self.sensitive = value
+
+        def set_label(self, text):
+            self.label = text
+
+    class FakeLabel:
+        def __init__(self):
+            self.visible = None
+            self.text = None
+
+        def set_visible(self, value):
+            self.visible = value
+
+        def set_text(self, text):
+            self.text = text
+
+    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app.auth_in_progress = False
+    app.conversation_pending = True
+    app.conversation_prompt_style = "secret"
+    app.conversation_prompt_text = "Password:"
+    app.session_ready = False
+    app.username_entry = FakeEntry()
+    app.password_entry = FakeEntry()
+    app.sessions_entry = FakeEntry()
+    app.login_button = FakeButton()
+    app.session_label = FakeLabel()
+    app.status_label = FakeLabel()
+
+    greeter.LoginApp.set_session_ready(app)
+
+    assert app.conversation_pending is False
+    assert app.session_ready is True
+    assert app.password_entry.visible is False
+    assert app.sessions_entry.sensitive is True
+    assert app.sessions_entry.visible is True
+    assert app.login_button.label == "Start session"
+    assert app.session_label.visible is True
+    assert app.status_label.text == "Authentication accepted. Select a session."
+
+
 def test_on_login_clicked_starts_selected_session_after_ready(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
 
