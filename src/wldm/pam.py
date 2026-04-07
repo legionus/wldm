@@ -5,13 +5,10 @@
 from typing import Dict, List, Any
 
 import ctypes
-from ctypes import POINTER, byref, c_char, c_char_p, c_void_p, cast, sizeof
+from ctypes import byref, c_char_p, c_void_p
 
 import wldm
-import wldm.config
 import wldm._pam_ffi as ffi
-from wldm._libc import calloc, free
-from wldm.secret import SecretBytes
 
 logger = wldm.logger
 
@@ -19,11 +16,9 @@ logger = wldm.logger
 # higher-level API surface.
 PAM_SUCCESS = ffi.PAM_SUCCESS
 PAM_CONV_ERR = ffi.PAM_CONV_ERR
-PAM_PROMPT_ECHO_OFF = ffi.PAM_PROMPT_ECHO_OFF
 PAM_TTY = ffi.PAM_TTY
 
 PamMessage = ffi.PamMessage
-PamResponse = ffi.PamResponse
 PamConv = ffi.PamConv
 PAM_CONV_FUNC = ffi.PAM_CONV_FUNC
 libpam = ffi.libpam
@@ -38,49 +33,7 @@ def _simple_conv(n_messages: int, messages: List[ffi.PamMessage], response: Any,
     # fill resp.
     return ffi.PAM_SUCCESS
 
-
-def _password_conv(n_messages: int, messages: List[ffi.PamMessage],
-                   response: Any,
-                   appdata_ptr: Any) -> int:
-    if not appdata_ptr:
-        return ffi.PAM_CONV_ERR
-
-    resp_ptr = calloc(n_messages, sizeof(ffi.PamResponse))
-    if not resp_ptr:
-        return ffi.PAM_CONV_ERR
-
-    password = ctypes.cast(appdata_ptr, c_char_p).value
-    if not password:
-        free(resp_ptr)
-        return ffi.PAM_CONV_ERR
-
-    arr = cast(resp_ptr, POINTER(ffi.PamResponse))
-
-    for i in range(n_messages):
-        if messages[i].contents.msg_style == ffi.PAM_PROMPT_ECHO_OFF:
-            resp = calloc(len(password) + 1, sizeof(c_char))
-
-            if not resp:
-                for j in range(i):
-                    if arr[j].resp:
-                        free(cast(arr[j].resp, c_void_p))
-
-                free(resp_ptr)
-
-                return ffi.PAM_CONV_ERR
-
-            ctypes.memmove(resp, c_char_p(password), len(password))
-
-            arr[i].resp = resp
-            arr[i].resp_retcode = 0
-
-    response[0] = arr
-
-    return ffi.PAM_SUCCESS
-
-
 simple_conv = PAM_CONV_FUNC(_simple_conv)
-password_conv = PAM_CONV_FUNC(_password_conv)
 
 
 def pam_error_str(pamh: Any, code: int) -> str:
@@ -205,31 +158,3 @@ def getenvlist(pamh: Any, encoding: str = 'utf-8') -> Dict[str, str]:
         env_count += 1
 
     return pam_env_items
-
-
-def authenticate(username: SecretBytes, password: SecretBytes) -> bool:
-    service: bytes = b"login"
-
-    conv = ffi.PamConv(password_conv, password.as_c_void_p())
-    pamh = ffi.pam_handle_t()
-
-    rc = ffi.PAM_CONV_ERR
-
-    try:
-        rc = libpam.pam_start(service, username.as_c_char_p(), byref(conv), byref(pamh))
-
-        if rc != ffi.PAM_SUCCESS:
-            err = pam_error_str(None, rc)
-            raise RuntimeError(f"pam_start failed: {rc} ({err})")
-
-        rc = libpam.pam_authenticate(pamh, 0)
-
-    finally:
-        password.clear()
-        username.clear()
-        end_pam(pamh)
-
-    if rc != ffi.PAM_SUCCESS:
-        return False
-
-    return True

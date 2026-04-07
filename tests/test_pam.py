@@ -5,7 +5,6 @@ import ctypes
 
 import wldm.pam
 import wldm._pam_ffi
-import wldm.secret
 
 
 def test_simple_conv_returns_success():
@@ -21,113 +20,6 @@ def test_pam_ffi_require_library_raises_when_missing(monkeypatch):
         assert "required library: pam" in str(exc)
     else:
         raise AssertionError("_require_library() should fail when libpam is missing")
-
-
-def test_password_conv_rejects_missing_inputs():
-    response = [None]
-
-    assert wldm.pam._password_conv(1, [], response, None) == wldm.pam.PAM_CONV_ERR
-
-
-def test_password_conv_rejects_failed_alloc(monkeypatch):
-    response = [None]
-
-    monkeypatch.setattr(wldm.pam, "calloc", lambda count, size: 0)
-
-    assert wldm.pam._password_conv(1, [], response, ctypes.c_void_p(1)) == wldm.pam.PAM_CONV_ERR
-
-
-def test_password_conv_frees_response_array_when_password_is_missing(monkeypatch):
-    response = [None]
-    calls = []
-
-    monkeypatch.setattr(wldm.pam, "calloc", lambda count, size: 1234)
-    monkeypatch.setattr(wldm.pam, "free", lambda ptr: calls.append(ptr))
-    real_cast = wldm.pam.ctypes.cast
-    monkeypatch.setattr(
-        wldm.pam.ctypes,
-        "cast",
-        lambda value, target: ctypes.c_char_p()
-        if target is wldm.pam.c_char_p and value == 1
-        else real_cast(value, target),
-    )
-
-    assert wldm.pam._password_conv(1, [], response, 1) == wldm.pam.PAM_CONV_ERR
-    assert calls == [1234]
-
-
-def test_password_conv_populates_response_for_password_prompt(monkeypatch):
-    class FakeMessage:
-        def __init__(self, style):
-            self.contents = ctypes.Structure.__new__(wldm.pam.PamMessage)
-            self.contents.msg_style = style
-
-    allocations = [ctypes.create_string_buffer(ctypes.sizeof(wldm.pam.PamResponse) * 2),
-                   ctypes.create_string_buffer(16)]
-
-    def fake_calloc(count, size):
-        return ctypes.addressof(allocations.pop(0))
-
-    monkeypatch.setattr(wldm.pam, "calloc", fake_calloc)
-
-    response = [None]
-    password = ctypes.c_char_p(b"secret")
-    messages = [FakeMessage(wldm.pam.PAM_PROMPT_ECHO_OFF), FakeMessage(999)]
-
-    rc = wldm.pam._password_conv(2, messages, response, ctypes.cast(password, ctypes.c_void_p))
-
-    assert rc == wldm.pam.PAM_SUCCESS
-    assert response[0] is not None
-def test_authenticate_accepts_secret_bytes(monkeypatch):
-    calls = []
-
-    monkeypatch.setattr(wldm.pam.libpam, "pam_start", lambda service, user, conv, pamh: 0)
-    monkeypatch.setattr(wldm.pam.libpam, "pam_authenticate", lambda pamh, flags: 0)
-    monkeypatch.setattr(wldm.pam, "end_pam", lambda pamh: calls.append("end"))
-
-    secret = wldm.secret.SecretBytes(b"secret")
-
-    assert wldm.pam.authenticate(wldm.secret.SecretBytes(b"alice"), secret) is True
-    assert secret.as_bytes() == b""
-    assert calls == ["end"]
-
-
-def test_password_conv_frees_partial_allocations_when_message_buffer_alloc_fails(monkeypatch):
-    class FakeMessage:
-        def __init__(self, style):
-            self.contents = ctypes.Structure.__new__(wldm.pam.PamMessage)
-            self.contents.msg_style = style
-
-    calls = []
-    response_buffer = ctypes.create_string_buffer(ctypes.sizeof(wldm.pam.PamResponse) * 2)
-    password_buffer = ctypes.create_string_buffer(16)
-
-    def fake_calloc(count, size):
-        calls.append(("calloc", count, size))
-        if len(calls) == 1:
-            return ctypes.addressof(response_buffer)
-        if len(calls) == 2:
-            return ctypes.addressof(password_buffer)
-        return 0
-
-    monkeypatch.setattr(wldm.pam, "calloc", fake_calloc)
-    monkeypatch.setattr(wldm.pam, "free", lambda ptr: calls.append(("free", ptr)))
-
-    response = [None]
-    password = ctypes.c_char_p(b"secret")
-    messages = [FakeMessage(wldm.pam.PAM_PROMPT_ECHO_OFF), FakeMessage(wldm.pam.PAM_PROMPT_ECHO_OFF)]
-
-    rc = wldm.pam._password_conv(2, messages, response, ctypes.cast(password, ctypes.c_void_p))
-
-    assert rc == wldm.pam.PAM_CONV_ERR
-    assert response[0] is None
-    freed_ptrs = [
-        entry[1].value if isinstance(entry[1], ctypes.c_void_p) else entry[1]
-        for entry in calls
-        if entry[0] == "free"
-    ]
-    assert len(freed_ptrs) == 2
-    assert ctypes.addressof(response_buffer) in freed_ptrs
 
 
 def test_pam_error_str_decodes_message(monkeypatch):
