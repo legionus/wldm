@@ -70,11 +70,12 @@ def new_ready() -> dict[str, object]:
     return {"v": PROTOCOL_VERSION, "kind": KIND_READY}
 
 
-def new_failed(message: str) -> dict[str, object]:
+def new_failed(code: str, message: str) -> dict[str, object]:
     """Build one worker failure message."""
     return {
         "v": PROTOCOL_VERSION,
         "kind": KIND_FAILED,
+        "code": code,
         "message": message,
     }
 
@@ -147,6 +148,7 @@ def encode_message(message: dict[str, object]) -> bytes:
         pass
 
     elif kind == KIND_FAILED:
+        body.extend(_encode_text(str(message.get("code", ""))))
         body.extend(_encode_text(str(message.get("message", ""))))
 
     else:
@@ -202,7 +204,9 @@ def decode_message(frame: bytes) -> dict[str, object]:
         pass
 
     elif kind == KIND_FAILED:
+        code, offset = _decode_text(payload, offset)
         message, offset = _decode_text(payload, offset)
+        decoded["code"] = code
         decoded["message"] = message
 
     else:

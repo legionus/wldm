@@ -13,6 +13,21 @@ _ = gettext.gettext
 logger = wldm.logger
 
 
+def create_session_for_username(app: Any, username: str) -> str:
+    """Start one greeter-side auth conversation for the provided username."""
+    app.set_auth_state(True)
+    app.auth_username = username
+
+    create_request = greeter_protocol.new_request(
+        greeter_protocol.ACTION_CREATE_SESSION,
+        {"username": username},
+    )
+    create_answer = app.send_recv_answer(create_request)
+
+    app.set_auth_state(False)
+    return str(app.handle_conversation_answer(create_answer))
+
+
 def read_prompt_response(app: Any) -> wldm.secret.SecretBytes | None:
     """Read one reply for the current pending auth prompt."""
     if app.password_entry is None:
@@ -141,6 +156,7 @@ def on_login_clicked(app: Any) -> None:
         if response is None:
             return
 
+        retry_username = str(app.auth_username)
         app.password_entry.set_text("")
         app.set_auth_state(True)
 
@@ -160,6 +176,20 @@ def on_login_clicked(app: Any) -> None:
         if result in {"pending", "ready"}:
             return
 
+        error = answer.get("error", {})
+        error_code = str(error.get("code", ""))
+        error_message = str(error.get("message", ""))
+        if error_code == "auth_retryable" and retry_username:
+            result = create_session_for_username(app, retry_username)
+
+            if result == "pending":
+                app.set_status(error_message, error=True)
+                return
+
+            if result == "ready":
+                app.set_status(error_message, error=True)
+                return
+
         if hasattr(app.password_entry, "grab_focus"):
             app.password_entry.grab_focus()
         return
@@ -178,17 +208,7 @@ def on_login_clicked(app: Any) -> None:
         )
         return
 
-    app.set_auth_state(True)
-    app.auth_username = username
-
-    create_request = greeter_protocol.new_request(
-        greeter_protocol.ACTION_CREATE_SESSION,
-        {"username": username},
-    )
-    create_answer = app.send_recv_answer(create_request)
-
-    app.set_auth_state(False)
-    result = app.handle_conversation_answer(create_answer)
+    result = create_session_for_username(app, username)
     if result in {"pending", "ready"}:
         return
 

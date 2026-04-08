@@ -25,7 +25,7 @@ def test_encode_and_decode_all_worker_message_kinds():
         pam_worker_protocol.new_cancel(),
         pam_worker_protocol.new_prompt("secret", "Password:"),
         pam_worker_protocol.new_ready(),
-        pam_worker_protocol.new_failed("Authentication failed"),
+        pam_worker_protocol.new_failed("auth_failed", "Authentication failed"),
     ]
 
     decoded = [pam_worker_protocol.decode_message(pam_worker_protocol.encode_message(msg)) for msg in messages]
@@ -36,7 +36,7 @@ def test_encode_and_decode_all_worker_message_kinds():
     assert decoded[2] == {"v": 1, "kind": "cancel"}
     assert decoded[3] == {"v": 1, "kind": "prompt", "style": "secret", "text": "Password:"}
     assert decoded[4] == {"v": 1, "kind": "ready"}
-    assert decoded[5] == {"v": 1, "kind": "failed", "message": "Authentication failed"}
+    assert decoded[5] == {"v": 1, "kind": "failed", "code": "auth_failed", "message": "Authentication failed"}
 
 
 def test_encode_message_rejects_bad_answer_payload():
@@ -73,13 +73,13 @@ def test_read_message_socket_round_trips_blocking_socket():
     left, right = socket.socketpair()
 
     try:
-        left.sendall(pam_worker_protocol.encode_message(pam_worker_protocol.new_failed("nope")))
+        left.sendall(pam_worker_protocol.encode_message(pam_worker_protocol.new_failed("auth_failed", "nope")))
         decoded = pam_worker_protocol.read_message_socket(right)
     finally:
         left.close()
         right.close()
 
-    assert decoded == {"v": 1, "kind": "failed", "message": "nope"}
+    assert decoded == {"v": 1, "kind": "failed", "code": "auth_failed", "message": "nope"}
 
 
 def test_read_message_async_returns_none_on_clean_eof():

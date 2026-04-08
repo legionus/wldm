@@ -109,7 +109,7 @@ def conversation_response_from_worker(req: dict[str, Any],
     if kind == pam_worker_protocol.KIND_FAILED:
         return greeter_protocol.new_error(
             req,
-            "auth_failed",
+            str(message.get("code", "auth_failed")),
             str(message.get("message", "Authentication failed")),
         )
 

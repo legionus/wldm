@@ -1021,6 +1021,50 @@ def test_on_login_clicked_sets_failure_and_clears_password(monkeypatch):
     assert app.password_entry.focused is True
 
 
+def test_on_login_clicked_restarts_password_prompt_after_auth_failure(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+
+    monkeypatch.setattr(greeter.wldm.sessions, "desktop_sessions", lambda username="": [])
+
+    app = greeter.GreeterApp(client=DummyClient())
+    app.username_entry = StubEntry("alice")
+    app.password_entry = StubEntry("wrong")
+    app.status_label = DummyLabel()
+    app.sessions = [{"name": "Default", "command": "start-session", "comment": "Default session", "desktop_names": ["default"]}]
+    app.sessions_entry = selected_entry("Default")
+    app.conversation_pending = True
+    app.conversation_prompt_style = "secret"
+    app.conversation_prompt_text = "Password:"
+    app.session_ready = False
+    app.auth_username = "alice"
+    sent: list[str] = []
+
+    def fake_send_recv_answer(data):
+        sent.append(data["action"])
+
+        if data["action"] == greeter.greeter_protocol.ACTION_CONTINUE_SESSION:
+            return {"ok": False, "error": {"code": "auth_retryable", "message": "Authentication failed."}}
+
+        if data["action"] == greeter.greeter_protocol.ACTION_CREATE_SESSION:
+            return {"ok": True, "payload": {"state": "pending", "message": {"style": "secret", "text": "Password:"}}}
+
+        raise AssertionError(f"unexpected action {data['action']}")
+
+    monkeypatch.setattr(app, "send_recv_answer", fake_send_recv_answer)
+
+    app.on_login_clicked()
+
+    assert sent == [
+        greeter.greeter_protocol.ACTION_CONTINUE_SESSION,
+        greeter.greeter_protocol.ACTION_CREATE_SESSION,
+    ]
+    assert app.status_label.text == "Authentication failed."
+    assert app.conversation_pending is True
+    assert app.conversation_prompt_style == "secret"
+    assert app.password_entry.text == ""
+    assert app.password_entry.focused is True
+
+
 def test_on_login_clicked_includes_desktop_names_in_auth_request(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
     monkeypatch.setattr(greeter.wldm.sessions, "desktop_sessions", lambda username="": [])

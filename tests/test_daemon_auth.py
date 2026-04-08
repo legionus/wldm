@@ -49,7 +49,7 @@ def test_conversation_response_from_worker_maps_messages():
     )
     failed = wldm.daemon_auth.conversation_response_from_worker(
         req,
-        pam_worker_protocol.new_failed("nope"),
+        pam_worker_protocol.new_failed("auth_failed", "nope"),
     )
 
     assert prompt["payload"] == {"state": "pending", "message": {"style": "secret", "text": "Password:"}}

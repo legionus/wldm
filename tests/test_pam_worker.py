@@ -248,7 +248,7 @@ def test_run_auth_session_reports_ready_and_failures(monkeypatch):
     monkeypatch.setattr(pam_worker.wldm.pam, "pam_error_str", lambda pamh_arg, rc: "bad auth")
 
     assert pam_worker.run_auth_session(sock, "login", "alice", "") == pam_worker.wldm.EX_FAILURE
-    assert calls[0] == {"v": 1, "kind": "failed", "message": "Authentication failed."}
+    assert calls[0] == {"v": 1, "kind": "failed", "code": "auth_failed", "message": "Authentication failed."}
 
 
 def test_run_auth_session_handles_pam_start_account_and_conversation_errors(monkeypatch):
@@ -262,7 +262,7 @@ def test_run_auth_session_handles_pam_start_account_and_conversation_errors(monk
 
     monkeypatch.setattr(ffi.libpam, "pam_start", lambda service, user, conv, pamh_ref: ffi.PAM_ABORT)
     assert pam_worker.run_auth_session(sock, "login", "alice", "/dev/tty7") == pam_worker.wldm.EX_FAILURE
-    assert calls[0] == {"v": 1, "kind": "failed", "message": "pam_start failed: 26 (bad news)"}
+    assert calls[0] == {"v": 1, "kind": "failed", "code": "auth_failed", "message": "pam_start failed: 26 (bad news)"}
     assert calls[1][0] == "end"
 
     calls.clear()
@@ -270,7 +270,7 @@ def test_run_auth_session_handles_pam_start_account_and_conversation_errors(monk
     monkeypatch.setattr(ffi.libpam, "pam_authenticate", lambda pamh_arg, flags: ffi.PAM_SUCCESS)
     monkeypatch.setattr(ffi.libpam, "pam_acct_mgmt", lambda pamh_arg, flags: ffi.PAM_ACCT_EXPIRED)
     assert pam_worker.run_auth_session(sock, "login", "alice", "") == pam_worker.wldm.EX_FAILURE
-    assert calls[0] == {"v": 1, "kind": "failed", "message": "Account expired."}
+    assert calls[0] == {"v": 1, "kind": "failed", "code": "auth_failed", "message": "Account expired."}
     assert calls[1][0] == "end"
 
     calls.clear()
@@ -287,6 +287,12 @@ def test_user_facing_error_maps_common_pam_codes():
     assert pam_worker.user_facing_error("acct", ffi.PAM_NEW_AUTHTOK_REQD) == "Password change required."
     assert pam_worker.user_facing_error("acct", ffi.PAM_ACCT_EXPIRED) == "Account expired."
     assert pam_worker.user_facing_error("acct", ffi.PAM_ABORT) == "Authentication service unavailable."
+
+
+def test_failure_code_marks_only_retryable_auth_failures():
+    assert pam_worker.failure_code("auth", ffi.PAM_AUTH_ERR) == "auth_retryable"
+    assert pam_worker.failure_code("auth", ffi.PAM_MAXTRIES) == "auth_failed"
+    assert pam_worker.failure_code("acct", ffi.PAM_ACCT_EXPIRED) == "auth_failed"
 
 
 def test_cmd_main_reads_start_message_and_calls_run_auth_session(monkeypatch):
