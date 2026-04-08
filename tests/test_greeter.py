@@ -217,6 +217,7 @@ def test_available_actions_reads_environment(monkeypatch):
 
 def test_keyboard_state_reads_active_layout(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
+    greeter_keyboard = importlib.import_module("wldm.greeter_keyboard")
 
     class FakeKeyboard:
         def get_layout_names(self):
@@ -233,20 +234,21 @@ def test_keyboard_state_reads_active_layout(monkeypatch):
         def get_default_seat(self):
             return FakeSeat()
 
-    monkeypatch.setattr(greeter.Gdk.Display, "get_default", lambda: FakeDisplay())
+    monkeypatch.setattr(greeter_keyboard.Gdk.Display, "get_default", lambda: FakeDisplay())
     monkeypatch.setenv("XKB_DEFAULT_LAYOUT", "us,ru")
 
-    layouts, active_index = greeter.keyboard_state()
+    layouts, active_index = greeter_keyboard.keyboard_state()
 
     assert active_index == 1
     assert layouts == [
-        greeter.KeyboardLayout(short_name="us", long_name="English (US)"),
-        greeter.KeyboardLayout(short_name="ru", long_name="Russian"),
+        greeter_keyboard.KeyboardLayout(short_name="us", long_name="English (US)"),
+        greeter_keyboard.KeyboardLayout(short_name="ru", long_name="Russian"),
     ]
 
 
 def test_keyboard_state_returns_empty_without_gtk418_api(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
+    greeter_keyboard = importlib.import_module("wldm.greeter_keyboard")
 
     class FakeKeyboard:
         pass
@@ -259,23 +261,24 @@ def test_keyboard_state_returns_empty_without_gtk418_api(monkeypatch):
         def get_default_seat(self):
             return FakeSeat()
 
-    monkeypatch.setattr(greeter.Gdk.Display, "get_default", lambda: FakeDisplay())
+    monkeypatch.setattr(greeter_keyboard.Gdk.Display, "get_default", lambda: FakeDisplay())
 
-    assert greeter.keyboard_state() == ([], -1)
+    assert greeter_keyboard.keyboard_state() == ([], -1)
 
 
 def test_update_keyboard_indicator_sets_visibility_from_active_layout(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
+    greeter_keyboard = importlib.import_module("wldm.greeter_keyboard")
     app = greeter.GreeterApp.__new__(greeter.GreeterApp)
     app.keyboard_label = DummyLabel()
 
     monkeypatch.setattr(
-        greeter,
+        greeter_keyboard,
         "keyboard_state",
         lambda: (
             [
-                greeter.KeyboardLayout(short_name="us", long_name="English (US)"),
-                greeter.KeyboardLayout(short_name="ru", long_name="Russian"),
+                greeter_keyboard.KeyboardLayout(short_name="us", long_name="English (US)"),
+                greeter_keyboard.KeyboardLayout(short_name="ru", long_name="Russian"),
             ],
             1,
         ),

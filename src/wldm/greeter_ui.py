@@ -7,6 +7,7 @@ import time
 from typing import Any, Optional
 
 import wldm
+import wldm.greeter_keyboard as greeter_keyboard
 import wldm.sessions
 import wldm.state
 
@@ -59,11 +60,6 @@ class GreeterUI:
     @staticmethod
     def account_service_profile(username: str) -> dict[str, str] | None:
         """Return AccountsService metadata for one username."""
-        raise NotImplementedError
-
-    @staticmethod
-    def keyboard_state() -> tuple[list[Any], int]:
-        """Return current keyboard layouts and active layout index."""
         raise NotImplementedError
 
     def get_selected_session(self) -> dict[str, Any] | None:
@@ -334,7 +330,7 @@ class GreeterUI:
         if keyboard_label is None:
             return
 
-        layouts, active_index = self.keyboard_state()
+        layouts, active_index = greeter_keyboard.keyboard_state()
 
         if not layouts or active_index < 0 or active_index >= len(layouts):
             keyboard_label.set_text("")

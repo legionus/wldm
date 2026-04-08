@@ -3,7 +3,6 @@
 # Copyright (C) 2026  Alexey Gladkov <legion@kernel.org>
 
 import argparse
-import dataclasses
 import gettext
 import locale
 import os
@@ -124,18 +123,6 @@ def available_actions() -> set[str]:
     value = os.environ.get("WLDM_ACTIONS", "")
     return {item for item in value.split(":") if item}
 
-
-@dataclasses.dataclass(frozen=True)
-class KeyboardLayout:
-    short_name: str
-    long_name: str
-
-
-def configured_keyboard_short_names() -> list[str]:
-    value = os.environ.get("XKB_DEFAULT_LAYOUT", "").strip()
-    return [item.strip() for item in value.split(",") if item.strip()]
-
-
 def configured_state_file() -> str:
     return os.environ.get("WLDM_STATE_FILE", "").strip()
 
@@ -152,56 +139,6 @@ def clear_entry_selection(entry: Any) -> None:
 
     if hasattr(entry, "set_position"):
         entry.set_position(-1)
-
-
-def keyboard_state() -> tuple[list[KeyboardLayout], int]:
-    display = Gdk.Display.get_default()
-
-    if display is None or not hasattr(display, "get_default_seat"):
-        return [], -1
-
-    seat = display.get_default_seat()
-    if seat is None or not hasattr(seat, "get_keyboard"):
-        return [], -1
-
-    keyboard = seat.get_keyboard()
-    if keyboard is None:
-        return [], -1
-
-    if not hasattr(keyboard, "get_layout_names") or not hasattr(keyboard, "get_active_layout_index"):
-        return [], -1
-
-    try:
-        layout_names = keyboard.get_layout_names()
-        active_index = keyboard.get_active_layout_index()
-
-    except Exception as e:
-        logger.debug("unable to read keyboard layout state: %s", e)
-        return [], -1
-
-    if not layout_names or not isinstance(active_index, int):
-        return [], -1
-
-    if active_index < 0 or active_index >= len(layout_names):
-        return [], -1
-
-    configured_names = configured_keyboard_short_names()
-    layouts = []
-
-    for index, name in enumerate(layout_names):
-        long_name = str(name).strip()
-
-        if not long_name:
-            continue
-
-        short_name = configured_names[index] if index < len(configured_names) else long_name
-        layouts.append(KeyboardLayout(short_name=short_name, long_name=long_name))
-
-    if active_index >= len(layouts):
-        return [], -1
-
-    return layouts, active_index
-
 
 def setup_greeter_logging() -> None:
     def log_uncaught_exception(exc_type: type[BaseException],
@@ -565,10 +502,6 @@ class GreeterApp(greeter_ui.GreeterUI):
     @staticmethod
     def account_service_profile(username: str) -> Dict[str, str] | None:
         return account_service_profile(username)
-
-    @staticmethod
-    def keyboard_state() -> tuple[list[KeyboardLayout], int]:
-        return keyboard_state()
 
     gtk = Gtk
     greeter_protocol = greeter_protocol
