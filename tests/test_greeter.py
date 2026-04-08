@@ -266,7 +266,7 @@ def test_keyboard_state_returns_empty_without_gtk418_api(monkeypatch):
 
 def test_update_keyboard_indicator_sets_visibility_from_active_layout(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
-    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app = greeter.GreeterApp.__new__(greeter.GreeterApp)
     app.keyboard_label = DummyLabel()
 
     monkeypatch.setattr(
@@ -281,7 +281,7 @@ def test_update_keyboard_indicator_sets_visibility_from_active_layout(monkeypatc
         ),
     )
 
-    greeter.LoginApp.update_keyboard_indicator(app)
+    greeter.GreeterApp.update_keyboard_indicator(app)
 
     assert app.keyboard_label.text == "RU"
     assert app.keyboard_label.tooltip == "Russian"
@@ -291,7 +291,7 @@ def test_update_keyboard_indicator_sets_visibility_from_active_layout(monkeypatc
 
 def test_refresh_sessions_prefers_last_session_command(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
-    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app = greeter.GreeterApp.__new__(greeter.GreeterApp)
     app.sessions = []
     app.last_username = ""
     app.last_session_command = "labwc"
@@ -322,14 +322,14 @@ def test_refresh_sessions_prefers_last_session_command(monkeypatch):
         ],
     )
 
-    greeter.LoginApp.refresh_sessions(app)
+    greeter.GreeterApp.refresh_sessions(app)
 
     assert app.sessions_entry.selected == 1
 
 
 def test_refresh_sessions_explicit_preference_overrides_previous_selection(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
-    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app = greeter.GreeterApp.__new__(greeter.GreeterApp)
     app.last_username = ""
     app.last_session_command = ""
     app.sessions = [
@@ -376,7 +376,7 @@ def test_refresh_sessions_explicit_preference_overrides_previous_selection(monke
     app.sessions_entry.model.append("Sway")
     app.sessions_entry.model.append("Labwc")
 
-    greeter.LoginApp.refresh_sessions(app, preferred_command="labwc")
+    greeter.GreeterApp.refresh_sessions(app, preferred_command="labwc")
 
     assert app.sessions_entry.selected == 1
 
@@ -387,7 +387,7 @@ def test_login_app_uses_project_application_id(monkeypatch):
 
     monkeypatch.setattr(greeter.wldm.sessions, "desktop_sessions", lambda username="": [])
 
-    app = greeter.LoginApp(client=DummyClient())
+    app = greeter.GreeterApp(client=DummyClient())
 
     assert app.app.application_id == "org.wldm.greeter"
 
@@ -505,24 +505,24 @@ def test_get_session_command_returns_selected_command(monkeypatch):
         def get_string(self):
             return "Beta"
 
-    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app = greeter.GreeterApp.__new__(greeter.GreeterApp)
     app.sessions = [
         {"name": "Alpha", "command": "alpha", "comment": "Alpha session", "desktop_names": ["alpha"]},
         {"name": "Beta", "command": "beta --flag", "comment": "Beta session", "desktop_names": ["beta"]},
     ]
     app.sessions_entry = types.SimpleNamespace(get_selected_item=lambda: FakeItem())
 
-    assert greeter.LoginApp.get_session_command(app) == "beta --flag"
+    assert greeter.GreeterApp.get_session_command(app) == "beta --flag"
 
 
 def test_get_session_command_handles_missing_selection(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
 
-    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app = greeter.GreeterApp.__new__(greeter.GreeterApp)
     app.sessions = [{"name": "Alpha", "command": "alpha", "comment": "Alpha session", "desktop_names": ["alpha"]}]
     app.sessions_entry = types.SimpleNamespace(get_selected_item=lambda: None)
 
-    assert greeter.LoginApp.get_session_command(app) == ""
+    assert greeter.GreeterApp.get_session_command(app) == ""
 
 
 def test_account_service_profile_reads_real_name(monkeypatch, tmp_path):
@@ -574,7 +574,7 @@ def test_login_app_run_calls_application_run(monkeypatch):
 
     monkeypatch.setattr(greeter.wldm.sessions, "desktop_sessions", lambda username="": [])
 
-    app = greeter.LoginApp(client=DummyClient())
+    app = greeter.GreeterApp(client=DummyClient())
     app.run()
 
     assert app.app.run_called is True
@@ -590,13 +590,13 @@ def test_update_clock_sets_date_and_time(monkeypatch):
         def set_text(self, text):
             self.text = text
 
-    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app = greeter.GreeterApp.__new__(greeter.GreeterApp)
     app.date_label = FakeLabel()
     app.time_label = FakeLabel()
-    monkeypatch.setattr(greeter.time, "strftime",
+    monkeypatch.setattr(greeter.greeter_ui.time, "strftime",
                         lambda fmt: {"%A, %d %B": "Monday, 30 March", "%H:%M": "09:45"}[fmt])
 
-    greeter.LoginApp.update_clock(app)
+    greeter.GreeterApp.update_clock(app)
 
     assert app.date_label.text == "Monday, 30 March"
     assert app.time_label.text == "09:45"
@@ -642,7 +642,7 @@ def test_send_recv_answer_round_trips_protocol_messages(monkeypatch):
             "payload": {"accepted": True},
         },
     ])
-    app = greeter.LoginApp(client=client)
+    app = greeter.GreeterApp(client=client)
 
     answer = app.send_recv_answer(request)
 
@@ -663,9 +663,9 @@ def test_send_recv_answer_round_trips_protocol_messages(monkeypatch):
 
 def test_read_password_secret_uses_native_ffi_when_available(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
-    monkeypatch.setattr(greeter.gtk_ffi, "_load_gtk_library", lambda: None)
+    monkeypatch.setattr(greeter.greeter_auth.gtk_ffi, "_load_gtk_library", lambda: None)
 
-    secret = greeter.gtk_ffi.read_password_secret(types.SimpleNamespace(get_text=lambda: "secret"))
+    secret = greeter.greeter_auth.gtk_ffi.read_password_secret(types.SimpleNamespace(get_text=lambda: "secret"))
 
     assert secret.as_bytes() == b"secret"
     secret.clear()
@@ -673,9 +673,9 @@ def test_read_password_secret_uses_native_ffi_when_available(monkeypatch):
 
 def test_read_password_secret_falls_back_to_entry_text(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
-    monkeypatch.setattr(greeter.gtk_ffi, "_editable_pointer", lambda entry: None)
+    monkeypatch.setattr(greeter.greeter_auth.gtk_ffi, "_editable_pointer", lambda entry: None)
 
-    secret = greeter.gtk_ffi.read_password_secret(types.SimpleNamespace(get_text=lambda: "secret"))
+    secret = greeter.greeter_auth.gtk_ffi.read_password_secret(types.SimpleNamespace(get_text=lambda: "secret"))
 
     assert secret.as_bytes() == b"secret"
     secret.clear()
@@ -691,7 +691,7 @@ def test_handle_event_updates_status_label(monkeypatch):
         def set_text(self, text):
             self.text = text
 
-    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app = greeter.GreeterApp.__new__(greeter.GreeterApp)
     app.auth_in_progress = False
     app.last_username = ""
     app.last_session_command = ""
@@ -702,19 +702,19 @@ def test_handle_event_updates_status_label(monkeypatch):
     app.status_label = FakeLabel()
     app.session_label = None
 
-    greeter.LoginApp.handle_event(
+    greeter.GreeterApp.handle_event(
         app,
         {"v": 1, "type": "event", "event": greeter.greeter_protocol.EVENT_SESSION_STARTING, "payload": {}},
     )
     assert app.status_label.text == "Starting session..."
 
-    greeter.LoginApp.handle_event(
+    greeter.GreeterApp.handle_event(
         app,
         {"v": 1, "type": "event", "event": greeter.greeter_protocol.EVENT_SESSION_FINISHED, "payload": {"pid": 1, "returncode": 0}},
     )
     assert app.status_label.text == "Session finished."
 
-    greeter.LoginApp.handle_event(
+    greeter.GreeterApp.handle_event(
         app,
         {
             "v": 1,
@@ -733,7 +733,7 @@ def test_login_app_loads_last_session_from_state_file(monkeypatch, tmp_path):
     monkeypatch.setenv("WLDM_STATE_FILE", str(state_file))
     monkeypatch.setattr(greeter.wldm.state, "load_last_session_file", lambda path: ("alice", "labwc"))
 
-    app = greeter.LoginApp(client=DummyClient())
+    app = greeter.GreeterApp(client=DummyClient())
 
     assert app.state_file == str(state_file)
     assert app.last_username == "alice"
@@ -760,7 +760,7 @@ def test_handle_event_saves_last_session_state_on_success(monkeypatch):
         def select_region(self, start, end):
             return None
 
-    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app = greeter.GreeterApp.__new__(greeter.GreeterApp)
     app.auth_in_progress = False
     app.state_file = "/tmp/wldm-state/last-session"
     app.last_username = ""
@@ -780,7 +780,7 @@ def test_handle_event_saves_last_session_state_on_success(monkeypatch):
         lambda path, username, command: calls.append((path, username, command)),
     )
 
-    greeter.LoginApp.handle_event(
+    greeter.GreeterApp.handle_event(
         app,
         {
             "v": 1,
@@ -813,7 +813,7 @@ def test_handle_event_saves_last_session_state_when_username_entry_was_cleared(m
         def select_region(self, start, end):
             return None
 
-    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app = greeter.GreeterApp.__new__(greeter.GreeterApp)
     app.auth_in_progress = False
     app.state_file = "/tmp/wldm-state/last-session"
     app.last_username = "alice"
@@ -833,7 +833,7 @@ def test_handle_event_saves_last_session_state_when_username_entry_was_cleared(m
         lambda path, username, command: calls.append((path, username, command)),
     )
 
-    greeter.LoginApp.handle_event(
+    greeter.GreeterApp.handle_event(
         app,
         {
             "v": 1,
@@ -866,7 +866,7 @@ def test_handle_event_keeps_remembered_session_command_when_current_selection_ch
         def select_region(self, start, end):
             return None
 
-    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app = greeter.GreeterApp.__new__(greeter.GreeterApp)
     app.auth_in_progress = False
     app.state_file = "/tmp/wldm-state/last-session"
     app.last_username = "alice"
@@ -886,7 +886,7 @@ def test_handle_event_keeps_remembered_session_command_when_current_selection_ch
         lambda path, username, command: calls.append((path, username, command)),
     )
 
-    greeter.LoginApp.handle_event(
+    greeter.GreeterApp.handle_event(
         app,
         {
             "v": 1,
@@ -916,7 +916,7 @@ def test_login_click_remembers_selected_session_before_username_clear(monkeypatc
         def grab_focus(self):
             self.focused = True
 
-    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app = greeter.GreeterApp.__new__(greeter.GreeterApp)
     app.auth_in_progress = False
     app.conversation_pending = False
     app.conversation_prompt_style = ""
@@ -947,11 +947,11 @@ def test_login_click_remembers_selected_session_before_username_clear(monkeypatc
         def clear(self):
             return None
 
-    monkeypatch.setattr(greeter.gtk_ffi, "read_password_secret", lambda entry: DummySecret())
+    monkeypatch.setattr(greeter.greeter_auth.gtk_ffi, "read_password_secret", lambda entry: DummySecret())
 
-    greeter.LoginApp.on_login_clicked(app)
-    greeter.LoginApp.on_login_clicked(app)
-    greeter.LoginApp.on_login_clicked(app)
+    greeter.GreeterApp.on_login_clicked(app)
+    greeter.GreeterApp.on_login_clicked(app)
+    greeter.GreeterApp.on_login_clicked(app)
 
     assert app.last_username == "alice"
     assert app.last_session_command == "labwc"
@@ -976,14 +976,14 @@ def test_set_status_toggles_error_css_class(monkeypatch):
         def remove_css_class(self, name):
             self.removed.append(name)
 
-    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app = greeter.GreeterApp.__new__(greeter.GreeterApp)
     app.status_label = FakeLabel()
 
-    greeter.LoginApp.set_status(app, "Authentication failed.", error=True)
+    greeter.GreeterApp.set_status(app, "Authentication failed.", error=True)
     assert app.status_label.text == "Authentication failed."
     assert app.status_label.added == ["status-error"]
 
-    greeter.LoginApp.set_status(app, "Starting session...", error=False)
+    greeter.GreeterApp.set_status(app, "Starting session...", error=False)
     assert app.status_label.text == "Starting session..."
     assert app.status_label.removed == ["status-error", "status-error"]
 
@@ -1035,7 +1035,7 @@ def test_on_clock_tick_polls_session_finished_event_and_reenables_inputs(monkeyp
         def close(self):
             return None
 
-    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app = greeter.GreeterApp.__new__(greeter.GreeterApp)
     app.client = FakeClient()
     app.quit = False
     app.auth_in_progress = True
@@ -1055,7 +1055,7 @@ def test_on_clock_tick_polls_session_finished_event_and_reenables_inputs(monkeyp
     app.date_label = None
     app.time_label = None
 
-    assert greeter.LoginApp.on_clock_tick(app) is True
+    assert greeter.GreeterApp.on_clock_tick(app) is True
     assert app.auth_in_progress is False
     assert app.username_entry.text == "alice"
     assert app.password_entry.text == ""
@@ -1083,7 +1083,7 @@ def test_poll_events_treats_bad_protocol_as_connection_loss(monkeypatch):
         def close(self):
             return None
 
-    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app = greeter.GreeterApp.__new__(greeter.GreeterApp)
     app.client = FakeClient()
     app.quit = False
     app.status_label = types.SimpleNamespace(set_text=lambda text: events.append(("status", text)))
@@ -1094,7 +1094,7 @@ def test_poll_events_treats_bad_protocol_as_connection_loss(monkeypatch):
         lambda msg, *args: events.append(("log", msg % args if args else msg)),
     )
 
-    greeter.LoginApp.poll_events(app)
+    greeter.GreeterApp.poll_events(app)
 
     assert ("status", "Connection to daemon lost.") in events
     assert ("quit", True) in events
@@ -1119,7 +1119,7 @@ def test_send_recv_answer_returns_empty_dict_on_bad_protocol(monkeypatch):
         def close(self):
             return None
 
-    app = greeter.LoginApp(client=FakeClient())
+    app = greeter.GreeterApp(client=FakeClient())
 
     request = greeter.greeter_protocol.new_request(greeter.greeter_protocol.ACTION_REBOOT, {})
 
@@ -1146,7 +1146,7 @@ def test_send_recv_answer_treats_bad_protocol_as_connection_loss(monkeypatch):
         def close(self):
             return None
 
-    app = greeter.LoginApp(client=FakeClient())
+    app = greeter.GreeterApp(client=FakeClient())
     app.status_label = types.SimpleNamespace(set_text=lambda text: events.append(("status", text)))
     monkeypatch.setattr(app, "on_quit", lambda *args: events.append(("quit", True)))
     monkeypatch.setattr(
@@ -1218,7 +1218,7 @@ def test_on_login_clicked_sets_failure_and_clears_password(monkeypatch):
         def set_text(self, text):
             self.text = text
 
-    app = greeter.LoginApp(client=DummyClient())
+    app = greeter.GreeterApp(client=DummyClient())
     app.username_entry = FakeEntry("alice")
     app.password_entry = FakeEntry("secret")
     app.status_label = FakeLabel()
@@ -1258,7 +1258,7 @@ def test_on_login_clicked_includes_desktop_names_in_auth_request(monkeypatch):
         def grab_focus(self):
             return None
 
-    app = greeter.LoginApp(client=DummyClient())
+    app = greeter.GreeterApp(client=DummyClient())
     app.username_entry = FakeEntry("alice")
     app.password_entry = FakeEntry("secret")
     app.status_label = types.SimpleNamespace(set_text=lambda text: None)
@@ -1314,7 +1314,7 @@ def test_on_login_clicked_rejects_overlong_username(monkeypatch):
         def set_text(self, text):
             self.text = text
 
-    app = greeter.LoginApp(client=DummyClient())
+    app = greeter.GreeterApp(client=DummyClient())
     app.username_entry = FakeEntry("a" * 257)
     app.password_entry = FakeEntry("secret")
     app.status_label = FakeLabel()
@@ -1352,7 +1352,7 @@ def test_on_login_clicked_rejects_overlong_password(monkeypatch):
         def set_text(self, text):
             self.text = text
 
-    app = greeter.LoginApp(client=DummyClient())
+    app = greeter.GreeterApp(client=DummyClient())
     app.username_entry = FakeEntry("alice")
     app.password_entry = FakeEntry("a" * 257)
     app.status_label = FakeLabel()
@@ -1392,7 +1392,7 @@ def test_on_login_clicked_sets_success_message_and_clears_username(monkeypatch):
         def set_text(self, text):
             self.text = text
 
-    app = greeter.LoginApp(client=DummyClient())
+    app = greeter.GreeterApp(client=DummyClient())
     app.username_entry = FakeEntry("alice")
     app.password_entry = FakeEntry("secret")
     app.status_label = FakeLabel()
@@ -1426,12 +1426,12 @@ def test_on_login_clicked_sets_success_message_and_clears_username(monkeypatch):
 
 def test_read_prompt_response_returns_none_without_password_entry(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
-    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app = greeter.GreeterApp.__new__(greeter.GreeterApp)
     app.password_entry = None
     app.conversation_prompt_style = "secret"
     app.conversation_prompt_text = "Password:"
 
-    assert greeter.LoginApp.read_prompt_response(app) is None
+    assert greeter.GreeterApp.read_prompt_response(app) is None
 
 
 def test_read_prompt_response_returns_empty_secret_for_info_prompt(monkeypatch):
@@ -1444,12 +1444,12 @@ def test_read_prompt_response_returns_empty_secret_for_info_prompt(monkeypatch):
         def set_text(self, text):
             self.text = text
 
-    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app = greeter.GreeterApp.__new__(greeter.GreeterApp)
     app.password_entry = FakeEntry()
     app.conversation_prompt_style = "info"
     app.conversation_prompt_text = "Info"
 
-    response = greeter.LoginApp.read_prompt_response(app)
+    response = greeter.GreeterApp.read_prompt_response(app)
 
     assert response is not None
     assert response.as_bytes() == b""
@@ -1466,7 +1466,7 @@ def test_read_prompt_response_rejects_empty_secret_prompt(monkeypatch):
         def grab_focus(self):
             self.focused = True
 
-    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app = greeter.GreeterApp.__new__(greeter.GreeterApp)
     app.password_entry = FakeEntry()
     app.conversation_prompt_style = "secret"
     app.conversation_prompt_text = "Password:"
@@ -1479,27 +1479,27 @@ def test_read_prompt_response_rejects_empty_secret_prompt(monkeypatch):
         def clear(self):
             return None
 
-    monkeypatch.setattr(greeter.gtk_ffi, "read_password_secret", lambda entry: EmptySecret())
+    monkeypatch.setattr(greeter.greeter_auth.gtk_ffi, "read_password_secret", lambda entry: EmptySecret())
 
-    assert greeter.LoginApp.read_prompt_response(app) is None
+    assert greeter.GreeterApp.read_prompt_response(app) is None
     assert app.status_label.text == "Password:"
     assert app.password_entry.focused is True
 
 
 def test_start_selected_session_sends_start_request(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
-    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app = greeter.GreeterApp.__new__(greeter.GreeterApp)
     sent = {}
     app.send_recv_answer = lambda data: sent.update(data) or {"ok": True, "payload": {}}
 
-    assert greeter.LoginApp.start_selected_session(app, "sway", ["sway", "wlroots"]) is True
+    assert greeter.GreeterApp.start_selected_session(app, "sway", ["sway", "wlroots"]) is True
     assert sent["action"] == greeter.greeter_protocol.ACTION_START_SESSION
     assert sent["payload"] == {"command": "sway", "desktop_names": ["sway", "wlroots"]}
 
 
 def test_handle_conversation_answer_sets_pending_prompt(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
-    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app = greeter.GreeterApp.__new__(greeter.GreeterApp)
     app.password_entry = types.SimpleNamespace(set_text=lambda text: None, grab_focus=lambda: None)
     app.status_label = DummyLabel()
     app.username_entry = None
@@ -1510,7 +1510,7 @@ def test_handle_conversation_answer_sets_pending_prompt(monkeypatch):
     app.session_ready = False
     app.auth_username = "alice"
 
-    result = greeter.LoginApp.handle_conversation_answer(
+    result = greeter.GreeterApp.handle_conversation_answer(
         app,
         {"ok": True, "payload": {"state": "pending", "message": {"style": "visible", "text": "Code:"}}},
     )
@@ -1523,7 +1523,7 @@ def test_handle_conversation_answer_sets_pending_prompt(monkeypatch):
 
 def test_handle_conversation_answer_marks_session_ready(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
-    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app = greeter.GreeterApp.__new__(greeter.GreeterApp)
     app.password_entry = None
     app.status_label = DummyLabel()
     app.username_entry = None
@@ -1536,7 +1536,7 @@ def test_handle_conversation_answer_marks_session_ready(monkeypatch):
     app.session_ready = False
     app.auth_username = "alice"
 
-    result = greeter.LoginApp.handle_conversation_answer(app, {"ok": True, "payload": {"state": "ready"}})
+    result = greeter.GreeterApp.handle_conversation_answer(app, {"ok": True, "payload": {"state": "ready"}})
 
     assert result == "ready"
     assert app.session_ready is True
@@ -1546,7 +1546,7 @@ def test_handle_conversation_answer_marks_session_ready(monkeypatch):
 
 def test_handle_conversation_answer_rejects_invalid_style(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
-    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app = greeter.GreeterApp.__new__(greeter.GreeterApp)
     app.password_entry = None
     app.status_label = DummyLabel()
     app.username_entry = None
@@ -1560,7 +1560,7 @@ def test_handle_conversation_answer_rejects_invalid_style(monkeypatch):
 
     monkeypatch.setattr(greeter.logger, "warning", lambda msg, *args: warnings.append(msg % args if args else msg))
 
-    result = greeter.LoginApp.handle_conversation_answer(
+    result = greeter.GreeterApp.handle_conversation_answer(
         app,
         {"ok": True, "payload": {"state": "pending", "message": {"style": "otp", "text": "Code:"}}},
     )
@@ -1570,13 +1570,13 @@ def test_handle_conversation_answer_rejects_invalid_style(monkeypatch):
     assert any("unsupported auth conversation step" in item for item in warnings)
 def test_handle_conversation_answer_rejects_unsuccessful_reply(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
-    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app = greeter.GreeterApp.__new__(greeter.GreeterApp)
     cleared = []
     statuses = []
     app.clear_conversation_state = lambda: cleared.append(True)
     app.set_status = lambda text, error=False: statuses.append((text, error))
 
-    result = greeter.LoginApp.handle_conversation_answer(
+    result = greeter.GreeterApp.handle_conversation_answer(
         app,
         {"ok": False, "error": {"message": "Account locked"}},
     )
@@ -1588,7 +1588,7 @@ def test_handle_conversation_answer_rejects_unsuccessful_reply(monkeypatch):
 
 def test_handle_conversation_answer_rejects_unexpected_state(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
-    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app = greeter.GreeterApp.__new__(greeter.GreeterApp)
     cleared = []
     warnings = []
     app.clear_conversation_state = lambda: cleared.append(True)
@@ -1596,7 +1596,7 @@ def test_handle_conversation_answer_rejects_unexpected_state(monkeypatch):
 
     monkeypatch.setattr(greeter.logger, "warning", lambda msg, *args: warnings.append(msg % args if args else msg))
 
-    result = greeter.LoginApp.handle_conversation_answer(
+    result = greeter.GreeterApp.handle_conversation_answer(
         app,
         {"ok": True, "payload": {"state": "mystery"}},
     )
@@ -1651,7 +1651,7 @@ def test_update_auth_widgets_for_initial_stage(monkeypatch):
         def set_visible(self, value):
             self.visible = value
 
-    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app = greeter.GreeterApp.__new__(greeter.GreeterApp)
     app.auth_in_progress = False
     app.conversation_pending = False
     app.conversation_prompt_style = ""
@@ -1664,7 +1664,7 @@ def test_update_auth_widgets_for_initial_stage(monkeypatch):
     app.cancel_button = DummyButton()
     app.session_label = FakeLabel()
 
-    greeter.LoginApp.update_auth_widgets(app)
+    greeter.GreeterApp.update_auth_widgets(app)
 
     assert app.username_entry.sensitive is True
     assert app.password_entry.sensitive is False
@@ -1726,7 +1726,7 @@ def test_set_conversation_prompt_updates_visible_prompt_widgets(monkeypatch):
         def set_label(self, text):
             self.label = text
 
-    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app = greeter.GreeterApp.__new__(greeter.GreeterApp)
     app.auth_in_progress = False
     app.conversation_pending = False
     app.conversation_prompt_style = ""
@@ -1740,7 +1740,7 @@ def test_set_conversation_prompt_updates_visible_prompt_widgets(monkeypatch):
     app.session_label = DummyLabel()
     app.status_label = DummyLabel()
 
-    greeter.LoginApp.set_conversation_prompt(app, "visible", "Verification code")
+    greeter.GreeterApp.set_conversation_prompt(app, "visible", "Verification code")
 
     assert app.conversation_pending is True
     assert app.password_entry.text == ""
@@ -1802,7 +1802,7 @@ def test_set_conversation_prompt_hides_entry_for_info_prompt(monkeypatch):
         def set_label(self, text):
             self.label = text
 
-    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app = greeter.GreeterApp.__new__(greeter.GreeterApp)
     app.auth_in_progress = False
     app.conversation_pending = False
     app.conversation_prompt_style = ""
@@ -1816,7 +1816,7 @@ def test_set_conversation_prompt_hides_entry_for_info_prompt(monkeypatch):
     app.session_label = DummyLabel()
     app.status_label = DummyLabel()
 
-    greeter.LoginApp.set_conversation_prompt(app, "info", "Use your hardware token")
+    greeter.GreeterApp.set_conversation_prompt(app, "info", "Use your hardware token")
 
     assert app.password_entry.text == ""
     assert app.password_entry.focused is False
@@ -1890,7 +1890,7 @@ def test_set_conversation_prompt_marks_error_prompt_as_error(monkeypatch):
         def remove_css_class(self, name):
             self.removed.append(name)
 
-    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app = greeter.GreeterApp.__new__(greeter.GreeterApp)
     app.auth_in_progress = False
     app.conversation_pending = False
     app.conversation_prompt_style = ""
@@ -1904,7 +1904,7 @@ def test_set_conversation_prompt_marks_error_prompt_as_error(monkeypatch):
     app.session_label = DummyLabel()
     app.status_label = FakeStatusLabel()
 
-    greeter.LoginApp.set_conversation_prompt(app, "error", "Authentication failed")
+    greeter.GreeterApp.set_conversation_prompt(app, "error", "Authentication failed")
 
     assert app.password_entry.visible is False
     assert app.password_entry.focused is False
@@ -1964,7 +1964,7 @@ def test_set_session_ready_updates_post_auth_widgets(monkeypatch):
         def set_text(self, text):
             self.text = text
 
-    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app = greeter.GreeterApp.__new__(greeter.GreeterApp)
     app.auth_in_progress = False
     app.conversation_pending = True
     app.conversation_prompt_style = "secret"
@@ -1978,7 +1978,7 @@ def test_set_session_ready_updates_post_auth_widgets(monkeypatch):
     app.session_label = FakeLabel()
     app.status_label = FakeLabel()
 
-    greeter.LoginApp.set_session_ready(app)
+    greeter.GreeterApp.set_session_ready(app)
 
     assert app.conversation_pending is False
     assert app.session_ready is True
@@ -2010,7 +2010,7 @@ def test_on_cancel_clicked_cancels_pending_auth_and_restores_username(monkeypatc
         def grab_focus(self):
             self.focused = True
 
-    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app = greeter.GreeterApp.__new__(greeter.GreeterApp)
     app.auth_in_progress = False
     app.conversation_pending = True
     app.session_ready = False
@@ -2035,7 +2035,7 @@ def test_on_cancel_clicked_cancels_pending_auth_and_restores_username(monkeypatc
     app.refresh_sessions = lambda username, preferred_command="": refreshed.append((username, preferred_command))
     app.update_identity_preview = lambda: updated.append(True)
 
-    greeter.LoginApp.on_cancel_clicked(app)
+    greeter.GreeterApp.on_cancel_clicked(app)
 
     assert calls[0]["type"] == "request"
     assert calls[0]["action"] == greeter.greeter_protocol.ACTION_CANCEL_SESSION
@@ -2059,7 +2059,7 @@ def test_on_login_clicked_starts_selected_session_after_ready(monkeypatch):
         def set_text(self, text):
             self.text = text
 
-    app = greeter.LoginApp(client=DummyClient())
+    app = greeter.GreeterApp(client=DummyClient())
     app.username_entry = FakeEntry("alice")
     app.password_entry = FakeEntry("")
     app.status_label = DummyLabel()
@@ -2082,22 +2082,22 @@ def test_on_login_clicked_starts_selected_session_after_ready(monkeypatch):
 
 def test_on_login_clicked_returns_early_without_entries(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
-    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app = greeter.GreeterApp.__new__(greeter.GreeterApp)
     app.username_entry = None
     app.password_entry = None
     app.auth_in_progress = False
 
-    assert greeter.LoginApp.on_login_clicked(app) is None
+    assert greeter.GreeterApp.on_login_clicked(app) is None
 
 
 def test_on_login_clicked_returns_early_when_auth_is_in_progress(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
-    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app = greeter.GreeterApp.__new__(greeter.GreeterApp)
     app.username_entry = types.SimpleNamespace()
     app.password_entry = types.SimpleNamespace()
     app.auth_in_progress = True
 
-    assert greeter.LoginApp.on_login_clicked(app) is None
+    assert greeter.GreeterApp.on_login_clicked(app) is None
 
 
 def test_on_login_clicked_reports_failed_session_start_after_ready(monkeypatch):
@@ -2113,7 +2113,7 @@ def test_on_login_clicked_reports_failed_session_start_after_ready(monkeypatch):
         def set_text(self, text):
             self.text = text
 
-    app = greeter.LoginApp(client=DummyClient())
+    app = greeter.GreeterApp(client=DummyClient())
     app.username_entry = FakeEntry("alice")
     app.password_entry = FakeEntry("")
     app.status_label = DummyLabel()
@@ -2144,14 +2144,14 @@ def test_cmd_main_validates_resources_path(monkeypatch, tmp_path):
 
     run_calls = []
 
-    class FakeLoginApp:
+    class FakeGreeterApp:
         def __init__(self):
             run_calls.append(("init",))
 
         def run(self):
             run_calls.append(("run",))
 
-    monkeypatch.setattr(greeter, "LoginApp", FakeLoginApp)
+    monkeypatch.setattr(greeter, "GreeterApp", FakeGreeterApp)
 
     assert greeter.cmd_main(types.SimpleNamespace()) == greeter.wldm.EX_SUCCESS
     assert run_calls == [("init",), ("run",)]
@@ -2260,7 +2260,7 @@ def test_setup_greeter_i18n_binds_theme_locale(monkeypatch, tmp_path):
 def test_collect_theme_widgets_rejects_missing_required_widgets(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
     monkeypatch.setenv("WLDM_THEME", "retro")
-    app = greeter.LoginApp(client=DummyClient())
+    app = greeter.GreeterApp(client=DummyClient())
 
     class FakeBuilder:
         def get_object(self, name):
@@ -2278,7 +2278,7 @@ def test_collect_theme_widgets_rejects_missing_required_widgets(monkeypatch):
 def test_collect_theme_widgets_rejects_invalid_required_widget_type(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
     monkeypatch.setenv("WLDM_THEME", "retro")
-    app = greeter.LoginApp(client=DummyClient())
+    app = greeter.GreeterApp(client=DummyClient())
 
     class FakeWindow:
         def set_application(self, app):
@@ -2433,7 +2433,7 @@ def test_on_activate_falls_back_to_default_theme_when_theme_ui_is_invalid(monkey
     monkeypatch.setattr(greeter.wldm.sessions, "desktop_sessions", lambda username="": [])
     monkeypatch.setenv("WLDM_ACTIONS", "")
 
-    app = greeter.LoginApp(client=DummyClient())
+    app = greeter.GreeterApp(client=DummyClient())
     app.on_activate(app.app)
 
     assert loaded_paths == [
@@ -2555,7 +2555,7 @@ def test_on_activate_falls_back_to_default_theme_when_required_widgets_are_inval
     monkeypatch.setattr(greeter.wldm.sessions, "desktop_sessions", lambda username="": [])
     monkeypatch.setenv("WLDM_ACTIONS", "")
 
-    app = greeter.LoginApp(client=DummyClient())
+    app = greeter.GreeterApp(client=DummyClient())
     app.on_activate(app.app)
 
     assert greeter.resource_path == fallback_path
@@ -2697,7 +2697,7 @@ def test_on_activate_binds_widgets_and_populates_sessions(monkeypatch):
     monkeypatch.setenv("WLDM_ACTIONS", "poweroff:reboot")
     monkeypatch.setattr(greeter.Gtk.Builder, "new", lambda: FakeBuilder())
 
-    app = greeter.LoginApp(client=DummyClient())
+    app = greeter.GreeterApp(client=DummyClient())
     app.on_activate(app.app)
 
     assert window.application is app.app
@@ -2737,10 +2737,10 @@ def test_username_activate_moves_focus_to_password(monkeypatch):
         def grab_focus(self):
             self.focused = True
 
-    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app = greeter.GreeterApp.__new__(greeter.GreeterApp)
     app.password_entry = FakeEntry()
 
-    greeter.LoginApp.on_username_activate(app)
+    greeter.GreeterApp.on_username_activate(app)
 
     assert app.password_entry.focused is True
 
@@ -2773,14 +2773,14 @@ def test_cmd_main_loads_css_when_present(monkeypatch, tmp_path):
 
     run_calls = []
 
-    class FakeLoginApp:
+    class FakeGreeterApp:
         def __init__(self):
             run_calls.append(("init",))
 
         def run(self):
             run_calls.append(("run",))
 
-    monkeypatch.setattr(greeter, "LoginApp", FakeLoginApp)
+    monkeypatch.setattr(greeter, "GreeterApp", FakeGreeterApp)
 
     assert greeter.cmd_main(types.SimpleNamespace()) == greeter.wldm.EX_SUCCESS
     assert css_loaded == [str(css_path)]
@@ -2799,7 +2799,7 @@ def test_system_action_buttons_send_requests(monkeypatch):
         def set_text(self, text):
             self.text = text
 
-    app = greeter.LoginApp(client=DummyClient())
+    app = greeter.GreeterApp(client=DummyClient())
     app.status_label = FakeLabel()
     calls = []
 
@@ -2855,7 +2855,7 @@ def test_username_change_updates_identity_preview(monkeypatch):
         def set_visible(self, value):
             self.visible = value
 
-    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app = greeter.GreeterApp.__new__(greeter.GreeterApp)
     app.username_entry = FakeEntry()
     app.identity_preview = FakeBox()
     app.identity_label = FakeLabel()
@@ -2866,7 +2866,7 @@ def test_username_change_updates_identity_preview(monkeypatch):
     app.session_label = None
     app.sessions_entry = None
 
-    greeter.LoginApp.on_username_changed(app)
+    greeter.GreeterApp.on_username_changed(app)
 
     assert app.identity_label.text == "Alice Doe"
     assert app.avatar_label.text == "A"
@@ -2897,7 +2897,7 @@ def test_username_change_hides_identity_preview_without_accountsservice_profile(
         def set_text(self, text):
             self.text = text
 
-    app = greeter.LoginApp.__new__(greeter.LoginApp)
+    app = greeter.GreeterApp.__new__(greeter.GreeterApp)
     app.username_entry = FakeEntry()
     app.identity_preview = FakeBox()
     app.identity_label = FakeLabel()
@@ -2908,7 +2908,7 @@ def test_username_change_hides_identity_preview_without_accountsservice_profile(
     app.session_label = None
     app.sessions_entry = None
 
-    greeter.LoginApp.on_username_changed(app)
+    greeter.GreeterApp.on_username_changed(app)
 
     assert app.identity_preview.visible is False
     assert app.identity_label.text is None

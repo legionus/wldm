@@ -12,7 +12,6 @@ import select
 import socket
 import sys
 import threading
-import time
 import traceback
 
 from typing import Optional, Dict, Any
@@ -27,13 +26,17 @@ from gi.repository import Gtk, Gdk, Gio, GLib  # type: ignore[import-untyped]
 # pylint: disable-next=wrong-import-position
 import wldm
 # pylint: disable-next=wrong-import-position
-from wldm import _gtk_ffi as gtk_ffi
+import wldm.greeter_auth as greeter_auth
+# pylint: disable-next=wrong-import-position
+import wldm.greeter_client as greeter_client
+# pylint: disable-next=wrong-import-position
+import wldm.greeter_ui as greeter_ui
 # pylint: disable-next=wrong-import-position
 import wldm.inifile
 # pylint: disable-next=wrong-import-position
-import wldm.policy
-# pylint: disable-next=wrong-import-position
 import wldm.greeter_protocol as greeter_protocol
+# pylint: disable-next=wrong-import-position
+import wldm.policy
 # pylint: disable-next=wrong-import-position
 import wldm.sessions
 # pylint: disable-next=wrong-import-position
@@ -272,46 +275,20 @@ def load_builder_from_resource_path() -> Any:
     return builder
 
 
-class LoginApp:
+class GreeterApp(greeter_ui.GreeterUI):
     def __init__(self, client: Optional[Any]=None) -> None:
+        super().__init__()
         self.app = Gtk.Application(application_id=wldm.policy.GREETER_APP_ID,
                                    flags=Gio.ApplicationFlags.FLAGS_NONE)
 
         self.app.connect('activate', self.on_activate)
 
-        self.username_entry: Optional[Any] = None
-        self.password_entry: Optional[Any] = None
-        self.status_label:   Optional[Any] = None
-        self.sessions_entry: Optional[Any] = None
-        self.login_button:   Optional[Any] = None
-        self.cancel_button:  Optional[Any] = None
-        self.quit_button:    Optional[Any] = None
-        self.reboot_button:  Optional[Any] = None
-        self.suspend_button: Optional[Any] = None
-        self.hibernate_button: Optional[Any] = None
-        self.hostname_label: Optional[Any] = None
-        self.date_label:     Optional[Any] = None
-        self.time_label:     Optional[Any] = None
-        self.keyboard_label: Optional[Any] = None
-        self.session_label:  Optional[Any] = None
-        self.identity_preview: Optional[Any] = None
-        self.identity_label: Optional[Any] = None
-        self.avatar_label:   Optional[Any] = None
-
         self.sessions = wldm.sessions.desktop_sessions()
         self.client = client if client is not None else new_ipc_client()
 
         self.quit = False
-        self.auth_in_progress = False
-        self.conversation_pending = False
-        self.conversation_prompt_style = ""
-        self.conversation_prompt_text = ""
-        self.session_ready = False
         self.actions = available_actions()
         self.state_file = configured_state_file()
-        self.last_username = ""
-        self.last_session_command = ""
-        self.auth_username = ""
 
         if self.state_file:
             self.last_username, self.last_session_command = wldm.state.load_last_session_file(self.state_file)
@@ -442,308 +419,11 @@ class LoginApp:
 
         return bindings
 
-    def set_status(self, message: str, error: bool = False) -> None:
-        if self.status_label is not None:
-            if hasattr(self.status_label, "remove_css_class"):
-                self.status_label.remove_css_class("status-error")
-
-            if error and hasattr(self.status_label, "add_css_class"):
-                self.status_label.add_css_class("status-error")
-
-            self.status_label.set_text(message)
-
     def handle_connection_lost(self) -> None:
-        self.set_status(_("Connection to daemon lost."), error=True)
-        self.on_quit()
-
-    def save_last_session_state(self) -> None:
-        """Persist the remembered greeter username and session selection.
-
-        Args:
-            None.
-
-        Returns:
-            Nothing. The helper writes the current `last-session` file when the
-            greeter has a configured state file path.
-        """
-        state_file = getattr(self, "state_file", "")
-
-        if not state_file:
-            return
-
-        try:
-            wldm.state.save_last_session_file(state_file, self.last_username, self.last_session_command)
-        except OSError as e:
-            logger.warning("unable to save last-session state in %s: %s", state_file, e)
+        greeter_client.handle_connection_lost(self)
 
     def log_protocol_error(self, context: str, raw: bytes, error: Exception) -> None:
-        logger.critical("%s: %s; raw=%r", context, error, raw)
-
-    def set_auth_state(self, busy: bool) -> None:
-        self.auth_in_progress = busy
-        self.update_auth_widgets()
-
-        if busy:
-            self.set_status(_("Authenticating..."))
-
-    def update_auth_widgets(self) -> None:
-        """Apply the current auth/conversation sensitivity policy to widgets."""
-        conversation_pending = getattr(self, "conversation_pending", False)
-        session_ready = getattr(self, "session_ready", False)
-        prompt_style = getattr(self, "conversation_prompt_style", "")
-        prompt_text = getattr(self, "conversation_prompt_text", "")
-        prompt_requires_input = conversation_pending and prompt_style in {"secret", "visible"}
-        prompt_is_secret = prompt_style == "secret"
-        username_locked = self.auth_in_progress or conversation_pending or session_ready
-
-        username_entry = getattr(self, "username_entry", None)
-        if username_entry is not None and hasattr(username_entry, "set_sensitive"):
-            username_entry.set_sensitive(not username_locked)
-
-        sessions_entry = getattr(self, "sessions_entry", None)
-        if sessions_entry is not None and hasattr(sessions_entry, "set_sensitive"):
-            sessions_entry.set_sensitive(session_ready and not self.auth_in_progress)
-        if sessions_entry is not None and hasattr(sessions_entry, "set_visible"):
-            sessions_entry.set_visible(session_ready)
-
-        password_entry = getattr(self, "password_entry", None)
-        if password_entry is not None and hasattr(password_entry, "set_sensitive"):
-            password_entry.set_sensitive(prompt_requires_input and not self.auth_in_progress)
-        if password_entry is not None and hasattr(password_entry, "set_visible"):
-            password_entry.set_visible(prompt_requires_input)
-        if password_entry is not None and hasattr(password_entry, "set_visibility"):
-            password_entry.set_visibility(not prompt_is_secret)
-        if password_entry is not None and hasattr(password_entry, "set_show_peek_icon"):
-            password_entry.set_show_peek_icon(prompt_requires_input)
-        if password_entry is not None and hasattr(password_entry, "set_placeholder_text"):
-            if prompt_style == "secret":
-                password_entry.set_placeholder_text(prompt_text or _("Password"))
-            elif prompt_style == "visible":
-                password_entry.set_placeholder_text(prompt_text or _("Response"))
-            else:
-                password_entry.set_placeholder_text("")
-
-        login_button = getattr(self, "login_button", None)
-        if login_button is not None and hasattr(login_button, "set_sensitive"):
-            login_button.set_sensitive(not self.auth_in_progress)
-        if login_button is not None and hasattr(login_button, "set_label"):
-            if session_ready:
-                login_button.set_label(_("Start session"))
-            elif conversation_pending:
-                login_button.set_label(_("Continue"))
-            else:
-                login_button.set_label(_("Next"))
-
-        cancel_button = getattr(self, "cancel_button", None)
-        if cancel_button is not None and hasattr(cancel_button, "set_visible"):
-            cancel_button.set_visible(conversation_pending or session_ready)
-        if cancel_button is not None and hasattr(cancel_button, "set_sensitive"):
-            cancel_button.set_sensitive(not self.auth_in_progress)
-
-        session_label = getattr(self, "session_label", None)
-        if session_label is not None and hasattr(session_label, "set_visible"):
-            session_label.set_visible(session_ready)
-
-    def clear_conversation_state(self) -> None:
-        """Forget the current multi-step authentication state."""
-        self.conversation_pending = False
-        self.conversation_prompt_style = ""
-        self.conversation_prompt_text = ""
-        self.session_ready = False
-        self.auth_username = ""
-        self.update_auth_widgets()
-
-    def set_conversation_prompt(self, style: str, text: str) -> None:
-        """Remember one pending prompt and update the greeter status."""
-        self.conversation_pending = True
-        self.session_ready = False
-        self.conversation_prompt_style = style
-        self.conversation_prompt_text = text
-        self.update_auth_widgets()
-
-        if self.password_entry is not None:
-            self.password_entry.set_text("")
-
-        if style in {"info", "error"} and text:
-            self.set_status(text, error=style == "error")
-        elif style in {"secret", "visible"}:
-            self.set_status("")
-
-        if self.password_entry is not None and style in {"secret", "visible"} and hasattr(self.password_entry, "grab_focus"):
-            self.password_entry.grab_focus()
-
-    def set_session_ready(self) -> None:
-        """Move the greeter to the post-auth session selection stage."""
-        self.conversation_pending = False
-        self.conversation_prompt_style = ""
-        self.conversation_prompt_text = ""
-        self.session_ready = True
-        self.update_auth_widgets()
-        self.set_status(_("Authentication accepted. Select a session."))
-
-    def reset_auth_flow(self) -> None:
-        """Return the greeter to the initial username entry stage."""
-        username = self.auth_username.strip()
-        self.set_auth_state(False)
-        self.clear_conversation_state()
-        self.set_status("")
-
-        if self.password_entry is not None:
-            self.password_entry.set_text("")
-
-        if self.username_entry is not None:
-            self.username_entry.set_text(username)
-
-            if hasattr(self.username_entry, "grab_focus"):
-                self.username_entry.grab_focus()
-
-            if username:
-                clear_entry_selection(self.username_entry)
-
-        self.refresh_sessions(username, preferred_command=self.last_session_command)
-        self.update_identity_preview()
-
-    def update_session_summary(self) -> None:
-        if self.session_label is None:
-            return
-
-        item = "Default shell"
-        command = self.get_session_command()
-        description = ""
-
-        if command:
-            item = command
-            entry = self.get_selected_session()
-            if entry:
-                description = str(entry.get("comment", ""))
-
-        if description:
-            self.session_label.set_text(_("Session: %(description)s\nCommand: %(command)s")
-                                        % {"description": description, "command": item})
-        else:
-            self.session_label.set_text(_("Session command: %(command)s") % {"command": item})
-
-    def selected_session_data(self) -> tuple[str, list[str]]:
-        """Return the current session command and desktop names.
-
-        Args:
-            None.
-
-        Returns:
-            Tuple of selected session command and desktop name list.
-        """
-        command = self.get_session_command()
-        desktop_names: list[str] = []
-        session_entry = self.get_selected_session()
-
-        if session_entry is not None:
-            desktop_names = list(session_entry.get("desktop_names", []))
-
-        return command, desktop_names
-
-    def refresh_sessions(self, username: str = "", preferred_command: str = "") -> None:
-        current_name = ""
-        current_command = ""
-        entry = self.get_selected_session()
-
-        if entry is not None:
-            current_name = str(entry["name"])
-            current_command = str(entry["command"])
-
-        if not preferred_command:
-            preferred_command = current_command or self.last_session_command
-        else:
-            current_name = ""
-
-        self.sessions = wldm.sessions.desktop_sessions(username)
-
-        if self.sessions_entry is not None and hasattr(self.sessions_entry, "set_model"):
-            name_store = Gtk.StringList()
-
-            for session in self.sessions:
-                name_store.append(str(session["name"]))
-
-            self.sessions_entry.set_model(name_store)
-
-            if self.sessions:
-                selected = 0
-
-                for index, session in enumerate(self.sessions):
-                    if session["name"] == current_name:
-                        selected = index
-                        break
-
-                    if not current_name and preferred_command and session["command"] == preferred_command:
-                        selected = index
-                        break
-
-                self.sessions_entry.set_selected(selected)
-
-        self.update_session_summary()
-
-    def update_identity_preview(self) -> None:
-        username = ""
-
-        if self.username_entry is not None:
-            username = self.username_entry.get_text().strip()
-
-        profile = account_service_profile(username)
-
-        if self.identity_preview is not None:
-            self.identity_preview.set_visible(profile is not None)
-
-        if profile is None:
-            return
-
-        display_name = profile["display_name"]
-        avatar_text = username[:1].upper()
-
-        if self.identity_label is not None:
-            self.identity_label.set_text(display_name)
-
-        if self.avatar_label is not None:
-            self.avatar_label.set_text(avatar_text)
-
-    def update_action_buttons(self) -> None:
-        button_actions = [
-            (getattr(self, "quit_button", None), greeter_protocol.ACTION_POWEROFF),
-            (getattr(self, "reboot_button", None), greeter_protocol.ACTION_REBOOT),
-            (getattr(self, "suspend_button", None), greeter_protocol.ACTION_SUSPEND),
-            (getattr(self, "hibernate_button", None), greeter_protocol.ACTION_HIBERNATE),
-        ]
-
-        for button, action in button_actions:
-            if button is not None and hasattr(button, "set_visible"):
-                button.set_visible(action in self.actions)
-
-    def update_clock(self) -> None:
-        if self.date_label is not None:
-            self.date_label.set_text(time.strftime("%A, %d %B"))
-
-        if self.time_label is not None:
-            self.time_label.set_text(time.strftime("%H:%M"))
-
-    def update_keyboard_indicator(self) -> None:
-        keyboard_label = getattr(self, "keyboard_label", None)
-
-        if keyboard_label is None:
-            return
-
-        layouts, active_index = keyboard_state()
-
-        if not layouts or active_index < 0 or active_index >= len(layouts):
-            keyboard_label.set_text("")
-            keyboard_label.set_tooltip_text(None)
-            keyboard_label.set_visible(False)
-            return
-
-        current = layouts[active_index]
-        max_width = max(len(layout.short_name) for layout in layouts)
-
-        keyboard_label.set_text(current.short_name.upper())
-        keyboard_label.set_tooltip_text(current.long_name)
-        keyboard_label.set_width_chars(max_width)
-        keyboard_label.set_visible(True)
+        greeter_client.log_protocol_error(self, context, raw, error)
 
     def on_clock_tick(self) -> bool:
         self.poll_events()
@@ -753,87 +433,10 @@ class LoginApp:
         return not self.quit
 
     def poll_events(self) -> None:
-        connection_lost = False
-        acquired = False
-
-        try:
-            acquired = lock.acquire(blocking=False)
-            if not acquired:
-                return
-
-            while hasattr(self.client, "can_read") and self.client.can_read():
-                try:
-                    message = self.client.read_message()
-
-                except greeter_protocol.ProtocolError as e:
-                    self.log_protocol_error("bad greeter event message", e.raw, e)
-                    connection_lost = True
-                    break
-
-                if message is None:
-                    connection_lost = True
-                    break
-
-                if greeter_protocol.is_event(message):
-                    self.handle_event(message)
-                    continue
-
-                logger.debug("unexpected protocol message while idle: %s", message)
-
-        except Exception as e:
-            logger.critical("unexpected polling error: %r", e)
-            connection_lost = True
-
-        finally:
-            if acquired:
-                lock.release()
-
-        if connection_lost:
-            self.handle_connection_lost()
+        greeter_client.poll_events(self, lock)
 
     def handle_event(self, event: Dict[str, Any]) -> None:
-        if not greeter_protocol.is_event(event):
-            return
-
-        payload = event["payload"]
-        event_name = event["event"]
-
-        logger.debug("protocol event: %s", event)
-
-        if event_name == greeter_protocol.EVENT_SESSION_STARTING:
-            self.set_auth_state(True)
-            self.set_status(_("Starting session..."))
-            return
-
-        if event_name == greeter_protocol.EVENT_SESSION_FINISHED:
-            self.set_auth_state(False)
-            self.clear_conversation_state()
-
-            if not bool(payload.get("failed", False)):
-                if self.username_entry is not None:
-                    current_username = self.username_entry.get_text().strip()
-                    if current_username:
-                        self.last_username = current_username
-
-                self.save_last_session_state()
-
-            if self.username_entry is not None:
-                self.username_entry.set_text(self.last_username)
-
-                if hasattr(self.username_entry, "grab_focus"):
-                    self.username_entry.grab_focus()
-
-                clear_entry_selection(self.username_entry)
-
-            if self.password_entry is not None:
-                self.password_entry.set_text("")
-
-            self.refresh_sessions(self.last_username, preferred_command=self.last_session_command)
-
-            status_message = str(payload.get("message", _("Session finished.")))
-
-            self.set_status(status_message, error=bool(payload.get("failed", False)))
-            return
+        greeter_client.handle_event(self, event, clear_entry_selection)
 
     def run(self) -> None:
         self.app.run()
@@ -955,227 +558,43 @@ class LoginApp:
         self.refresh_sessions(username)
         self.update_identity_preview()
 
+    @staticmethod
+    def clear_entry_selection(entry: Any) -> None:
+        clear_entry_selection(entry)
+
+    @staticmethod
+    def account_service_profile(username: str) -> Dict[str, str] | None:
+        return account_service_profile(username)
+
+    @staticmethod
+    def keyboard_state() -> tuple[list[KeyboardLayout], int]:
+        return keyboard_state()
+
+    gtk = Gtk
+    greeter_protocol = greeter_protocol
+
     # pylint: disable-next=unused-argument
     def on_cancel_clicked(self, *args: Any) -> None:
-        if not (self.conversation_pending or self.session_ready or self.auth_username):
-            return
-
-        self.set_auth_state(True)
-        try:
-            if self.conversation_pending or self.session_ready:
-                self.send_recv_answer(greeter_protocol.new_request(greeter_protocol.ACTION_CANCEL_SESSION, {}))
-        finally:
-            self.reset_auth_flow()
+        greeter_auth.on_cancel_clicked(self)
 
     def send_recv_answer(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        answer = {}
-        connection_lost = False
-
-        try:
-            lock.acquire()
-            self.client.write_message(data)
-
-            while True:
-                try:
-                    message = self.client.read_message()
-
-                except greeter_protocol.ProtocolError as e:
-                    self.log_protocol_error("bad greeter response message", e.raw, e)
-                    connection_lost = True
-                    break
-
-                if message is None:
-                    connection_lost = True
-                    break
-
-                if greeter_protocol.is_event(message):
-                    self.handle_event(message)
-                    continue
-
-                if greeter_protocol.is_response(message, data):
-                    answer = message
-                    break
-
-        except Exception as e:
-            logger.critical("unexpected error: %r", e)
-            connection_lost = True
-
-        finally:
-            lock.release()
-
-        if connection_lost:
-            self.handle_connection_lost()
-
-        return answer
+        return greeter_client.send_recv_answer(self, data, lock)
 
     def read_prompt_response(self) -> wldm.secret.SecretBytes | None:
         """Read one reply for the current pending auth prompt."""
-        if self.password_entry is None:
-            return None
-
-        style = self.conversation_prompt_style
-
-        if style in {"info", "error"}:
-            self.password_entry.set_text("")
-            return wldm.secret.SecretBytes()
-
-        response = gtk_ffi.read_password_secret(self.password_entry)
-
-        if len(response) == 0:
-            self.set_status(self.conversation_prompt_text or _("Enter a response."), error=True)
-
-            if hasattr(self.password_entry, "grab_focus"):
-                self.password_entry.grab_focus()
-
-            response.clear()
-            return None
-
-        if greeter_protocol.auth_field_is_too_long(response):
-            self.set_status(
-                _("Response must be %(limit)d bytes or less.")
-                % {"limit": greeter_protocol.AUTH_FIELD_MAX_LENGTH},
-                error=True,
-            )
-
-            if hasattr(self.password_entry, "grab_focus"):
-                self.password_entry.grab_focus()
-
-            response.clear()
-            return None
-
-        return response
+        return greeter_auth.read_prompt_response(self)
 
     def start_selected_session(self, command: str, desktop_names: list[str]) -> bool:
         """Ask the daemon to start one already-authenticated session."""
-        start_request = greeter_protocol.new_request(
-            greeter_protocol.ACTION_START_SESSION,
-            {
-                "command": command,
-                "desktop_names": desktop_names,
-            },
-        )
-        start_answer = self.send_recv_answer(start_request)
-
-        return bool(start_answer.get("ok"))
+        return greeter_auth.start_selected_session(self, command, desktop_names)
 
     def handle_conversation_answer(self, answer: Dict[str, Any]) -> str:
         """Advance the current greeter-side conversation state from one reply."""
-        if not answer.get("ok"):
-            error_message = str(answer.get("error", {}).get("message", "")) or _("Authentication failed.")
-            self.clear_conversation_state()
-            self.set_status(error_message, error=True)
-            return "failed"
-
-        payload = answer.get("payload", {})
-        state = str(payload.get("state", ""))
-
-        if state == "pending":
-            message = payload.get("message", {})
-            style = str(message.get("style", ""))
-            text = str(message.get("text", ""))
-
-            if style not in {"secret", "visible", "info", "error"}:
-                logger.warning("unsupported auth conversation step: %s", answer)
-                self.clear_conversation_state()
-                self.set_status(_("Authentication failed."), error=True)
-                return "failed"
-
-            self.set_conversation_prompt(style, text)
-            return "pending"
-
-        if state == "ready":
-            self.set_session_ready()
-            return "ready"
-
-        logger.warning("unexpected auth conversation state: %s", answer)
-        self.clear_conversation_state()
-        self.set_status(_("Authentication failed."), error=True)
-        return "failed"
+        return greeter_auth.handle_conversation_answer(self, answer)
 
     # pylint: disable-next=unused-argument
     def on_login_clicked(self, *args: Any) -> None:
-        if self.username_entry is None or self.password_entry is None:
-            return
-
-        if self.auth_in_progress:
-            return
-
-        if getattr(self, "session_ready", False):
-            command, desktop_names = self.selected_session_data()
-            self.set_auth_state(True)
-
-            if self.start_selected_session(command, desktop_names):
-                self.last_username = self.auth_username.strip()
-                self.last_session_command = command
-                self.username_entry.set_text("")
-                self.set_status(_("Authentication accepted. Waiting for session..."))
-                return
-
-            self.set_auth_state(False)
-            self.set_status(_("Unable to start session."), error=True)
-            return
-
-        if getattr(self, "conversation_pending", False):
-            response = self.read_prompt_response()
-            if response is None:
-                return
-
-            self.password_entry.set_text("")
-            self.set_auth_state(True)
-
-            try:
-                answer = self.send_recv_answer(
-                    greeter_protocol.new_request(
-                        greeter_protocol.ACTION_CONTINUE_SESSION,
-                        {"response": response},
-                    )
-                )
-            finally:
-                response.clear()
-
-            self.set_auth_state(False)
-            result = self.handle_conversation_answer(answer)
-
-            if result == "pending":
-                return
-
-            if result == "ready":
-                return
-
-            if hasattr(self.password_entry, "grab_focus"):
-                self.password_entry.grab_focus()
-            return
-
-        username = self.username_entry.get_text()
-
-        if len(username) == 0:
-            self.set_status(_("Enter a username."), error=True)
-            return
-
-        if greeter_protocol.auth_field_is_too_long(username):
-            self.set_status(
-                _("Username must be %(limit)d bytes or less.")
-                % {"limit": greeter_protocol.AUTH_FIELD_MAX_LENGTH},
-                error=True,
-            )
-            return
-        self.set_auth_state(True)
-        self.auth_username = username
-
-        create_request = greeter_protocol.new_request(
-            greeter_protocol.ACTION_CREATE_SESSION,
-            {"username": username},
-        )
-        create_answer = self.send_recv_answer(create_request)
-
-        self.set_auth_state(False)
-        result = self.handle_conversation_answer(create_answer)
-        if result == "pending":
-            return
-        if result == "ready":
-            return
-        if hasattr(self.password_entry, "grab_focus"):
-            self.password_entry.grab_focus()
+        greeter_auth.on_login_clicked(self)
 
     # pylint: disable-next=unused-argument
     def on_quit(self, *args: Any) -> None:
@@ -1237,7 +656,7 @@ def cmd_main(_parser: argparse.Namespace) -> int:
                                                   css_provider,
                                                   Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
 
-    app = LoginApp()
+    app = GreeterApp()
     app.run()
 
     return wldm.EX_SUCCESS
