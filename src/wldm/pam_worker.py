@@ -166,8 +166,8 @@ def failure_code(stage: str, rc: int) -> str:
     return "auth_failed"
 
 
-def send_auth_failure(sock: Any, *, service: str, username: str, tty: str,
-                      code: str, message: str, detail: str) -> int:
+def _send_auth_failure(sock: Any, *, service: str, username: str, tty: str,
+                       code: str, message: str, detail: str) -> int:
     """Log and send one PAM authentication failure to the daemon."""
     logger.warning("pam-worker authentication failed service=%s user=%s tty=%s: %s",
                    service, username, tty or "<none>", detail)
@@ -287,18 +287,18 @@ def run_auth_session(sock: Any, service: str, username: str, tty: str) -> int:
         rc = ffi.libpam.pam_authenticate(pamh, 0)
 
         if rc != ffi.PAM_SUCCESS:
-            return send_auth_failure(sock, service=service, username=username,
-                                     tty=tty, code=failure_code("auth", rc),
-                                     message=user_facing_error("auth", rc),
-                                     detail=f"pam_authenticate failed: {rc} ({wldm.pam.pam_error_str(pamh, rc)})")
+            return _send_auth_failure(sock, service=service, username=username,
+                                      tty=tty, code=failure_code("auth", rc),
+                                      message=user_facing_error("auth", rc),
+                                      detail=f"pam_authenticate failed: {rc} ({wldm.pam.pam_error_str(pamh, rc)})")
 
         rc = ffi.libpam.pam_acct_mgmt(pamh, 0)
 
         if rc != ffi.PAM_SUCCESS:
-            return send_auth_failure(sock, service=service, username=username,
-                                     tty=tty, code=failure_code("acct", rc),
-                                     message=user_facing_error("acct", rc),
-                                     detail=f"pam_acct_mgmt failed: {rc} ({wldm.pam.pam_error_str(pamh, rc)})")
+            return _send_auth_failure(sock, service=service, username=username,
+                                      tty=tty, code=failure_code("acct", rc),
+                                      message=user_facing_error("acct", rc),
+                                      detail=f"pam_acct_mgmt failed: {rc} ({wldm.pam.pam_error_str(pamh, rc)})")
 
         logger.info("pam-worker authentication ready service=%s user=%s tty=%s",
                     service, username, tty or "<none>")
@@ -313,10 +313,10 @@ def run_auth_session(sock: Any, service: str, username: str, tty: str) -> int:
         return wldm.EX_FAILURE
 
     except Exception as e:
-        return send_auth_failure(sock, service=service, username=username,
-                                 tty=tty, code="auth_failed",
-                                 message=str(e),
-                                 detail=str(e))
+        return _send_auth_failure(sock, service=service, username=username,
+                                  tty=tty, code="auth_failed",
+                                  message=str(e),
+                                  detail=str(e))
 
     finally:
         wldm.pam.end_pam(pamh)

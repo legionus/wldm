@@ -32,7 +32,7 @@ def load_unprivileged_modules() -> tuple[Any]:
     return (shlex,)
 
 
-def base_greeter_environ() -> Dict[str, str]:
+def _base_greeter_environ() -> Dict[str, str]:
     env: Dict[str, str] = {}
 
     for name, value in os.environ.items():
@@ -47,7 +47,7 @@ def base_greeter_environ() -> Dict[str, str]:
 
 def new_greeter_environ(pamh: Optional[Any],
                         pw: pwd.struct_passwd) -> Dict[str, str]:
-    env = base_greeter_environ()
+    env = _base_greeter_environ()
 
     if pamh is not None:
         for name, value in wldm.pam.getenvlist(pamh).items():
