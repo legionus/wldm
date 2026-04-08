@@ -33,7 +33,7 @@ def load_unprivileged_modules() -> tuple[Any]:
     return (shlex,)
 
 
-def validate_execute_path(name: str, execute: str) -> str:
+def _validate_execute_path(name: str, execute: str) -> str:
     if not execute:
         return ""
 
@@ -169,7 +169,7 @@ def prepare_user_terminal(ttydev: wldm.tty.TTYdevice) -> None:
 
 
 @contextlib.contextmanager
-def open_console_fd() -> Iterator[int]:
+def _open_console_fd() -> Iterator[int]:
     console = wldm.tty.open_console()
     if console is None:
         raise RuntimeError("Unable to open console")
@@ -205,7 +205,7 @@ def run_user_session(pw: pwd.struct_passwd,
                      pre_execute: str = "",
                      post_execute: str = "") -> int:
     try:
-        with open_console_fd() as console:
+        with _open_console_fd() as console:
             logger.debug("[+] Opening free TTY device")
             ttydev = wldm.tty.TTYdevice(console, pw.pw_uid)
             wtmp_line: Optional[str] = None
@@ -292,9 +292,9 @@ def cmd_main(parser: argparse.Namespace) -> int:
         return run_user_session(
             pw,
             cfg.get_str("session", "pam-service"),
-            validate_execute_path("session wrapper", wrapper),
-            validate_execute_path("pre hook", pre_execute),
-            validate_execute_path("post hook", post_execute),
+            _validate_execute_path("session wrapper", wrapper),
+            _validate_execute_path("pre hook", pre_execute),
+            _validate_execute_path("post hook", post_execute),
         )
     except RuntimeError as exc:
         logger.critical("[!] %s", exc)
