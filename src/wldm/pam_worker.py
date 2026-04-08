@@ -106,6 +106,7 @@ def _free_response_array(arr: Any, filled: int) -> None:
     for index in range(filled):
         if arr[index].resp:
             free(cast(arr[index].resp, c_void_p))
+
     free(cast(arr, c_void_p))
 
 
@@ -117,6 +118,19 @@ def _copy_response_bytes(data: bytes) -> Any:
 
     ctypes.memmove(resp, c_char_p(data), len(data))
     return resp
+
+
+def _resolve_broker_from_appdata(appdata_ptr: Any) -> PromptBroker:
+    """Resolve the registered prompt broker from one PAM appdata pointer."""
+    if not appdata_ptr:
+        raise ConversationError("missing PAM worker broker pointer")
+
+    broker_id = cast(appdata_ptr, c_void_p).value
+
+    if broker_id is None:
+        raise ConversationError("missing PAM worker broker id")
+
+    return _broker(broker_id)
 
 
 def user_facing_error(stage: str, rc: int) -> str:
@@ -162,27 +176,59 @@ def send_auth_failure(sock: Any, *, service: str, username: str, tty: str,
     return wldm.EX_FAILURE
 
 
+def _fill_response_slot(arr: Any, index: int, answer: bytes) -> None:
+    """Copy one prompt reply into the native PAM response array."""
+    resp = _copy_response_bytes(answer)
+    if not resp:
+        raise ConversationError("unable to allocate PAM response buffer")
+
+    arr[index].resp = resp
+
+
+def _process_conversation_message(arr: Any, index: int, message: Any, broker: PromptBroker) -> bool:
+    """Handle one PAM conversation message and fill one response slot.
+
+    Returns:
+        ``True`` when the callback should continue with the next message and
+        ``False`` when the conversation should abort with ``PAM_CONV_ERR``.
+    """
+    style = _prompt_style(message.msg_style)
+    text = message.msg.decode(errors="replace") if message.msg else ""
+
+    try:
+        answer = broker.ask(style, text)
+
+    except Exception as exc:
+        raise ConversationError(f"prompt callback failed: {exc}") from exc
+
+    if answer is None:
+        return False
+
+    arr[index].resp_retcode = 0
+
+    if style in {"info", "error"}:
+        arr[index].resp = None
+        return True
+
+    _fill_response_slot(arr, index, answer)
+
+    return True
+
+
 def _conversation_conv(n_messages: int,
                        messages: Any,
                        response: Any,
                        appdata_ptr: Any) -> int:
     """Run one blocking PAM conversation callback batch."""
-    if not appdata_ptr:
-        logger.critical("PAM worker callback called without appdata_ptr")
-        return ffi.PAM_CONV_ERR
-
     try:
-        broker_id = cast(appdata_ptr, c_void_p).value
-        if broker_id is None:
-            raise ConversationError("missing PAM worker broker id")
+        broker = _resolve_broker_from_appdata(appdata_ptr)
 
-        broker = _broker(broker_id)
-
-    except Exception as e:
+    except ConversationError as e:
         logger.critical("PAM worker callback failed to resolve broker: %s", e)
         return ffi.PAM_CONV_ERR
 
     resp_ptr = calloc(n_messages, sizeof(ffi.PamResponse))
+
     if not resp_ptr:
         logger.critical("PAM worker callback could not allocate response array")
         return ffi.PAM_CONV_ERR
@@ -191,30 +237,11 @@ def _conversation_conv(n_messages: int,
 
     try:
         for index in range(n_messages):
-            message = messages[index].contents
-            style = _prompt_style(message.msg_style)
-            text = message.msg.decode(errors="replace") if message.msg else ""
-            answer = broker.ask(style, text)
-
-            if answer is None:
+            if not _process_conversation_message(arr, index, messages[index].contents, broker):
                 _free_response_array(arr, index)
                 return ffi.PAM_CONV_ERR
 
-            arr[index].resp_retcode = 0
-
-            if style in {"info", "error"}:
-                arr[index].resp = None
-                continue
-
-            resp = _copy_response_bytes(answer)
-            if not resp:
-                logger.critical("PAM worker callback could not allocate response buffer")
-                _free_response_array(arr, index)
-                return ffi.PAM_CONV_ERR
-
-            arr[index].resp = resp
-
-    except Exception as e:
+    except ConversationError as e:
         logger.critical("PAM worker callback failed: %s", e)
         _free_response_array(arr, n_messages)
         return ffi.PAM_CONV_ERR
