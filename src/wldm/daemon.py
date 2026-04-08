@@ -730,10 +730,7 @@ async def start_greeter(state: DaemonState,
     # greeter.command can stay a plain launcher wrapper.
     env.update(keyboard_environment(cfg))
 
-    return await start_client(
-        state,
-        "greeter",
-        cfg,
+    return await start_client(state, "greeter", cfg,
         [
             *state.internal_command, "greeter-session",
             "--tty", str(greeter_tty),
@@ -764,10 +761,7 @@ async def start_dbus_adapter(state: DaemonState,
     log_path = cfg.get_str("dbus", "log-path")
 
     try:
-        return await start_client(
-            state,
-            "dbus-adapter",
-            cfg,
+        return await start_client(state, "dbus-adapter", cfg,
             [*state.internal_command, "dbus-adapter", user, service],
             dict(os.environ, WLDM_DBUS_LOG_PATH=log_path),
         )
