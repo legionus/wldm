@@ -8,43 +8,27 @@ import wldm.daemon_auth
 import wldm.greeter_protocol as greeter_protocol
 import wldm.pam_worker_protocol as pam_worker_protocol
 from wldm.secret import SecretBytes
+from tests.helpers_daemon import DummyProc, DummyWriter, make_worker_auth_session
 
 
-class DummyProc:
-    def __init__(self, pid=123, returncode=0):
-        self.pid = pid
-        self.returncode = returncode
+def patch_start_auth_runtime(monkeypatch, *, proc, writer, calls, worker_message):
+    async def fake_create_subprocess_exec(*cmd, env=None, pass_fds=()):
+        calls["cmd"] = cmd
+        calls["env"] = env
+        calls["pass_fds"] = pass_fds
+        return proc
 
+    async def fake_open_connection(sock=None):
+        calls["sock"] = sock
+        return SimpleNamespace(), writer
 
-class DummyWriter:
-    def __init__(self):
-        self.lines = []
-        self.closed = False
-        self.waited = False
+    async def fake_read_auth_worker_message(session):
+        calls["session"] = session
+        return worker_message
 
-    def write(self, data):
-        self.lines.append(data)
-
-    async def drain(self):
-        return None
-
-    def close(self):
-        self.closed = True
-
-    async def wait_closed(self):
-        self.waited = True
-
-
-def make_auth_session(username="alice", ready=False):
-    return wldm.daemon_auth.AuthSessionState(
-        service="login",
-        username=username,
-        tty="/dev/tty7",
-        proc=DummyProc(pid=321, returncode=0),
-        reader=SimpleNamespace(),
-        writer=DummyWriter(),
-        ready=ready,
-    )
+    monkeypatch.setattr(wldm.daemon_auth.asyncio, "create_subprocess_exec", fake_create_subprocess_exec)
+    monkeypatch.setattr(wldm.daemon_auth.asyncio, "open_connection", fake_open_connection)
+    monkeypatch.setattr(wldm.daemon_auth, "read_auth_worker_message", fake_read_auth_worker_message)
 
 
 def test_tty_device_path_formats_positive_tty_number():
@@ -85,7 +69,7 @@ def test_conversation_response_from_worker_rejects_unknown_kind():
 
 
 def test_continue_auth_session_writes_answer_and_clears_secret(monkeypatch):
-    auth_session = make_auth_session()
+    auth_session = make_worker_auth_session(wldm.daemon_auth)
     response = SecretBytes(b"secret")
 
     async def fake_read_auth_worker_message(session):
@@ -104,7 +88,7 @@ def test_continue_auth_session_writes_answer_and_clears_secret(monkeypatch):
 
 
 def test_stop_auth_session_can_send_cancel_and_close_writer(monkeypatch):
-    auth_session = make_auth_session()
+    auth_session = make_worker_auth_session(wldm.daemon_auth)
     calls = []
 
     async def fake_terminate_process(proc, name, timeout=5.0):
@@ -121,7 +105,7 @@ def test_stop_auth_session_can_send_cancel_and_close_writer(monkeypatch):
 
 
 def test_read_auth_worker_message_delegates_to_protocol(monkeypatch):
-    auth_session = make_auth_session()
+    auth_session = make_worker_auth_session(wldm.daemon_auth)
 
     async def fake_read_message_async(reader):
         assert reader is auth_session.reader
@@ -136,24 +120,13 @@ def test_start_auth_session_starts_worker_and_sends_start_message(monkeypatch):
     proc = DummyProc(pid=999, returncode=0)
     writer = DummyWriter()
     calls = {}
-
-    async def fake_create_subprocess_exec(*cmd, env=None, pass_fds=()):
-        calls["cmd"] = cmd
-        calls["env"] = env
-        calls["pass_fds"] = pass_fds
-        return proc
-
-    async def fake_open_connection(sock=None):
-        calls["sock"] = sock
-        return SimpleNamespace(), writer
-
-    async def fake_read_auth_worker_message(session):
-        calls["session"] = session
-        return pam_worker_protocol.new_prompt("visible", "OTP:")
-
-    monkeypatch.setattr(wldm.daemon_auth.asyncio, "create_subprocess_exec", fake_create_subprocess_exec)
-    monkeypatch.setattr(wldm.daemon_auth.asyncio, "open_connection", fake_open_connection)
-    monkeypatch.setattr(wldm.daemon_auth, "read_auth_worker_message", fake_read_auth_worker_message)
+    patch_start_auth_runtime(
+        monkeypatch,
+        proc=proc,
+        writer=writer,
+        calls=calls,
+        worker_message=pam_worker_protocol.new_prompt("visible", "OTP:"),
+    )
 
     auth_session, message = asyncio.run(
         wldm.daemon_auth.start_auth_session(

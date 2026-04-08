@@ -8,6 +8,16 @@ import wldm.pam_worker_protocol as pam_worker_protocol
 from wldm.secret import SecretBytes
 
 
+class ChunkReader:
+    def __init__(self, chunks):
+        self.chunks = iter(chunks)
+
+    async def readexactly(self, size):
+        chunk = next(self.chunks)
+        assert len(chunk) == size
+        return chunk
+
+
 def test_encode_and_decode_all_worker_message_kinds():
     messages = [
         pam_worker_protocol.new_start("login", "alice", "/dev/tty7"),
@@ -52,17 +62,7 @@ def test_decode_message_rejects_trailing_bytes():
 def test_read_message_async_reads_one_frame():
     message = pam_worker_protocol.new_prompt("visible", "Code:")
     frame = pam_worker_protocol.encode_message(message)
-
-    class DummyReader:
-        def __init__(self, chunks):
-            self.chunks = iter(chunks)
-
-        async def readexactly(self, size):
-            chunk = next(self.chunks)
-            assert len(chunk) == size
-            return chunk
-
-    reader = DummyReader([frame[:4], frame[4:]])
+    reader = ChunkReader([frame[:4], frame[4:]])
 
     decoded = asyncio.run(pam_worker_protocol.read_message_async(reader))
 
@@ -83,11 +83,11 @@ def test_read_message_socket_round_trips_blocking_socket():
 
 
 def test_read_message_async_returns_none_on_clean_eof():
-    class DummyReader:
+    class EofReader:
         async def readexactly(self, size):
             raise asyncio.IncompleteReadError(partial=b"", expected=size)
 
-    assert asyncio.run(pam_worker_protocol.read_message_async(DummyReader())) is None
+    assert asyncio.run(pam_worker_protocol.read_message_async(EofReader())) is None
 
 
 def test_read_message_socket_rejects_oversized_frame():

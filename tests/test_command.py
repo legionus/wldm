@@ -6,12 +6,18 @@ import io
 import sys
 import types
 
+import wldm
 import wldm.command
 import wldm.daemon
 import wldm.dbus_adapter
 import wldm.pam_worker
 import wldm.greeter_session
 import wldm.user_session
+
+
+def patch_role_setup(monkeypatch):
+    monkeypatch.setattr(wldm.command, "set_process_title", lambda role: None)
+    monkeypatch.setattr(wldm.command.wldm.audit, "setup_audit_hook", lambda role: None)
 
 
 def test_setup_parser_defaults_to_daemon():
@@ -69,8 +75,7 @@ def test_pam_worker_subcommand_parses_arguments():
 
 def test_cmd_daemon_dispatches_to_module(monkeypatch):
     monkeypatch.setattr(wldm.daemon, "cmd_main", lambda ns: 17)
-    monkeypatch.setattr(wldm.command, "set_process_title", lambda role: None)
-    monkeypatch.setattr(wldm.command.wldm.audit, "setup_audit_hook", lambda role: None)
+    patch_role_setup(monkeypatch)
 
     result = wldm.command.cmd_daemon(SimpleNamespace())
 
@@ -78,9 +83,11 @@ def test_cmd_daemon_dispatches_to_module(monkeypatch):
 
 
 def test_cmd_greeter_dispatches_to_module(monkeypatch):
-    monkeypatch.setattr(wldm.command, "set_process_title", lambda role: None)
-    monkeypatch.setattr(wldm.command.wldm.audit, "setup_audit_hook", lambda role: None)
-    monkeypatch.setitem(sys.modules, "wldm.greeter", types.SimpleNamespace(cmd_main=lambda ns: 13))
+    patch_role_setup(monkeypatch)
+    module = types.ModuleType("wldm.greeter")
+    module.cmd_main = lambda ns: 13
+    monkeypatch.setitem(sys.modules, "wldm.greeter", module)
+    monkeypatch.setattr(wldm, "greeter", module, raising=False)
 
     result = wldm.command.cmd_greeter(SimpleNamespace())
 
@@ -88,8 +95,7 @@ def test_cmd_greeter_dispatches_to_module(monkeypatch):
 
 
 def test_cmd_user_session_dispatches_to_module(monkeypatch):
-    monkeypatch.setattr(wldm.command, "set_process_title", lambda role: None)
-    monkeypatch.setattr(wldm.command.wldm.audit, "setup_audit_hook", lambda role: None)
+    patch_role_setup(monkeypatch)
     monkeypatch.setattr(wldm.user_session, "cmd_main", lambda ns: 14)
 
     result = wldm.command.cmd_user_session(SimpleNamespace())
@@ -204,8 +210,7 @@ def test_cmd_prints_help_and_fails_without_handler(monkeypatch):
 
 
 def test_cmd_greeter_session_dispatches_to_module(monkeypatch):
-    monkeypatch.setattr(wldm.command, "set_process_title", lambda role: None)
-    monkeypatch.setattr(wldm.command.wldm.audit, "setup_audit_hook", lambda role: None)
+    patch_role_setup(monkeypatch)
     monkeypatch.setattr(wldm.greeter_session, "cmd_main", lambda ns: 18)
 
     result = wldm.command.cmd_greeter_session(SimpleNamespace())
@@ -214,8 +219,7 @@ def test_cmd_greeter_session_dispatches_to_module(monkeypatch):
 
 
 def test_cmd_dbus_adapter_dispatches_to_module(monkeypatch):
-    monkeypatch.setattr(wldm.command, "set_process_title", lambda role: None)
-    monkeypatch.setattr(wldm.command.wldm.audit, "setup_audit_hook", lambda role: None)
+    patch_role_setup(monkeypatch)
     monkeypatch.setattr(wldm.dbus_adapter, "cmd_main", lambda ns: 19)
 
     result = wldm.command.cmd_dbus_adapter(SimpleNamespace())
@@ -224,8 +228,7 @@ def test_cmd_dbus_adapter_dispatches_to_module(monkeypatch):
 
 
 def test_cmd_pam_worker_dispatches_to_module(monkeypatch):
-    monkeypatch.setattr(wldm.command, "set_process_title", lambda role: None)
-    monkeypatch.setattr(wldm.command.wldm.audit, "setup_audit_hook", lambda role: None)
+    patch_role_setup(monkeypatch)
     monkeypatch.setattr(wldm.pam_worker, "cmd_main", lambda ns: 20)
 
     result = wldm.command.cmd_pam_worker(SimpleNamespace())

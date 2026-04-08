@@ -8,6 +8,20 @@ import wldm.greeter_protocol as greeter_protocol
 import wldm.secret
 
 
+class ChunkReader:
+    def __init__(self, chunks, on_exhaustion="unexpected read"):
+        self.chunks = iter(chunks)
+        self.on_exhaustion = on_exhaustion
+
+    async def readexactly(self, size):
+        try:
+            chunk = next(self.chunks)
+        except StopIteration as exc:
+            raise AssertionError(self.on_exhaustion) from exc
+        assert len(chunk) == size
+        return chunk
+
+
 def test_new_request_creates_versioned_envelope():
     msg = greeter_protocol.new_request(greeter_protocol.ACTION_CREATE_SESSION, {"username": "alice"})
 
@@ -123,19 +137,8 @@ def test_decode_message_rejects_oversized_frame_body():
 
 
 def test_read_message_async_rejects_oversized_frame_body():
-    class DummyReader:
-        def __init__(self, header: bytes):
-            self.header = header
-            self.calls = 0
-
-        async def readexactly(self, size: int) -> bytes:
-            self.calls += 1
-            if self.calls == 1:
-                return self.header
-            raise AssertionError("body read should not happen for oversized frame")
-
     header = greeter_protocol.FRAME_HEADER.pack(greeter_protocol.MAX_FRAME_BODY_LENGTH + 1)
-    reader = DummyReader(header)
+    reader = ChunkReader([header], on_exhaustion="body read should not happen for oversized frame")
 
     try:
         asyncio.run(greeter_protocol.read_message_async(reader))

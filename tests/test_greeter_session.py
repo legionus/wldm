@@ -9,6 +9,43 @@ import wldm.pam
 import wldm.tty
 
 
+def patch_cmd_main_runtime(monkeypatch, *, pw=None, gid=1001, run_result=wldm.greeter_session.wldm.EX_SUCCESS, redirect=None):
+    if pw is not None:
+        monkeypatch.setattr(wldm.greeter_session.pwd, "getpwnam", lambda username: pw)
+    monkeypatch.setattr(wldm.greeter_session.grp, "getgrnam", lambda group: SimpleNamespace(gr_gid=gid))
+    monkeypatch.setattr(wldm.greeter_session, "redirect_greeter_stderr", redirect or (lambda: None))
+    monkeypatch.setattr(wldm.greeter_session, "run_greeter_session", run_result)
+
+
+class DummyContext:
+    def __init__(self, value):
+        self.value = value
+
+    def __enter__(self):
+        return self.value
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+
+def patch_run_greeter_session_runtime(monkeypatch, *, ttydev, pamh="pamh", env=None, tty_hook=None):
+    monkeypatch.setattr(wldm.greeter_session, "greeter_ipc_fd", lambda: 13)
+    monkeypatch.setattr(wldm.greeter_session, "open_console_fd", lambda: DummyContext(88))
+    monkeypatch.setattr(wldm.greeter_session.wldm.tty, "TTYdevice", lambda console, uid, number=0: ttydev)
+    monkeypatch.setattr(wldm.greeter_session, "prepare_greeter_terminal", tty_hook or (lambda tty: None))
+    monkeypatch.setattr(
+        wldm.greeter_session,
+        "open_greeter_pam_session",
+        lambda pam_service, pw_arg, tty: DummyContext(pamh),
+    )
+    monkeypatch.setattr(
+        wldm.greeter_session,
+        "new_greeter_environ",
+        lambda pamh_arg, pw_arg: env or {"HOME": pw_arg.pw_dir},
+    )
+    monkeypatch.setattr(wldm.greeter_session, "build_greeter_argv", lambda: ["cage", "--", "greeter"])
+
+
 def test_new_greeter_environ_preserves_safe_base_env_and_adds_runtime_dir(monkeypatch):
     monkeypatch.setattr(
         wldm.greeter_session.os,
@@ -56,19 +93,16 @@ def test_cmd_main_runs_greeter_session(monkeypatch):
     pw = pwd.struct_passwd(("gdm", "x", 1001, 1001, "", "/var/lib/gdm", "/bin/false"))
     calls = {}
 
-    monkeypatch.setattr(wldm.greeter_session.pwd, "getpwnam", lambda username: pw)
-    monkeypatch.setattr(wldm.greeter_session.grp, "getgrnam", lambda group: SimpleNamespace(gr_gid=1001))
-    monkeypatch.setattr(wldm.greeter_session, "redirect_greeter_stderr", lambda: calls.update({"redirected": True}))
-    monkeypatch.setattr(
-        wldm.greeter_session,
-        "run_greeter_session",
-        lambda pw_arg, gid, pam_service, tty:
-            calls.update({
-                "pw": pw_arg,
-                "gid": gid,
-                "pam_service": pam_service,
-                "tty": tty,
-            }) or wldm.greeter_session.wldm.EX_SUCCESS,
+    patch_cmd_main_runtime(
+        monkeypatch,
+        pw=pw,
+        redirect=lambda: calls.update({"redirected": True}),
+        run_result=lambda pw_arg, gid, pam_service, tty: calls.update({
+            "pw": pw_arg,
+            "gid": gid,
+            "pam_service": pam_service,
+            "tty": tty,
+        }) or wldm.greeter_session.wldm.EX_SUCCESS,
     )
 
     result = wldm.greeter_session.cmd_main(
@@ -285,11 +319,11 @@ def test_cmd_main_returns_failure_for_unknown_group(monkeypatch):
 
 def test_cmd_main_returns_failure_on_unexpected_exception(monkeypatch):
     pw = pwd.struct_passwd(("gdm", "x", 1001, 1001, "", "/var/lib/gdm", "/bin/false"))
-    monkeypatch.setattr(wldm.greeter_session.pwd, "getpwnam", lambda username: pw)
-    monkeypatch.setattr(wldm.greeter_session.grp, "getgrnam", lambda group: SimpleNamespace(gr_gid=1001))
-    monkeypatch.setattr(wldm.greeter_session, "redirect_greeter_stderr", lambda: None)
-    monkeypatch.setattr(wldm.greeter_session, "run_greeter_session",
-                        lambda *args: (_ for _ in ()).throw(RuntimeError("boom")))
+    patch_cmd_main_runtime(
+        monkeypatch,
+        pw=pw,
+        run_result=lambda *args: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
 
     result = wldm.greeter_session.cmd_main(
         SimpleNamespace(username="gdm", group="gdm", tty=7, pam_service="system-login")
@@ -302,31 +336,14 @@ def test_run_greeter_session_waits_for_child_and_returns_exit_status(monkeypatch
     calls = {}
     pw = pwd.struct_passwd(("gdm", "x", 32, 32, "", "/var/lib/gdm", "/bin/false"))
     ttydev = SimpleNamespace(fd=55, filename="/dev/tty7", number=7, close=lambda: calls.setdefault("tty_closed", True))
-
-    class DummyContext:
-        def __init__(self, value):
-            self.value = value
-
-        def __enter__(self):
-            return self.value
-
-        def __exit__(self, exc_type, exc, tb):
-            return False
-
-    monkeypatch.setattr(wldm.greeter_session, "greeter_ipc_fd", lambda: 13)
-    monkeypatch.setattr(wldm.greeter_session, "open_console_fd", lambda: DummyContext(88))
-    monkeypatch.setattr(wldm.greeter_session.wldm.tty, "TTYdevice", lambda console, uid, number=0: ttydev)
-    monkeypatch.setattr(wldm.greeter_session, "prepare_greeter_terminal", lambda tty: calls.update({"tty": tty.number}))
-    monkeypatch.setattr(
-        wldm.greeter_session,
-        "open_greeter_pam_session", lambda pam_service, pw_arg, tty: DummyContext("pamh"),
+    patch_run_greeter_session_runtime(
+        monkeypatch,
+        ttydev=ttydev,
+        tty_hook=lambda tty: calls.update({"tty": tty.number}),
     )
-    monkeypatch.setattr(wldm.greeter_session, "new_greeter_environ", lambda pamh, pw_arg: {"HOME": pw_arg.pw_dir})
     monkeypatch.setattr(wldm.greeter_session.os, "fork", lambda: 1234)
     monkeypatch.setattr(wldm.greeter_session.os, "close", lambda fd: calls.setdefault("closed_fds", []).append(fd))
     monkeypatch.setattr(wldm.greeter_session.os, "waitpid", lambda pid, opts: (pid, 7 << 8))
-
-    monkeypatch.setattr(wldm.greeter_session, "build_greeter_argv", lambda: ["cage", "--", "greeter"])
 
     result = wldm.greeter_session.run_greeter_session(pw, 32, "system-login", 7)
 
@@ -340,31 +357,11 @@ def test_run_greeter_session_child_exec_preserves_passed_socket_fd(monkeypatch):
     calls = {}
     pw = pwd.struct_passwd(("gdm", "x", 32, 32, "", "/var/lib/gdm", "/bin/false"))
     ttydev = SimpleNamespace(fd=55, filename="/dev/tty7", number=7, close=lambda: None)
-
-    class DummyContext:
-        def __init__(self, value):
-            self.value = value
-
-        def __enter__(self):
-            return self.value
-
-        def __exit__(self, exc_type, exc, tb):
-            return False
-
-    monkeypatch.setattr(wldm.greeter_session, "greeter_ipc_fd", lambda: 13)
-    monkeypatch.setattr(wldm.greeter_session, "open_console_fd", lambda: DummyContext(88))
-    monkeypatch.setattr(wldm.greeter_session.wldm.tty, "TTYdevice", lambda console, uid, number=0: ttydev)
-    monkeypatch.setattr(wldm.greeter_session, "prepare_greeter_terminal", lambda tty: None)
-    monkeypatch.setattr(
-        wldm.greeter_session,
-        "open_greeter_pam_session", lambda pam_service, pw_arg, tty: DummyContext("pamh"),
+    patch_run_greeter_session_runtime(
+        monkeypatch,
+        ttydev=ttydev,
+        env={"PATH": "/usr/bin", "WLDM_SOCKET_FD": "13"},
     )
-    monkeypatch.setattr(
-        wldm.greeter_session,
-        "new_greeter_environ",
-        lambda pamh, pw_arg: {"PATH": "/usr/bin", "WLDM_SOCKET_FD": "13"},
-    )
-    monkeypatch.setattr(wldm.greeter_session, "build_greeter_argv", lambda: ["cage", "--", "greeter"])
     monkeypatch.setattr(wldm.greeter_session.os, "fork", lambda: 0)
     monkeypatch.setattr(wldm.greeter_session.os, "dup2",
                         lambda src, dst: calls.setdefault("dup2", []).append((src, dst)))

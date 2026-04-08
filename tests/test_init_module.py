@@ -11,6 +11,26 @@ from types import SimpleNamespace
 import wldm
 
 
+def patch_open_secure_directory_primitives(
+    monkeypatch,
+    *,
+    euid=0,
+    abspath=None,
+    st_mode=stat.S_IFDIR | 0o755,
+    st_uid=0,
+    on_close=None,
+    on_fchmod=None,
+):
+    monkeypatch.setattr(wldm.os, "geteuid", lambda: euid)
+    monkeypatch.setattr(wldm.os, "open", lambda *args, **kwargs: 4)
+    monkeypatch.setattr(wldm.os, "dup", lambda fd: 5)
+    monkeypatch.setattr(wldm.os, "close", on_close or (lambda fd: None))
+    monkeypatch.setattr(wldm.os, "fchmod", on_fchmod or (lambda fd, mode: None))
+    monkeypatch.setattr(wldm.os, "fstat", lambda fd: SimpleNamespace(st_mode=st_mode, st_uid=st_uid))
+    if abspath is not None:
+        monkeypatch.setattr(wldm.os.path, "abspath", abspath)
+
+
 def test_setup_logger_adds_handler_with_requested_level():
     logger = logging.getLogger("wldm.test.setup_logger")
     logger.handlers.clear()
@@ -116,13 +136,12 @@ def test_open_secure_directory_rejects_empty_path():
 
 def test_open_secure_directory_accepts_root_directory(monkeypatch):
     calls = []
-    monkeypatch.setattr(wldm.os, "geteuid", lambda: 0)
-    monkeypatch.setattr(wldm.os.path, "abspath", lambda path: "/")
-    monkeypatch.setattr(wldm.os, "open", lambda *args, **kwargs: 4)
-    monkeypatch.setattr(wldm.os, "dup", lambda fd: 5)
-    monkeypatch.setattr(wldm.os, "close", lambda fd: calls.append(("close", fd)))
-    monkeypatch.setattr(wldm.os, "fchmod", lambda fd, mode: calls.append(("fchmod", fd, mode)))
-    monkeypatch.setattr(wldm.os, "fstat", lambda fd: SimpleNamespace(st_mode=stat.S_IFDIR | 0o755, st_uid=0))
+    patch_open_secure_directory_primitives(
+        monkeypatch,
+        abspath=lambda path: "/",
+        on_close=lambda fd: calls.append(("close", fd)),
+        on_fchmod=lambda fd, mode: calls.append(("fchmod", fd, mode)),
+    )
 
     with wldm.open_secure_directory("/") as dir_fd:
         assert dir_fd == 5
@@ -131,12 +150,7 @@ def test_open_secure_directory_accepts_root_directory(monkeypatch):
 
 
 def test_open_secure_directory_rejects_non_directory(monkeypatch):
-    monkeypatch.setattr(wldm.os, "geteuid", lambda: 0)
-    monkeypatch.setattr(wldm.os, "open", lambda *args, **kwargs: 4)
-    monkeypatch.setattr(wldm.os, "dup", lambda fd: 5)
-    monkeypatch.setattr(wldm.os, "close", lambda fd: None)
-    monkeypatch.setattr(wldm.os, "fchmod", lambda fd, mode: None)
-    monkeypatch.setattr(wldm.os, "fstat", lambda fd: SimpleNamespace(st_mode=stat.S_IFREG, st_uid=0))
+    patch_open_secure_directory_primitives(monkeypatch, st_mode=stat.S_IFREG)
 
     try:
         with wldm.open_secure_directory("/tmp/test"):
@@ -146,12 +160,7 @@ def test_open_secure_directory_rejects_non_directory(monkeypatch):
 
 
 def test_open_secure_directory_rejects_unexpected_owner(monkeypatch):
-    monkeypatch.setattr(wldm.os, "geteuid", lambda: 1)
-    monkeypatch.setattr(wldm.os, "open", lambda *args, **kwargs: 4)
-    monkeypatch.setattr(wldm.os, "dup", lambda fd: 5)
-    monkeypatch.setattr(wldm.os, "close", lambda fd: None)
-    monkeypatch.setattr(wldm.os, "fchmod", lambda fd, mode: None)
-    monkeypatch.setattr(wldm.os, "fstat", lambda fd: SimpleNamespace(st_mode=stat.S_IFDIR | 0o755, st_uid=0))
+    patch_open_secure_directory_primitives(monkeypatch, euid=1)
 
     try:
         with wldm.open_secure_directory("/tmp/test"):
@@ -161,12 +170,7 @@ def test_open_secure_directory_rejects_unexpected_owner(monkeypatch):
 
 
 def test_open_secure_directory_rejects_non_owner_writable(monkeypatch):
-    monkeypatch.setattr(wldm.os, "geteuid", lambda: 0)
-    monkeypatch.setattr(wldm.os, "open", lambda *args, **kwargs: 4)
-    monkeypatch.setattr(wldm.os, "dup", lambda fd: 5)
-    monkeypatch.setattr(wldm.os, "close", lambda fd: None)
-    monkeypatch.setattr(wldm.os, "fchmod", lambda fd, mode: None)
-    monkeypatch.setattr(wldm.os, "fstat", lambda fd: SimpleNamespace(st_mode=stat.S_IFDIR | 0o777, st_uid=0))
+    patch_open_secure_directory_primitives(monkeypatch, st_mode=stat.S_IFDIR | 0o777)
 
     try:
         with wldm.open_secure_directory("/tmp/test"):
