@@ -9,7 +9,7 @@ import stat
 from typing import Iterator, TextIO
 
 
-__VERSION__ = '1-dev'
+__VERSION__ = '1'
 
 EX_SUCCESS = 0  # Successful exit status.
 EX_FAILURE = 1  # Failing exit status.
