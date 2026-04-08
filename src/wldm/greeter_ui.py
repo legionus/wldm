@@ -6,6 +6,7 @@ import gettext
 import time
 from typing import Any, Optional
 
+import wldm.greeter_account as greeter_account
 import wldm
 import wldm.greeter_keyboard as greeter_keyboard
 import wldm.sessions
@@ -68,11 +69,6 @@ class GreeterUI:
 
         if hasattr(self.username_entry, "set_position"):
             self.username_entry.set_position(-1)
-
-    @staticmethod
-    def account_service_profile(username: str) -> dict[str, str] | None:
-        """Return AccountsService metadata for one username."""
-        raise NotImplementedError
 
     def get_selected_session_name(self) -> str:
         """Return the selected session name from the current UI model."""
@@ -326,7 +322,7 @@ class GreeterUI:
         if self.username_entry is not None:
             username = self.username_entry.get_text().strip()
 
-        profile = self.account_service_profile(username)
+        profile = greeter_account.account_service_profile(username)
 
         if self.identity_preview is not None:
             self.identity_preview.set_visible(profile is not None)

@@ -530,14 +530,15 @@ def test_get_session_command_handles_missing_selection(monkeypatch):
 
 def test_account_service_profile_reads_real_name(monkeypatch, tmp_path):
     greeter = load_greeter_module(monkeypatch)
+    greeter_account = importlib.import_module("wldm.greeter_account")
     profile_dir = tmp_path / "AccountsService" / "users"
     profile_dir.mkdir(parents=True)
     profile_file = profile_dir / "alice"
     profile_file.write_text("[User]\nRealName=Alice Doe\nIcon=/missing/icon.png\n", encoding="utf-8")
 
-    monkeypatch.setattr(greeter.os.path, "join", lambda *parts: str(profile_file) if parts[-1] == "alice" else "/".join(parts))
+    monkeypatch.setattr(greeter_account.os.path, "join", lambda *parts: str(profile_file) if parts[-1] == "alice" else "/".join(parts))
 
-    profile = greeter.account_service_profile("alice")
+    profile = greeter_account.account_service_profile("alice")
 
     assert profile is not None
     assert profile["display_name"] == "Alice Doe"
@@ -546,28 +547,30 @@ def test_account_service_profile_reads_real_name(monkeypatch, tmp_path):
 
 def test_account_service_profile_ignores_parse_errors(monkeypatch, tmp_path):
     greeter = load_greeter_module(monkeypatch)
+    greeter_account = importlib.import_module("wldm.greeter_account")
     profile_dir = tmp_path / "AccountsService" / "users"
     profile_dir.mkdir(parents=True)
     profile_file = profile_dir / "alice"
     profile_file.write_text("not an ini file\n", encoding="utf-8")
 
-    monkeypatch.setattr(greeter.os.path, "join", lambda *parts: str(profile_file) if parts[-1] == "alice" else "/".join(parts))
+    monkeypatch.setattr(greeter_account.os.path, "join", lambda *parts: str(profile_file) if parts[-1] == "alice" else "/".join(parts))
 
-    profile = greeter.account_service_profile("alice")
+    profile = greeter_account.account_service_profile("alice")
 
     assert profile is None
 
 
 def test_account_service_profile_ignores_oversized_files(monkeypatch, tmp_path):
     greeter = load_greeter_module(monkeypatch)
+    greeter_account = importlib.import_module("wldm.greeter_account")
     profile_dir = tmp_path / "AccountsService" / "users"
     profile_dir.mkdir(parents=True)
     profile_file = profile_dir / "alice"
     profile_file.write_text("A" * (greeter.wldm.policy.ACCOUNT_SERVICE_MAX_FILE_SIZE + 1), encoding="utf-8")
 
-    monkeypatch.setattr(greeter.os.path, "join", lambda *parts: str(profile_file) if parts[-1] == "alice" else "/".join(parts))
+    monkeypatch.setattr(greeter_account.os.path, "join", lambda *parts: str(profile_file) if parts[-1] == "alice" else "/".join(parts))
 
-    profile = greeter.account_service_profile("alice")
+    profile = greeter_account.account_service_profile("alice")
 
     assert profile is None
 
@@ -2836,8 +2839,9 @@ def test_system_action_buttons_send_requests(monkeypatch):
 
 def test_username_change_updates_identity_preview(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
+    greeter_account = importlib.import_module("wldm.greeter_account")
     calls = []
-    monkeypatch.setattr(greeter, "account_service_profile",
+    monkeypatch.setattr(greeter_account, "account_service_profile",
                         lambda username: {"display_name": "Alice Doe", "avatar_path": ""})
     monkeypatch.setattr(greeter.wldm.sessions, "desktop_sessions",
                         lambda username="": calls.append(username) or [
@@ -2883,7 +2887,8 @@ def test_username_change_updates_identity_preview(monkeypatch):
 
 def test_username_change_hides_identity_preview_without_accountsservice_profile(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
-    monkeypatch.setattr(greeter, "account_service_profile", lambda username: None)
+    greeter_account = importlib.import_module("wldm.greeter_account")
+    monkeypatch.setattr(greeter_account, "account_service_profile", lambda username: None)
     monkeypatch.setattr(greeter.wldm.sessions, "desktop_sessions", lambda username="": [])
 
     class FakeEntry:
