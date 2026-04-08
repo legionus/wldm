@@ -50,7 +50,7 @@ session-dirs = /usr/share/wayland-sessions
 user-session-dir = .local/share/wayland-sessions
 
 # Compositor launcher prefix. wldm appends "wldm greeter" automatically.
-command = cage -d -s --
+command = cage -d -s -m last --
 
 # PAM service used for the greeter session itself.
 pam-service = system-login

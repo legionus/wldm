@@ -46,7 +46,7 @@ def read_config() -> wldm.inifile.IniFile:
             "theme": "default",
             "session-dirs": ":".join(wldm.policy.SYSTEM_WAYLAND_SESSION_DIRS),
             "user-session-dir": wldm.policy.USER_WAYLAND_SESSION_DIR,
-            "command": "cage -d -s --",
+            "command": "cage -d -s -m last --",
             "pam-service": "system-login",
             "max-restarts": "3",
             "user-sessions": "yes",
