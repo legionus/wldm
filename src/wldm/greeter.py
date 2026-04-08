@@ -45,7 +45,7 @@ lock = threading.Lock()
 GETTEXT_DOMAIN = "wldm"
 _ = gettext.gettext
 
-def is_valid_widget(spec: Dict[str, Any], widget: Any) -> bool:
+def _is_valid_widget(spec: Dict[str, Any], widget: Any) -> bool:
     if spec.get("editable", False):
         editable_iface = getattr(Gtk, "Editable", None)
 
@@ -56,7 +56,7 @@ def is_valid_widget(spec: Dict[str, Any], widget: Any) -> bool:
 
     return all(hasattr(widget, method) for method in methods)
 
-class SocketClient:
+class _SocketClient:
     def __init__(self, fd: int) -> None:
         self.sock = socket.socket(fileno=fd)
 
@@ -74,22 +74,24 @@ class SocketClient:
         self.sock.close()
 
 
-def new_ipc_client() -> Any:
+def _new_ipc_client() -> Any:
     socket_fd = os.environ.get("WLDM_SOCKET_FD", "").strip()
     if socket_fd:
-        return SocketClient(fd=int(socket_fd))
+        return _SocketClient(fd=int(socket_fd))
 
     raise RuntimeError("environ variable `WLDM_SOCKET_FD' not specified")
 
 
-def available_actions() -> set[str]:
+def _available_actions() -> set[str]:
     value = os.environ.get("WLDM_ACTIONS", "")
     return {item for item in value.split(":") if item}
 
-def configured_state_file() -> str:
+
+def _configured_state_file() -> str:
     return os.environ.get("WLDM_STATE_FILE", "").strip()
 
-def setup_greeter_logging() -> None:
+
+def _setup_greeter_logging() -> None:
     def log_uncaught_exception(exc_type: type[BaseException],
                                exc_value: BaseException,
                                exc_traceback: Any) -> None:
@@ -101,7 +103,7 @@ def setup_greeter_logging() -> None:
     sys.excepthook = log_uncaught_exception
 
 
-def greeter_locale_path() -> str:
+def _greeter_locale_path() -> str:
     if "WLDM_LOCALE_DIR" in os.environ:
         return os.path.abspath(os.environ["WLDM_LOCALE_DIR"])
 
@@ -113,18 +115,18 @@ def greeter_locale_path() -> str:
     return ""
 
 
-def setup_greeter_i18n() -> None:
+def _setup_greeter_i18n() -> None:
     try:
         locale.setlocale(locale.LC_ALL, "")
 
     except locale.Error as e:
         logger.debug("unable to set process locale from environment: %s", e)
 
-    gettext.bindtextdomain(GETTEXT_DOMAIN, greeter_locale_path())
+    gettext.bindtextdomain(GETTEXT_DOMAIN, _greeter_locale_path())
     gettext.textdomain(GETTEXT_DOMAIN)
 
 
-def default_resource_path() -> str:
+def _default_resource_path() -> str:
     data_dir = os.environ.get("WLDM_DATA_DIR", "").strip()
 
     if not data_dir:
@@ -133,13 +135,13 @@ def default_resource_path() -> str:
     return os.path.join(os.path.abspath(data_dir), "resources")
 
 
-def greeter_theme() -> str:
+def _greeter_theme() -> str:
     return os.environ.get("WLDM_THEME", "default").strip() or "default"
 
 
-def themed_resource_path() -> str:
-    base = default_resource_path()
-    theme = greeter_theme()
+def _themed_resource_path() -> str:
+    base = _default_resource_path()
+    theme = _greeter_theme()
 
     if theme == "default":
         return base
@@ -153,7 +155,7 @@ def themed_resource_path() -> str:
     return base
 
 
-def load_builder_from_resource_path() -> Any:
+def _load_builder_from_resource_path() -> Any:
     """Create a GtkBuilder loaded from the current greeter resource path."""
     builder = Gtk.Builder.new()
     builder.set_translation_domain(GETTEXT_DOMAIN)
@@ -170,11 +172,11 @@ class GreeterApp(greeter_ui.GreeterUI):
         self.app.connect('activate', self.on_activate)
 
         self.sessions = wldm.sessions.desktop_sessions()
-        self.client = client if client is not None else new_ipc_client()
+        self.client = client if client is not None else _new_ipc_client()
 
         self.quit = False
-        self.actions = available_actions()
-        self.state_file = configured_state_file()
+        self.actions = _available_actions()
+        self.state_file = _configured_state_file()
 
         if self.state_file:
             self.last_username, self.last_session_command = wldm.state.load_last_session_file(self.state_file)
@@ -294,14 +296,14 @@ class GreeterApp(greeter_ui.GreeterUI):
                     invalid.append(name)
                 continue
 
-            if not is_valid_widget(spec, widget):
+            if not _is_valid_widget(spec, widget):
                 invalid.append(name)
                 continue
 
             bindings.append((spec, widget))
 
         if invalid:
-            raise RuntimeError(f"theme '{greeter_theme()}' is missing or invalid for required widget(s): {', '.join(invalid)}")
+            raise RuntimeError(f"theme '{_greeter_theme()}' is missing or invalid for required widget(s): {', '.join(invalid)}")
 
         return bindings
 
@@ -331,21 +333,21 @@ class GreeterApp(greeter_ui.GreeterUI):
         global resource_path
 
         try:
-            builder = load_builder_from_resource_path()
+            builder = _load_builder_from_resource_path()
             bindings = self.collect_theme_widgets(builder)
 
         except Exception as exc:
-            fallback_path = default_resource_path()
-            theme = greeter_theme()
+            fallback_path = _default_resource_path()
+            theme = _greeter_theme()
 
             if theme == "default" or not fallback_path or fallback_path == resource_path:
                 raise
 
             logger.warning("theme '%s' is invalid, falling back to default: %s", theme, exc)
             resource_path = fallback_path
-            setup_greeter_i18n()
+            _setup_greeter_i18n()
 
-            builder = load_builder_from_resource_path()
+            builder = _load_builder_from_resource_path()
             bindings = self.collect_theme_widgets(builder)
 
         window: Any = None
@@ -477,14 +479,14 @@ class GreeterApp(greeter_ui.GreeterUI):
 def cmd_main(_parser: argparse.Namespace) -> int:
     global resource_path
 
-    setup_greeter_logging()
-    resource_path = themed_resource_path()
+    _setup_greeter_logging()
+    resource_path = _themed_resource_path()
 
     if not os.path.isdir(resource_path):
         logger.critical("resource directory does not exist: %s", resource_path)
         return wldm.EX_FAILURE
 
-    setup_greeter_i18n()
+    _setup_greeter_i18n()
 
     if "WLDM_SOCKET_FD" not in os.environ:
         logger.critical("environ variable `WLDM_SOCKET_FD' not specified")

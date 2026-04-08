@@ -69,7 +69,7 @@ def test_session_data_dirs_prepends_user_directory(monkeypatch):
     monkeypatch.setenv("WLDM_GREETER_USER_SESSION_DIR", ".config/wldm/sessions")
     monkeypatch.setattr(greeter.wldm.sessions.pwd, "getpwnam", lambda username: pw)
 
-    assert greeter.wldm.sessions.session_data_dirs("alice") == [
+    assert greeter.wldm.sessions._session_data_dirs("alice") == [
         "/home/alice/.config/wldm/sessions",
         "/usr/share/wayland-sessions",
         "/opt/wayland-sessions",
@@ -82,7 +82,7 @@ def test_session_data_dirs_can_disable_user_sessions(monkeypatch):
     monkeypatch.setenv("WLDM_GREETER_USER_SESSIONS", "no")
     monkeypatch.setenv("WLDM_GREETER_SESSION_DIRS", "/usr/share/wayland-sessions:/opt/wayland-sessions")
 
-    assert greeter.wldm.sessions.session_data_dirs("alice") == [
+    assert greeter.wldm.sessions._session_data_dirs("alice") == [
         "/usr/share/wayland-sessions",
         "/opt/wayland-sessions",
     ]
@@ -93,7 +93,7 @@ def test_available_actions_reads_environment(monkeypatch):
 
     monkeypatch.setenv("WLDM_ACTIONS", "poweroff:reboot:suspend")
 
-    assert greeter.available_actions() == {"poweroff", "reboot", "suspend"}
+    assert greeter._available_actions() == {"poweroff", "reboot", "suspend"}
 
 
 def test_keyboard_state_reads_active_layout(monkeypatch):
@@ -238,7 +238,7 @@ def test_login_app_uses_project_application_id(monkeypatch):
 def test_parse_desktop_names_splits_semicolon_list(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
 
-    assert greeter.wldm.sessions.parse_desktop_names("GNOME;GNOME-Classic;") == ["GNOME", "GNOME-Classic"]
+    assert greeter.wldm.sessions._parse_desktop_names("GNOME;GNOME-Classic;") == ["GNOME", "GNOME-Classic"]
 
 
 def test_desktop_sessions_merge_user_entries_before_system(monkeypatch):
@@ -262,7 +262,7 @@ def test_desktop_sessions_merge_user_entries_before_system(monkeypatch):
         def __exit__(self, exc_type, exc, tb):
             return False
 
-    monkeypatch.setattr(greeter.wldm.sessions, "session_data_dirs",
+    monkeypatch.setattr(greeter.wldm.sessions, "_session_data_dirs",
                         lambda username="": ["/home/alice/.local/share/wayland-sessions", "/usr/share/wayland-sessions"])
 
     def fake_scandir(path):
@@ -972,11 +972,11 @@ def test_new_ipc_client_requires_socket_fd_env(monkeypatch):
     monkeypatch.delenv("WLDM_SOCKET_FD", raising=False)
 
     try:
-        greeter.new_ipc_client()
+        greeter._new_ipc_client()
     except RuntimeError as exc:
         assert "WLDM_SOCKET_FD" in str(exc)
     else:
-        raise AssertionError("new_ipc_client() should have failed")
+        raise AssertionError("_new_ipc_client() should have failed")
 
 
 def test_new_ipc_client_uses_socket_fd(monkeypatch):
@@ -988,9 +988,9 @@ def test_new_ipc_client_uses_socket_fd(monkeypatch):
             calls.append(fd)
 
     monkeypatch.setenv("WLDM_SOCKET_FD", "11")
-    monkeypatch.setattr(greeter, "SocketClient", FakeSocketClient)
+    monkeypatch.setattr(greeter, "_SocketClient", FakeSocketClient)
 
-    greeter.new_ipc_client()
+    greeter._new_ipc_client()
 
     assert calls == [11]
 
@@ -1642,7 +1642,7 @@ def test_default_resource_path_uses_installed_share_when_env_is_missing(monkeypa
 
     monkeypatch.setenv("WLDM_DATA_DIR", str(tmp_path / "share" / "wldm"))
 
-    assert greeter.default_resource_path() == str(tmp_path / "share" / "wldm" / "resources")
+    assert greeter._default_resource_path() == str(tmp_path / "share" / "wldm" / "resources")
 
 
 def test_default_resource_path_is_empty_without_resource_env_or_data_dir(monkeypatch):
@@ -1650,7 +1650,7 @@ def test_default_resource_path_is_empty_without_resource_env_or_data_dir(monkeyp
 
     monkeypatch.delenv("WLDM_DATA_DIR", raising=False)
 
-    assert greeter.default_resource_path() == ""
+    assert greeter._default_resource_path() == ""
 
 
 def test_themed_resource_path_uses_default_theme(monkeypatch, tmp_path):
@@ -1659,7 +1659,7 @@ def test_themed_resource_path_uses_default_theme(monkeypatch, tmp_path):
     monkeypatch.setenv("WLDM_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("WLDM_THEME", "default")
 
-    assert greeter.themed_resource_path() == str(tmp_path / "resources")
+    assert greeter._themed_resource_path() == str(tmp_path / "resources")
 
 
 def test_themed_resource_path_uses_named_theme_when_present(monkeypatch, tmp_path):
@@ -1672,7 +1672,7 @@ def test_themed_resource_path_uses_named_theme_when_present(monkeypatch, tmp_pat
     monkeypatch.setenv("WLDM_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("WLDM_THEME", "retro")
 
-    assert greeter.themed_resource_path() == str(theme_dir)
+    assert greeter._themed_resource_path() == str(theme_dir)
 
 
 def test_themed_resource_path_falls_back_to_default_when_theme_is_missing(monkeypatch, tmp_path):
@@ -1685,7 +1685,7 @@ def test_themed_resource_path_falls_back_to_default_when_theme_is_missing(monkey
     monkeypatch.setenv("WLDM_THEME", "missing")
     monkeypatch.setattr(greeter.logger, "warning", lambda msg, *args: warnings.append(msg % args if args else msg))
 
-    assert greeter.themed_resource_path() == str(base)
+    assert greeter._themed_resource_path() == str(base)
     assert any("falling back to default" in message for message in warnings)
 
 
@@ -1697,7 +1697,7 @@ def test_greeter_locale_path_prefers_theme_locale(monkeypatch, tmp_path):
     greeter.resource_path = str(theme_dir)
     monkeypatch.delenv("WLDM_LOCALE_DIR", raising=False)
 
-    assert greeter.greeter_locale_path() == str(locale_dir)
+    assert greeter._greeter_locale_path() == str(locale_dir)
 
 
 def test_greeter_locale_path_prefers_locale_dir(monkeypatch, tmp_path):
@@ -1705,13 +1705,13 @@ def test_greeter_locale_path_prefers_locale_dir(monkeypatch, tmp_path):
     greeter.resource_path = str(tmp_path / "resources")
     monkeypatch.setenv("WLDM_LOCALE_DIR", str(tmp_path / "locale"))
 
-    assert greeter.greeter_locale_path() == str(tmp_path / "locale")
+    assert greeter._greeter_locale_path() == str(tmp_path / "locale")
 
 
 def test_setup_greeter_logging_installs_file_logger_and_excepthook(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
 
-    greeter.setup_greeter_logging()
+    greeter._setup_greeter_logging()
 
     assert greeter.sys.excepthook is not greeter.sys.__excepthook__
 
@@ -1731,7 +1731,7 @@ def test_setup_greeter_i18n_binds_theme_locale(monkeypatch, tmp_path):
     monkeypatch.setattr(greeter.gettext, "textdomain",
                         lambda domain: textdomain_calls.append(domain))
 
-    greeter.setup_greeter_i18n()
+    greeter._setup_greeter_i18n()
 
     assert bind_calls == [("wldm", str(locale_dir))]
     assert textdomain_calls == ["wldm"]
@@ -1791,9 +1791,9 @@ def test_on_activate_falls_back_to_default_theme_when_theme_ui_is_invalid(monkey
         StubBuilder(objects, loaded_paths=loaded_paths),
     ])
     monkeypatch.setattr(greeter.Gtk.Builder, "new", lambda: next(builders))
-    monkeypatch.setattr(greeter, "greeter_theme", lambda: "retro")
-    monkeypatch.setattr(greeter, "default_resource_path", lambda: fallback_path)
-    monkeypatch.setattr(greeter, "setup_greeter_i18n", lambda: i18n_calls.append("i18n"))
+    monkeypatch.setattr(greeter, "_greeter_theme", lambda: "retro")
+    monkeypatch.setattr(greeter, "_default_resource_path", lambda: fallback_path)
+    monkeypatch.setattr(greeter, "_setup_greeter_i18n", lambda: i18n_calls.append("i18n"))
     monkeypatch.setattr(greeter.logger, "warning", lambda msg, *args: warnings.append(msg % args if args else msg))
     monkeypatch.setattr(greeter.wldm.sessions, "desktop_sessions", lambda username="": [])
     monkeypatch.setenv("WLDM_ACTIONS", "")
@@ -1827,9 +1827,9 @@ def test_on_activate_falls_back_to_default_theme_when_required_widgets_are_inval
     working_objects = make_activate_objects()
     builders = iter([StubBuilder(invalid_objects), StubBuilder(working_objects)])
     monkeypatch.setattr(greeter.Gtk.Builder, "new", lambda: next(builders))
-    monkeypatch.setattr(greeter, "greeter_theme", lambda: "retro")
-    monkeypatch.setattr(greeter, "default_resource_path", lambda: fallback_path)
-    monkeypatch.setattr(greeter, "setup_greeter_i18n", lambda: i18n_calls.append("i18n"))
+    monkeypatch.setattr(greeter, "_greeter_theme", lambda: "retro")
+    monkeypatch.setattr(greeter, "_default_resource_path", lambda: fallback_path)
+    monkeypatch.setattr(greeter, "_setup_greeter_i18n", lambda: i18n_calls.append("i18n"))
     monkeypatch.setattr(greeter.logger, "warning", lambda msg, *args: warnings.append(msg % args if args else msg))
     monkeypatch.setattr(greeter.wldm.sessions, "desktop_sessions", lambda username="": [])
     monkeypatch.setenv("WLDM_ACTIONS", "")

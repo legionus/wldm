@@ -26,7 +26,7 @@ class KeyboardLayout:
     long_name: str
 
 
-def configured_keyboard_short_names() -> list[str]:
+def _configured_keyboard_short_names() -> list[str]:
     """Return configured short XKB layout names from the environment."""
     value = os.environ.get("XKB_DEFAULT_LAYOUT", "").strip()
     return [item.strip() for item in value.split(",") if item.strip()]
@@ -63,7 +63,7 @@ def keyboard_state() -> tuple[list[KeyboardLayout], int]:
     if active_index < 0 or active_index >= len(layout_names):
         return [], -1
 
-    configured_names = configured_keyboard_short_names()
+    configured_names = _configured_keyboard_short_names()
     layouts = []
 
     for index, name in enumerate(layout_names):
