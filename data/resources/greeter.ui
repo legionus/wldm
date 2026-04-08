@@ -14,13 +14,13 @@
 		</style>
 
 		<child>
-			<object class="GtkBox">
+			<object class="GtkBox" id="root_box">
 				<property name="orientation">horizontal</property>
 				<property name="hexpand">true</property>
 				<property name="vexpand">true</property>
 
 				<child>
-					<object class="GtkBox">
+					<object class="GtkBox" id="info_pane">
 						<property name="orientation">vertical</property>
 						<property name="hexpand">true</property>
 						<property name="vexpand">true</property>
@@ -92,7 +92,7 @@
 				</child>
 
 				<child>
-					<object class="GtkBox">
+					<object class="GtkBox" id="content_pane">
 						<property name="orientation">vertical</property>
 						<property name="halign">fill</property>
 						<property name="valign">fill</property>
@@ -105,7 +105,7 @@
 						<property name="spacing">24</property>
 
 						<child>
-							<object class="GtkBox">
+							<object class="GtkBox" id="login_card_outer">
 								<property name="orientation">vertical</property>
 								<property name="halign">center</property>
 								<property name="valign">center</property>
@@ -113,7 +113,7 @@
 								<property name="vexpand">true</property>
 
 								<child>
-									<object class="GtkBox">
+									<object class="GtkBox" id="login_card">
 										<property name="orientation">vertical</property>
 										<property name="spacing">16</property>
 										<property name="width-request">420</property>
@@ -135,17 +135,17 @@
 											</object>
 										</child>
 
-								<child>
-									<object class="GtkBox" id="identity_preview">
-										<property name="orientation">horizontal</property>
-										<property name="spacing">12</property>
-										<property name="margin-top">5</property>
-										<property name="margin-bottom">5</property>
-										<property name="margin-start">5</property>
-										<property name="margin-end">5</property>
-
 										<child>
-											<object class="GtkLabel" id="avatar_label">
+											<object class="GtkBox" id="identity_preview">
+												<property name="orientation">horizontal</property>
+												<property name="spacing">12</property>
+												<property name="margin-top">5</property>
+												<property name="margin-bottom">5</property>
+												<property name="margin-start">5</property>
+												<property name="margin-end">5</property>
+
+												<child>
+													<object class="GtkLabel" id="avatar_label">
 														<property name="label">?</property>
 														<property name="justify">center</property>
 														<style>
@@ -154,17 +154,17 @@
 													</object>
 												</child>
 
-										<child>
-											<object class="GtkLabel" id="identity_label">
-												<property name="wrap">true</property>
-												<property name="hexpand">true</property>
-												<property name="max-width-chars">28</property>
-												<property name="width-chars">28</property>
-												<property name="xalign">0</property>
-												<style>
-													<class name="identity-label"/>
-												</style>
-											</object>
+												<child>
+													<object class="GtkLabel" id="identity_label">
+														<property name="wrap">true</property>
+														<property name="hexpand">true</property>
+														<property name="max-width-chars">28</property>
+														<property name="width-chars">28</property>
+														<property name="xalign">0</property>
+														<style>
+															<class name="identity-label"/>
+														</style>
+													</object>
 												</child>
 											</object>
 										</child>
@@ -210,7 +210,7 @@
 										</child>
 
 										<child>
-											<object class="GtkBox">
+											<object class="GtkBox" id="auth_actions">
 												<property name="orientation">horizontal</property>
 												<property name="spacing">10</property>
 
@@ -234,12 +234,11 @@
 														</style>
 													</object>
 												</child>
-
 											</object>
 										</child>
 
 										<child>
-											<object class="GtkBox">
+											<object class="GtkBox" id="status_box">
 												<property name="height-request">44</property>
 												<property name="hexpand">true</property>
 												<property name="valign">fill</property>
@@ -263,7 +262,7 @@
 						</child>
 
 						<child>
-							<object class="GtkBox">
+							<object class="GtkBox" id="power_strip">
 								<property name="orientation">horizontal</property>
 								<property name="halign">end</property>
 								<property name="valign">end</property>
