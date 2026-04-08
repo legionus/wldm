@@ -37,7 +37,6 @@ class GreeterUI:
         self.date_label: Optional[Any] = None
         self.time_label: Optional[Any] = None
         self.keyboard_label: Optional[Any] = None
-        self.session_label: Optional[Any] = None
         self.identity_preview: Optional[Any] = None
         self.identity_label: Optional[Any] = None
         self.avatar_label: Optional[Any] = None
@@ -180,7 +179,6 @@ class GreeterUI:
 
         self.call_widget_method("cancel_button", "set_visible", conversation_pending or session_ready)
         self.call_widget_method("cancel_button", "set_sensitive", not auth_in_progress)
-        self.call_widget_method("session_label", "set_visible", session_ready)
 
     def clear_conversation_state(self) -> None:
         """Forget the current multi-step authentication state."""
@@ -241,28 +239,6 @@ class GreeterUI:
         self.refresh_sessions(username, preferred_command=self.last_session_command)
         self.update_identity_preview()
 
-    def update_session_summary(self) -> None:
-        """Refresh the greeter summary of the currently selected session."""
-        if self.session_label is None:
-            return
-
-        item = "Default shell"
-        command = self.get_session_command()
-        description = ""
-
-        if command:
-            item = command
-            entry = self.get_selected_session()
-            if entry:
-                description = str(entry.get("comment", ""))
-
-        if description:
-            self.session_label.set_text(
-                _("Session: %(description)s\nCommand: %(command)s") % {"description": description, "command": item}
-            )
-        else:
-            self.session_label.set_text(_("Session command: %(command)s") % {"command": item})
-
     def selected_session_data(self) -> tuple[str, list[str]]:
         """Return the current session command and desktop names."""
         command = self.get_session_command()
@@ -312,8 +288,6 @@ class GreeterUI:
                         break
 
                 self.sessions_entry.set_selected(selected)
-
-        self.update_session_summary()
 
     def update_identity_preview(self) -> None:
         """Refresh the identity preview for the currently typed username."""

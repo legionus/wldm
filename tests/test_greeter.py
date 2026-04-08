@@ -1346,7 +1346,6 @@ def test_update_auth_widgets_for_initial_stage(monkeypatch):
         sessions_entry=StubEntry(),
         login_button=DummyButton(),
         cancel_button=DummyButton(),
-        session_label=DummyLabel(),
     )
 
     greeter.GreeterApp.update_auth_widgets(app)
@@ -1363,9 +1362,6 @@ def test_update_auth_widgets_for_initial_stage(monkeypatch):
     assert app.login_button.label == "Next"
     assert app.cancel_button.visible is False
     assert app.cancel_button.sensitive is True
-    assert app.session_label.visible is False
-
-
 def test_set_conversation_prompt_updates_visible_prompt_widgets(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
 
@@ -1376,7 +1372,6 @@ def test_set_conversation_prompt_updates_visible_prompt_widgets(monkeypatch):
         sessions_entry=StubEntry(),
         login_button=DummyButton(),
         cancel_button=DummyButton(),
-        session_label=DummyLabel(),
         status_label=DummyLabel(),
     )
 
@@ -1407,7 +1402,6 @@ def test_set_conversation_prompt_hides_entry_for_info_prompt(monkeypatch):
         sessions_entry=StubEntry(),
         login_button=DummyButton(),
         cancel_button=DummyButton(),
-        session_label=DummyLabel(),
         status_label=DummyLabel(),
     )
 
@@ -1435,7 +1429,6 @@ def test_set_conversation_prompt_marks_error_prompt_as_error(monkeypatch):
         sessions_entry=StubEntry(),
         login_button=DummyButton(),
         cancel_button=DummyButton(),
-        session_label=DummyLabel(),
         status_label=StubStatusLabel(),
     )
 
@@ -1464,7 +1457,6 @@ def test_set_session_ready_updates_post_auth_widgets(monkeypatch):
         sessions_entry=StubEntry(),
         login_button=DummyButton(),
         cancel_button=DummyButton(),
-        session_label=DummyLabel(),
         status_label=DummyLabel(),
     )
 
@@ -1479,7 +1471,6 @@ def test_set_session_ready_updates_post_auth_widgets(monkeypatch):
     assert app.login_button.label == "Start session"
     assert app.cancel_button.visible is True
     assert app.cancel_button.sensitive is True
-    assert app.session_label.visible is True
     assert app.status_label.text == "Authentication accepted. Select a session."
 
 
@@ -1883,7 +1874,6 @@ def test_on_activate_binds_widgets_and_populates_sessions(monkeypatch):
     assert hibernate_button.visible is False
     assert password_entry.connections == [("activate", app.on_login_clicked)]
     assert sessions_entry.connections == [
-        ("notify::selected-item", app.on_session_changed),
         ("activate", app.on_login_clicked),
     ]
     assert username_entry.connections == [

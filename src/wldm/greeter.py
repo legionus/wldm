@@ -207,7 +207,6 @@ class GreeterApp(greeter_ui.GreeterUI):
                 "name": "sessions_entry",
                 "methods": ("connect", "set_model", "set_selected", "get_selected_item"),
                 "signals": (
-                    ("notify::selected-item", self.on_session_changed),
                     ("activate", self.on_login_clicked),
                 ),
             },
@@ -260,10 +259,6 @@ class GreeterApp(greeter_ui.GreeterUI):
             {
                 "name": "keyboard_label",
                 "methods": ("set_text", "set_visible", "set_tooltip_text", "set_width_chars")
-            },
-            {
-                "name": "session_label",
-                "methods": ("set_text",)
             },
             {
                 "name": "identity_preview",
@@ -393,10 +388,6 @@ class GreeterApp(greeter_ui.GreeterUI):
                 self.clear_username_selection()
 
         window.present()
-
-    # pylint: disable-next=unused-argument
-    def on_session_changed(self, *args: Any) -> None:
-        self.update_session_summary()
 
     # pylint: disable-next=unused-argument
     def on_username_activate(self, *args: Any) -> None:
