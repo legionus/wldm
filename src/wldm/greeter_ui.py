@@ -52,23 +52,61 @@ class GreeterUI:
         self.actions: set[str] = set()
         self.sessions: list[dict[str, Any]] = []
 
-    @staticmethod
-    def clear_entry_selection(entry: Any) -> None:
-        """Move the cursor to the end of one editable widget."""
-        raise NotImplementedError
+    def clear_username_selection(self) -> None:
+        """Move the username cursor to the end of the current entry text."""
+        if self.username_entry is None:
+            return
+
+        if hasattr(self.username_entry, "select_region"):
+            text = ""
+
+            if hasattr(self.username_entry, "get_text"):
+                text = str(self.username_entry.get_text())
+
+            self.username_entry.select_region(len(text), len(text))
+            return
+
+        if hasattr(self.username_entry, "set_position"):
+            self.username_entry.set_position(-1)
 
     @staticmethod
     def account_service_profile(username: str) -> dict[str, str] | None:
         """Return AccountsService metadata for one username."""
         raise NotImplementedError
 
+    def get_selected_session_name(self) -> str:
+        """Return the selected session name from the current UI model."""
+        if self.sessions_entry is None:
+            return ""
+
+        item = self.sessions_entry.get_selected_item()
+
+        if item is None:
+            return ""
+
+        return str(item.get_string())
+
     def get_selected_session(self) -> dict[str, Any] | None:
         """Return the current selected desktop session entry."""
-        raise NotImplementedError
+        name = self.get_selected_session_name()
+
+        if not name:
+            return None
+
+        for entry in self.sessions:
+            if entry["name"] == name:
+                return entry
+
+        return None
 
     def get_session_command(self) -> str:
         """Return the command for the selected desktop session."""
-        raise NotImplementedError
+        entry = self.get_selected_session()
+
+        if entry is None:
+            return ""
+
+        return str(entry["command"])
 
     def set_status(self, message: str, error: bool = False) -> None:
         """Update the greeter status line and its error styling."""
@@ -202,7 +240,7 @@ class GreeterUI:
                 self.username_entry.grab_focus()
 
             if username:
-                self.clear_entry_selection(self.username_entry)
+                self.clear_username_selection()
 
         self.refresh_sessions(username, preferred_command=self.last_session_command)
         self.update_identity_preview()

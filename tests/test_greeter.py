@@ -2033,7 +2033,11 @@ def test_on_cancel_clicked_cancels_pending_auth_and_restores_username(monkeypatc
     calls = []
     refreshed = []
     updated = []
-    monkeypatch.setattr(greeter, "clear_entry_selection", lambda entry: calls.append(("clear-selection", entry.text)))
+    monkeypatch.setattr(
+        greeter.GreeterApp,
+        "clear_username_selection",
+        lambda self: calls.append(("clear-selection", self.username_entry.text)),
+    )
     app.send_recv_answer = lambda data: calls.append(data) or {"ok": True}
     app.refresh_sessions = lambda username, preferred_command="": refreshed.append((username, preferred_command))
     app.update_identity_preview = lambda: updated.append(True)

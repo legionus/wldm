@@ -126,20 +126,6 @@ def available_actions() -> set[str]:
 def configured_state_file() -> str:
     return os.environ.get("WLDM_STATE_FILE", "").strip()
 
-
-def clear_entry_selection(entry: Any) -> None:
-    if hasattr(entry, "select_region"):
-        text = ""
-
-        if hasattr(entry, "get_text"):
-            text = str(entry.get_text())
-
-        entry.select_region(len(text), len(text))
-        return
-
-    if hasattr(entry, "set_position"):
-        entry.set_position(-1)
-
 def setup_greeter_logging() -> None:
     def log_uncaught_exception(exc_type: type[BaseException],
                                exc_value: BaseException,
@@ -373,7 +359,7 @@ class GreeterApp(greeter_ui.GreeterUI):
         greeter_client.poll_events(self, lock)
 
     def handle_event(self, event: Dict[str, Any]) -> None:
-        greeter_client.handle_event(self, event, clear_entry_selection)
+        greeter_client.handle_event(self, event)
 
     def run(self) -> None:
         self.app.run()
@@ -439,38 +425,9 @@ class GreeterApp(greeter_ui.GreeterUI):
             self.username_entry.grab_focus()
 
             if self.last_username:
-                clear_entry_selection(self.username_entry)
+                self.clear_username_selection()
 
         window.present()
-
-    def get_selected_session_name(self) -> str:
-        if self.sessions_entry is None:
-            return ""
-
-        item = self.sessions_entry.get_selected_item()
-
-        if item is None:
-            return ""
-
-        return str(item.get_string())
-
-    def get_selected_session(self) -> Optional[Dict[str, Any]]:
-        name = self.get_selected_session_name()
-
-        if not name:
-            return None
-
-        for entry in self.sessions:
-            if entry["name"] == name:
-                return entry
-
-        return None
-
-    def get_session_command(self) -> str:
-        entry = self.get_selected_session()
-        if entry is None:
-            return ""
-        return str(entry["command"])
 
     # pylint: disable-next=unused-argument
     def on_session_changed(self, *args: Any) -> None:
@@ -494,10 +451,6 @@ class GreeterApp(greeter_ui.GreeterUI):
 
         self.refresh_sessions(username)
         self.update_identity_preview()
-
-    @staticmethod
-    def clear_entry_selection(entry: Any) -> None:
-        clear_entry_selection(entry)
 
     @staticmethod
     def account_service_profile(username: str) -> Dict[str, str] | None:

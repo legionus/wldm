@@ -64,7 +64,7 @@ def poll_events(app: Any, lock: Any) -> None:
         app.handle_connection_lost()
 
 
-def handle_event(app: Any, event: dict[str, Any], clear_entry_selection: Any) -> None:
+def handle_event(app: Any, event: dict[str, Any]) -> None:
     """Handle one asynchronous daemon event."""
     if not greeter_protocol.is_event(event):
         return
@@ -97,7 +97,7 @@ def handle_event(app: Any, event: dict[str, Any], clear_entry_selection: Any) ->
             if hasattr(app.username_entry, "grab_focus"):
                 app.username_entry.grab_focus()
 
-            clear_entry_selection(app.username_entry)
+            app.clear_username_selection()
 
         if app.password_entry is not None:
             app.password_entry.set_text("")
