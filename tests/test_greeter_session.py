@@ -40,7 +40,7 @@ def patch_run_greeter_session_runtime(monkeypatch, *, ttydev, pamh="pamh", env=N
     )
     monkeypatch.setattr(
         wldm.greeter_session,
-        "new_greeter_environ",
+        "_new_greeter_environ",
         lambda pamh_arg, pw_arg: env or {"HOME": pw_arg.pw_dir},
     )
     monkeypatch.setattr(wldm.greeter_session, "build_greeter_argv", lambda: ["cage", "--", "greeter"])
@@ -66,7 +66,7 @@ def test_new_greeter_environ_preserves_safe_base_env_and_adds_runtime_dir(monkey
     )
     pw = pwd.struct_passwd(("gdm", "x", 1001, 1001, "", "/var/lib/gdm", "/bin/false"))
 
-    env = wldm.greeter_session.new_greeter_environ(object(), pw)
+    env = wldm.greeter_session._new_greeter_environ(object(), pw)
 
     assert env["PATH"] == "/usr/bin"
     assert env["PYTHONPATH"] == "/srv/wldm/src"
@@ -84,7 +84,7 @@ def test_new_greeter_environ_falls_back_to_user_runtime_dir(monkeypatch):
     monkeypatch.setattr(wldm.pam, "getenvlist", lambda pamh: {})
     pw = pwd.struct_passwd(("gdm", "x", 32, 32, "", "/var/lib/gdm", "/bin/false"))
 
-    env = wldm.greeter_session.new_greeter_environ(object(), pw)
+    env = wldm.greeter_session._new_greeter_environ(object(), pw)
 
     assert env["XDG_RUNTIME_DIR"] == "/run/user/32"
 

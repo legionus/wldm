@@ -29,7 +29,7 @@ SYSTEM_LIBRARY_DIRS = (
 )
 
 
-def is_trusted_system_library_path(path: str) -> bool:
+def _is_trusted_system_library_path(path: str) -> bool:
     """Check whether one absolute library path looks like trusted system data.
 
     Args:
@@ -59,7 +59,7 @@ def is_trusted_system_library_path(path: str) -> bool:
     return True
 
 
-def is_allowed_ctypes_target(role: str, target: Any) -> bool:
+def _is_allowed_ctypes_target(role: str, target: Any) -> bool:
     """Check whether a ctypes library load is expected for one process role.
 
     Args:
@@ -89,7 +89,7 @@ def is_allowed_ctypes_target(role: str, target: Any) -> bool:
             continue
 
         if os.path.isabs(target):
-            return is_trusted_system_library_path(target)
+            return _is_trusted_system_library_path(target)
 
         return True
 
@@ -109,7 +109,7 @@ def audit_hook(event: str, args: tuple[Any, ...]) -> None:
     target = args[0]
     role = _active_role or "unknown"
 
-    if _active_role is not None and is_allowed_ctypes_target(_active_role, target):
+    if _active_role is not None and _is_allowed_ctypes_target(_active_role, target):
         return
 
     logger.critical("audit denied unexpected ctypes load in %s: %r", role, target)

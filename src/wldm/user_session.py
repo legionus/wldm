@@ -21,7 +21,7 @@ import wldm.wtmp
 logger = wldm.logger
 
 
-def load_unprivileged_modules() -> tuple[Any]:
+def _load_unprivileged_modules() -> tuple[Any]:
     """Import modules that are only needed after dropping privileges.
 
     Returns:
@@ -126,7 +126,7 @@ def build_session_argv(shell: str) -> List[str]:
     if not session_command:
         raise RuntimeError("environ variable `WLDM_SESSION_COMMAND' not specified")
 
-    (shlex,) = load_unprivileged_modules()
+    (shlex,) = _load_unprivileged_modules()
 
     prog, *args = cast(List[str], shlex.split(session_command))
 

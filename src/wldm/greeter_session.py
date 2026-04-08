@@ -20,7 +20,7 @@ import wldm.tty
 logger = wldm.logger
 
 
-def load_unprivileged_modules() -> tuple[Any]:
+def _load_unprivileged_modules() -> tuple[Any]:
     """Import modules that are only needed after dropping privileges.
 
     Returns:
@@ -45,8 +45,8 @@ def _base_greeter_environ() -> Dict[str, str]:
     return env
 
 
-def new_greeter_environ(pamh: Optional[Any],
-                        pw: pwd.struct_passwd) -> Dict[str, str]:
+def _new_greeter_environ(pamh: Optional[Any],
+                         pw: pwd.struct_passwd) -> Dict[str, str]:
     env = _base_greeter_environ()
 
     if pamh is not None:
@@ -101,7 +101,7 @@ def build_greeter_argv() -> List[str]:
     if not command:
         raise RuntimeError("environ variable `WLDM_GREETER_COMMAND' not specified")
 
-    (shlex,) = load_unprivileged_modules()
+    (shlex,) = _load_unprivileged_modules()
 
     try:
         argv = shlex.split(command)
@@ -114,7 +114,7 @@ def build_greeter_argv() -> List[str]:
     return [*argv, *wldm_command.internal_command_prefix(), "greeter"]
 
 
-def process_exit_status(status: int) -> int:
+def _process_exit_status(status: int) -> int:
     if os.WIFEXITED(status):
         return os.WEXITSTATUS(status)
     if os.WIFSIGNALED(status):
@@ -202,7 +202,7 @@ def run_greeter_session(pw: pwd.struct_passwd,
                 prepare_greeter_terminal(ttydev)
 
                 with open_greeter_pam_session(pam_service, pw, ttydev) as pamh:
-                    env = new_greeter_environ(pamh, pw)
+                    env = _new_greeter_environ(pamh, pw)
                     prog_args = build_greeter_argv()
 
                     pid = os.fork()
@@ -229,7 +229,7 @@ def run_greeter_session(pw: pwd.struct_passwd,
 
                     _, status = os.waitpid(pid, 0)
 
-                    return process_exit_status(status)
+                    return _process_exit_status(status)
 
             finally:
                 ttydev.close()

@@ -7,14 +7,14 @@ import wldm.audit
 
 
 def test_is_allowed_ctypes_target_accepts_expected_daemon_libraries():
-    assert wldm.audit.is_allowed_ctypes_target("daemon", None) is True
-    assert wldm.audit.is_allowed_ctypes_target("daemon", "pam") is True
-    assert wldm.audit.is_allowed_ctypes_target("daemon", "/lib64/libpam.so.0") is False
-    assert wldm.audit.is_allowed_ctypes_target("daemon", "/lib64/libc.so.6") is False
+    assert wldm.audit._is_allowed_ctypes_target("daemon", None) is True
+    assert wldm.audit._is_allowed_ctypes_target("daemon", "pam") is True
+    assert wldm.audit._is_allowed_ctypes_target("daemon", "/lib64/libpam.so.0") is False
+    assert wldm.audit._is_allowed_ctypes_target("daemon", "/lib64/libc.so.6") is False
 
 
 def test_is_allowed_ctypes_target_rejects_unexpected_library():
-    assert wldm.audit.is_allowed_ctypes_target("daemon", "/tmp/libevil.so") is False
+    assert wldm.audit._is_allowed_ctypes_target("daemon", "/tmp/libevil.so") is False
 
 
 def test_is_trusted_system_library_path_accepts_root_owned_system_library(tmp_path, monkeypatch):
@@ -26,7 +26,7 @@ def test_is_trusted_system_library_path_accepts_root_owned_system_library(tmp_pa
     monkeypatch.setattr(wldm.audit, "SYSTEM_LIBRARY_DIRS", (str(tmp_path / "usr" / "lib64"),))
     monkeypatch.setattr(os, "stat", lambda path: os.stat_result((0o100644, 0, 0, 1, 0, 0, 0, 0, 0, 0)))
 
-    assert wldm.audit.is_trusted_system_library_path(str(libfile)) is True
+    assert wldm.audit._is_trusted_system_library_path(str(libfile)) is True
 
 
 def test_is_trusted_system_library_path_rejects_non_system_path(tmp_path, monkeypatch):
@@ -36,7 +36,7 @@ def test_is_trusted_system_library_path_rejects_non_system_path(tmp_path, monkey
 
     monkeypatch.setattr(wldm.audit, "SYSTEM_LIBRARY_DIRS", (str(tmp_path / "usr" / "lib64"),))
 
-    assert wldm.audit.is_trusted_system_library_path(str(libfile)) is False
+    assert wldm.audit._is_trusted_system_library_path(str(libfile)) is False
 
 
 def test_setup_audit_hook_rejects_unexpected_ctypes_load(monkeypatch):

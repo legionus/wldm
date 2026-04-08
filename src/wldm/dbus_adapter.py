@@ -121,7 +121,7 @@ def seat_object_path(seat: str) -> str:
     return f"{MANAGER_PATH}/{component}"
 
 
-def session_object_path(pid: int) -> str:
+def _session_object_path(pid: int) -> str:
     """Build the D-Bus object path for one active session pid.
 
     Args:
@@ -147,7 +147,7 @@ def session_paths(snapshot: dict[str, object]) -> list[str]:
     if not isinstance(sessions, list):
         return []
 
-    return [session_object_path(int(session.get("pid", 0))) for session in sessions if isinstance(session, dict)]
+    return [_session_object_path(int(session.get("pid", 0))) for session in sessions if isinstance(session, dict)]
 
 
 def seat_paths(snapshot: dict[str, object]) -> list[str]:
@@ -278,7 +278,7 @@ class DisplayManagerService:
             if not isinstance(session, dict):
                 continue
 
-            if session_object_path(int(session.get("pid", 0))) == path:
+            if _session_object_path(int(session.get("pid", 0))) == path:
                 return session
 
         raise KeyError(path)
