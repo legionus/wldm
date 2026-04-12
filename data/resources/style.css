@@ -1,3 +1,4 @@
+/* Window chrome */
 .main-window {
 	background:
 		radial-gradient(circle at top left, rgba(219, 178, 55, 0.16), transparent 28%),
@@ -6,10 +7,16 @@
 	color: #edf2f7;
 }
 
+/* Pane-level theme hooks */
 .info-pane {
 	background: transparent;
 }
 
+.content-pane {
+	background: transparent;
+}
+
+/* Left informational pane */
 .date-label {
 	color: rgba(237, 242, 247, 0.78);
 	font-size: 18px;
@@ -43,6 +50,7 @@
 	font-size: 17px;
 }
 
+/* Login card */
 .login-card {
 	background: rgba(15, 21, 28, 0.84);
 	border: 1px solid rgba(255, 255, 255, 0.08);
@@ -55,6 +63,10 @@
 	color: #f8fafc;
 	font-size: 28px;
 	font-weight: 700;
+}
+
+.identity-preview {
+	background: transparent;
 }
 
 .avatar-label {
@@ -72,6 +84,7 @@
 	font-weight: 600;
 }
 
+/* Status messaging */
 .status-label {
 	color: rgba(237, 242, 247, 0.72);
 	font-size: 15px;
@@ -82,6 +95,7 @@
 	font-weight: 600;
 }
 
+/* Credential inputs */
 .greeter-entry {
 	background: rgba(255, 255, 255, 0.05);
 	border: 1px solid rgba(255, 255, 255, 0.08);
@@ -95,6 +109,12 @@
 	color: #f8fafc;
 }
 
+.greeter-entry:focus {
+	border-color: rgba(214, 175, 69, 0.88);
+	box-shadow: 0 0 0 3px rgba(214, 175, 69, 0.18);
+}
+
+/* Session picker */
 .session-picker > button {
 	background: rgba(255, 255, 255, 0.05);
 	border: 1px solid rgba(255, 255, 255, 0.08);
@@ -110,11 +130,6 @@
 .session-picker > button label,
 .session-picker popover label {
 	color: #f8fafc;
-}
-
-.greeter-entry:focus {
-	border-color: rgba(214, 175, 69, 0.88);
-	box-shadow: 0 0 0 3px rgba(214, 175, 69, 0.18);
 }
 
 .session-picker:focus-within > button,
@@ -143,6 +158,11 @@
 	outline-color: rgba(214, 175, 69, 0.88);
 }
 
+/* Action rows */
+.auth-actions {
+	background: transparent;
+}
+
 .primary-button,
 .secondary-button {
 	border-radius: 12px;
@@ -163,6 +183,7 @@
 	font-size: 18px;
 }
 
+/* Button variants */
 .primary-button {
 	background: linear-gradient(180deg, #d6af45 0%, #bb952f 100%);
 	color: #16120a;
@@ -181,4 +202,9 @@
 .secondary-button:hover {
 	background: rgba(255, 255, 255, 0.12);
 	border-color: rgba(255, 255, 255, 0.16);
+}
+
+/* Bottom utility strip */
+.power-strip {
+	background: transparent;
 }

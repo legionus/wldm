@@ -105,6 +105,9 @@
 						<property name="margin-start">36</property>
 						<property name="margin-end">72</property>
 						<property name="spacing">24</property>
+						<style>
+							<class name="content-pane"/>
+						</style>
 
 						<child>
 							<object class="GtkBox" id="login_card">
@@ -133,6 +136,9 @@
 									<object class="GtkBox" id="identity_preview">
 										<property name="orientation">horizontal</property>
 										<property name="spacing">12</property>
+										<style>
+											<class name="identity-preview"/>
+										</style>
 
 										<child>
 											<object class="GtkLabel" id="avatar_label">
@@ -198,6 +204,9 @@
 									<object class="GtkBox" id="auth_actions">
 										<property name="orientation">horizontal</property>
 										<property name="spacing">10</property>
+										<style>
+											<class name="auth-actions"/>
+										</style>
 
 										<child>
 											<object class="GtkButton" id="login_button">
