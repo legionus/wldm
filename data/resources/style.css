@@ -74,10 +74,10 @@
 	font-weight: 600;
 }
 
-.session-label,
 .status-label {
 	color: rgba(237, 242, 247, 0.72);
 	font-size: 15px;
+	min-height: 44px;
 }
 
 .status-error {

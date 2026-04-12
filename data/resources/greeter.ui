@@ -20,6 +20,7 @@
 				<property name="vexpand">true</property>
 
 				<child>
+					<!-- Left informational pane -->
 					<object class="GtkBox" id="info_pane">
 						<property name="orientation">vertical</property>
 						<property name="hexpand">true</property>
@@ -92,6 +93,7 @@
 				</child>
 
 				<child>
+					<!-- Right authentication pane -->
 					<object class="GtkBox" id="content_pane">
 						<property name="orientation">vertical</property>
 						<property name="halign">fill</property>
@@ -117,10 +119,6 @@
 										<property name="orientation">vertical</property>
 										<property name="spacing">16</property>
 										<property name="width-request">420</property>
-										<property name="margin-top">28</property>
-										<property name="margin-bottom">28</property>
-										<property name="margin-start">28</property>
-										<property name="margin-end">28</property>
 										<style>
 											<class name="login-card"/>
 										</style>
@@ -139,10 +137,6 @@
 											<object class="GtkBox" id="identity_preview">
 												<property name="orientation">horizontal</property>
 												<property name="spacing">12</property>
-												<property name="margin-top">5</property>
-												<property name="margin-bottom">5</property>
-												<property name="margin-start">5</property>
-												<property name="margin-end">5</property>
 
 												<child>
 													<object class="GtkLabel" id="avatar_label">
@@ -244,6 +238,7 @@
 						</child>
 
 						<child>
+							<!-- Bottom utility strip -->
 							<object class="GtkBox" id="power_strip">
 								<property name="orientation">horizontal</property>
 								<property name="halign">end</property>
