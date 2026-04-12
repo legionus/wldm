@@ -239,7 +239,6 @@
 										<property name="yalign">0.5</property>
 										<property name="hexpand">true</property>
 										<property name="wrap">true</property>
-										<property name="height-request">44</property>
 										<style>
 											<class name="status-label"/>
 										</style>
