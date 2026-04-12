@@ -63,8 +63,6 @@
 	color: #16120a;
 	font-size: 28px;
 	font-weight: 800;
-	min-width: 58px;
-	min-height: 58px;
 	padding: 8px;
 }
 
@@ -77,7 +75,6 @@
 .status-label {
 	color: rgba(237, 242, 247, 0.72);
 	font-size: 15px;
-	min-height: 44px;
 }
 
 .status-error {
@@ -90,7 +87,6 @@
 	border: 1px solid rgba(255, 255, 255, 0.08);
 	border-radius: 12px;
 	color: #f8fafc;
-	min-height: 46px;
 	padding: 0 12px;
 }
 
@@ -104,7 +100,6 @@
 	border: 1px solid rgba(255, 255, 255, 0.08);
 	border-radius: 12px;
 	color: #f8fafc;
-	min-height: 46px;
 	padding: 0 12px;
 }
 
@@ -150,13 +145,11 @@
 
 .primary-button,
 .secondary-button {
-	min-height: 44px;
 	border-radius: 12px;
 	font-weight: 700;
 }
 
 .keyboard-indicator {
-	min-height: 44px;
 	padding: 0 12px;
 	border-radius: 12px;
 	font-weight: 700;
@@ -166,7 +159,6 @@
 }
 
 .power-button {
-	min-width: 44px;
 	padding: 0 10px;
 	font-size: 18px;
 }

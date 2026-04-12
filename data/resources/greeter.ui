@@ -138,6 +138,8 @@
 											<object class="GtkLabel" id="avatar_label">
 												<property name="label">?</property>
 												<property name="justify">center</property>
+												<property name="width-request">58</property>
+												<property name="height-request">58</property>
 												<style>
 													<class name="avatar-label"/>
 												</style>
@@ -163,6 +165,7 @@
 									<object class="GtkEntry" id="username_entry">
 										<property name="placeholder-text" translatable="yes">Username</property>
 										<property name="hexpand">true</property>
+										<property name="height-request">46</property>
 										<style>
 											<class name="greeter-entry"/>
 										</style>
@@ -174,6 +177,7 @@
 										<property name="placeholder-text" translatable="yes">Password</property>
 										<property name="show-peek-icon">true</property>
 										<property name="hexpand">true</property>
+										<property name="height-request">46</property>
 										<style>
 											<class name="greeter-entry"/>
 										</style>
@@ -183,6 +187,7 @@
 								<child>
 									<object class="GtkDropDown" id="sessions_entry">
 										<property name="hexpand">true</property>
+										<property name="height-request">46</property>
 										<style>
 											<class name="session-picker"/>
 										</style>
@@ -198,6 +203,7 @@
 											<object class="GtkButton" id="login_button">
 												<property name="label" translatable="yes">Sign in</property>
 												<property name="hexpand">true</property>
+												<property name="height-request">44</property>
 												<style>
 													<class name="primary-button"/>
 												</style>
@@ -209,6 +215,7 @@
 												<property name="label">✕</property>
 												<property name="tooltip-text" translatable="yes">Cancel</property>
 												<property name="visible">false</property>
+												<property name="height-request">44</property>
 												<style>
 													<class name="secondary-button"/>
 												</style>
@@ -223,6 +230,7 @@
 										<property name="yalign">0.5</property>
 										<property name="hexpand">true</property>
 										<property name="wrap">true</property>
+										<property name="height-request">44</property>
 										<style>
 											<class name="status-label"/>
 										</style>
@@ -248,6 +256,7 @@
 									<object class="GtkLabel" id="keyboard_label">
 										<property name="visible">false</property>
 										<property name="valign">center</property>
+										<property name="height-request">44</property>
 										<style>
 											<class name="keyboard-indicator"/>
 										</style>
@@ -258,6 +267,8 @@
 									<object class="GtkButton" id="suspend_button">
 										<property name="label">⏾</property>
 										<property name="tooltip-text" translatable="yes">Suspend</property>
+										<property name="width-request">44</property>
+										<property name="height-request">44</property>
 										<style>
 											<class name="secondary-button"/>
 											<class name="power-button"/>
@@ -269,6 +280,8 @@
 									<object class="GtkButton" id="hibernate_button">
 										<property name="label">❄</property>
 										<property name="tooltip-text" translatable="yes">Hibernate</property>
+										<property name="width-request">44</property>
+										<property name="height-request">44</property>
 										<style>
 											<class name="secondary-button"/>
 											<class name="power-button"/>
@@ -280,6 +293,8 @@
 									<object class="GtkButton" id="reboot_button">
 										<property name="label">↻</property>
 										<property name="tooltip-text" translatable="yes">Reboot</property>
+										<property name="width-request">44</property>
+										<property name="height-request">44</property>
 										<style>
 											<class name="secondary-button"/>
 											<class name="power-button"/>
@@ -291,6 +306,8 @@
 									<object class="GtkButton" id="quit_button">
 										<property name="label">⏻</property>
 										<property name="tooltip-text" translatable="yes">Power off</property>
+										<property name="width-request">44</property>
+										<property name="height-request">44</property>
 										<style>
 											<class name="secondary-button"/>
 											<class name="power-button"/>
