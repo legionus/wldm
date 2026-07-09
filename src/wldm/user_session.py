@@ -12,6 +12,7 @@ from typing import Any, Dict, Iterator, List, NamedTuple, Optional, Protocol, Se
 import wldm
 import wldm.config
 import wldm.inifile
+import wldm.lazy_imports
 import wldm.pam
 import wldm.policy
 import wldm.process
@@ -33,7 +34,7 @@ class _UnprivilegedModules(NamedTuple):
     shlex: _ShlexModule
 
 
-@wldm.require_unprivileged
+@wldm.lazy_imports.unprivileged_loader
 def _load_unprivileged_modules() -> _UnprivilegedModules:
     """Import modules that are only needed after dropping privileges.
 

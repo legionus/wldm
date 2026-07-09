@@ -10,6 +10,7 @@ from typing import Any, Callable, NamedTuple, Protocol
 
 import wldm
 import wldm.ipc_client
+import wldm.lazy_imports
 import wldm.protocol.greeter as greeter_protocol
 
 logger = wldm.logger
@@ -91,7 +92,7 @@ class _UnprivilegedModules(NamedTuple):
     threading: _ThreadingModule
 
 
-@wldm.require_unprivileged
+@wldm.lazy_imports.unprivileged_loader
 def load_unprivileged_modules() -> _UnprivilegedModules:
     """Import modules that are only needed after dropping privileges.
 
