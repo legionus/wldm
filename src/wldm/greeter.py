@@ -20,7 +20,7 @@ gi.require_version("Gtk", "4.0")
 
 # pylint: disable=too-many-lines
 # pylint: disable-next=wrong-import-position
-from gi.repository import Gtk, Gdk, Gio, GLib  # type: ignore[import-untyped]
+from gi.repository import Gtk, Gdk, GLib  # type: ignore[import-untyped]
 
 # pylint: disable-next=wrong-import-position
 import wldm
@@ -167,7 +167,7 @@ class GreeterApp(greeter_ui.GreeterUI):
     def __init__(self, client: Optional[Any]=None) -> None:
         super().__init__()
         self.app = Gtk.Application(application_id=wldm.policy.GREETER_APP_ID,
-                                   flags=Gio.ApplicationFlags.FLAGS_NONE)
+                                   flags=0)
 
         self.app.connect('activate', self.on_activate)
 

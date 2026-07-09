@@ -94,6 +94,11 @@ def create_client_socketpair() -> tuple[socket.socket, socket.socket]:
     return socket.socketpair()
 
 
+def _close_fd(fd: int) -> None:
+    """Close one owned file descriptor."""
+    os.close(fd)
+
+
 def client_state(state: DaemonState, name: str) -> ClientState:
     """Return the tracked runtime state for a named internal client."""
     return state.clients[name]
@@ -859,7 +864,7 @@ async def run_daemon_async(parser: argparse.Namespace, cfg: wldm.inifile.IniFile
         if num is None:
             logger.critical("unable to find an available tty for greeter on seat %s",
                             cfg.get_str("daemon", "seat"))
-            os.close(console)
+            _close_fd(console)
             return wldm.EX_FAILURE
 
         greeter_tty = num
@@ -867,7 +872,7 @@ async def run_daemon_async(parser: argparse.Namespace, cfg: wldm.inifile.IniFile
     if not wldm.tty.change(console, greeter_tty):
         logger.critical("unable to switch console to tty%d for greeter user %s",
                         greeter_tty, cfg.get_str("greeter", "user"))
-        os.close(console)
+        _close_fd(console)
         return wldm.EX_FAILURE
 
     logger.debug("daemon start")
@@ -947,7 +952,7 @@ async def run_daemon_async(parser: argparse.Namespace, cfg: wldm.inifile.IniFile
     finally:
         remove_stop_handlers(loop)
         await cleanup_async(state)
-        os.close(console)
+        _close_fd(console)
 
     logger.debug("daemon finished")
     return exit_code

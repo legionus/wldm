@@ -686,7 +686,7 @@ def test_run_daemon_async_fails_when_tty_switch_fails(monkeypatch):
 
     monkeypatch.setattr(wldm.tty, "open_console", lambda: 88)
     monkeypatch.setattr(wldm.tty, "change", lambda console, tty: False)
-    monkeypatch.setattr(wldm.daemon.os, "close", lambda fd: closed.append(fd))
+    monkeypatch.setattr(wldm.daemon, "_close_fd", lambda fd: closed.append(fd))
 
     result = asyncio.run(wldm.daemon.run_daemon_async(SimpleNamespace(tty=None), make_config(tty="7")))
 
@@ -712,7 +712,7 @@ def test_run_daemon_async_stops_after_configured_failed_greeter_starts(monkeypat
     monkeypatch.setattr(wldm.daemon, "start_greeter", fake_start_greeter)
     monkeypatch.setattr(wldm.daemon, "cleanup_async", fake_cleanup_async)
     monkeypatch.setattr(wldm.daemon.asyncio, "sleep", fake_sleep)
-    monkeypatch.setattr(wldm.daemon.os, "close", lambda fd: None)
+    monkeypatch.setattr(wldm.daemon, "_close_fd", lambda fd: None)
 
     result = asyncio.run(
         wldm.daemon.run_daemon_async(SimpleNamespace(tty=None), make_config(max_restarts="2"))
@@ -758,7 +758,7 @@ def test_run_daemon_async_restarts_dbus_adapter_without_stopping(monkeypatch):
     monkeypatch.setattr(wldm.daemon, "cleanup_async", fake_cleanup_async)
     monkeypatch.setattr(wldm.daemon, "install_stop_handlers", lambda loop, event: stop_event.set() if event is stop_event else None)
     monkeypatch.setattr(wldm.daemon, "remove_stop_handlers", lambda loop: None)
-    monkeypatch.setattr(wldm.daemon.os, "close", lambda fd: None)
+    monkeypatch.setattr(wldm.daemon, "_close_fd", lambda fd: None)
     monkeypatch.setattr(wldm.daemon.asyncio, "Event", lambda: stop_event)
 
     cfg = make_config()
@@ -794,7 +794,7 @@ def test_run_daemon_async_cleans_up_after_stop_signal(monkeypatch):
     monkeypatch.setattr(wldm.daemon, "cleanup_async", fake_cleanup_async)
     monkeypatch.setattr(wldm.daemon, "install_stop_handlers", lambda loop, event: stop_event.set() if event is stop_event else None)
     monkeypatch.setattr(wldm.daemon, "remove_stop_handlers", lambda loop: None)
-    monkeypatch.setattr(wldm.daemon.os, "close", lambda fd: closed.append(fd))
+    monkeypatch.setattr(wldm.daemon, "_close_fd", lambda fd: closed.append(fd))
     monkeypatch.setattr(wldm.daemon.asyncio, "Event", lambda: stop_event)
 
     result = asyncio.run(wldm.daemon.run_daemon_async(SimpleNamespace(tty=None), make_config()))
@@ -818,7 +818,7 @@ def test_run_daemon_async_cleans_up_on_cancellation(monkeypatch):
     monkeypatch.setattr(wldm.tty, "change", lambda console, tty: True)
     monkeypatch.setattr(wldm.daemon, "start_greeter", fake_start_greeter)
     monkeypatch.setattr(wldm.daemon, "cleanup_async", fake_cleanup_async)
-    monkeypatch.setattr(wldm.daemon.os, "close", lambda fd: closed.append(fd))
+    monkeypatch.setattr(wldm.daemon, "_close_fd", lambda fd: closed.append(fd))
 
     try:
         asyncio.run(wldm.daemon.run_daemon_async(SimpleNamespace(tty=None), make_config()))
