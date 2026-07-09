@@ -308,6 +308,16 @@ def _decode_response_payload(action: str, payload: memoryview, offset: int) -> t
     return {}, offset
 
 
+def _finish_decoded_message(decoded: Dict[str, Any],
+                            payload: memoryview,
+                            offset: int,
+                            raw: bytes) -> Dict[str, Any]:
+    if offset != len(payload):
+        raise ProtocolError("trailing bytes after protocol message", raw)
+
+    return decoded
+
+
 def _is_versioned_type(message: Dict[str, Any], message_type: str) -> bool:
     return message.get("v") == PROTOCOL_VERSION and message.get("type") == message_type
 
@@ -444,7 +454,7 @@ def decode_message(raw: bytes | str) -> Dict[str, Any]:
                 "desktop_names": desktop_names,
             }
 
-        return decoded
+        return _finish_decoded_message(decoded, payload, offset, raw)
 
     if msg_type == TYPE_RESPONSE:
         resp_id, offset = _decode_text(payload, offset)
@@ -467,7 +477,7 @@ def decode_message(raw: bytes | str) -> Dict[str, Any]:
 
             decoded["error"] = {"code": code, "message": message}
 
-        return decoded
+        return _finish_decoded_message(decoded, payload, offset, raw)
 
     if msg_type == TYPE_EVENT:
         event_name, offset = _decode_text(payload, offset)
@@ -503,7 +513,7 @@ def decode_message(raw: bytes | str) -> Dict[str, Any]:
         elif event_name == EVENT_STATE_CHANGED:
             decoded["payload"], offset = _decode_response_payload(ACTION_GET_STATE, payload, offset)
 
-        return decoded
+        return _finish_decoded_message(decoded, payload, offset, raw)
 
     raise ProtocolError("unknown protocol message type tag", raw)
 

@@ -22,6 +22,13 @@ class ChunkReader:
         return chunk
 
 
+def _append_trailing_payload_byte(frame):
+    body_len = greeter_protocol.FRAME_HEADER.unpack(frame[:greeter_protocol.FRAME_HEADER.size])[0]
+    body = frame[greeter_protocol.FRAME_HEADER.size:] + b"x"
+
+    return greeter_protocol.FRAME_HEADER.pack(body_len + 1) + body
+
+
 def test_new_request_creates_versioned_envelope():
     msg = greeter_protocol.new_request(greeter_protocol.ACTION_CREATE_SESSION, {"username": "alice"})
 
@@ -134,6 +141,33 @@ def test_decode_message_rejects_oversized_frame_body():
         assert "too large" in str(exc)
     else:
         raise AssertionError("decode_message() should reject oversized frames")
+
+
+def test_decode_message_rejects_trailing_payload_bytes():
+    messages = [
+        greeter_protocol.new_request(
+            greeter_protocol.ACTION_START_SESSION,
+            {"command": "sway", "desktop_names": ["sway"]},
+        ),
+        greeter_protocol.new_conversation_response(
+            greeter_protocol.new_request(greeter_protocol.ACTION_CREATE_SESSION, {"username": "alice"}),
+            "ready",
+        ),
+        greeter_protocol.new_event(
+            greeter_protocol.EVENT_SESSION_FINISHED,
+            {"pid": 42, "returncode": 0, "failed": False, "message": "Session finished."},
+        ),
+    ]
+
+    for message in messages:
+        frame = _append_trailing_payload_byte(greeter_protocol.encode_message(message))
+
+        try:
+            greeter_protocol.decode_message(frame)
+        except greeter_protocol.ProtocolError as exc:
+            assert "trailing bytes" in str(exc)
+        else:
+            raise AssertionError("decode_message() should reject trailing payload bytes")
 
 
 def test_read_message_async_rejects_oversized_frame_body():
