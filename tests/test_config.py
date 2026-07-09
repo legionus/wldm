@@ -81,6 +81,7 @@ def test_read_config_sets_default_runtime_greeter_values(monkeypatch):
     assert cfg["daemon"]["hibernate-command"] == ""
     assert cfg["greeter"]["user"] == "fallback-user"
     assert cfg["greeter"]["group"] == "fallback-group"
+    assert cfg["greeter"]["tty"] == "-1"
     assert cfg["greeter"]["data-dir"] == ""
     assert cfg["greeter"]["locale-dir"] == ""
     assert cfg["greeter"]["state-dir"] == ""

@@ -27,8 +27,9 @@ hibernate-command =
 user = @greeter_user@
 group = @greeter_group@
 
-# Virtual terminal reserved for the greeter.
-tty = 7
+# Virtual terminal reserved for the greeter. Set to -1 or leave unset to pick
+# the first available terminal automatically.
+tty = -1
 
 # Directory that contains wldm runtime assets such as resources/ and themes/.
 data-dir = @datadir@

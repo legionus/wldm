@@ -38,7 +38,7 @@ def read_config() -> wldm.inifile.IniFile:
         "greeter": {
             "user": ent_pw.pw_name,
             "group": ent_gr.gr_name,
-            "tty": "7",
+            "tty": "-1",
             "data-dir": "",
             "locale-dir": "",
             "state-dir": "",

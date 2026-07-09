@@ -795,12 +795,31 @@ async def cleanup_async(state: DaemonState) -> None:
         await asyncio.gather(*state.session_tasks, return_exceptions=True)
 
 
-async def run_daemon_async(parser: argparse.Namespace, cfg: wldm.inifile.IniFile) -> int:
-    greeter_tty = cfg.get_int("greeter", "tty", 0)
-    greeter_max_restarts = cfg.get_int("greeter", "max-restarts", 3)
+def _configured_greeter_tty(parser: argparse.Namespace, cfg: wldm.inifile.IniFile) -> int:
+    """Return the explicitly requested greeter tty, or 0 for automatic choice.
 
-    if not greeter_tty:
-        greeter_tty = parser.tty
+    Args:
+        parser: Parsed daemon command line arguments.
+        cfg: Loaded daemon configuration.
+
+    Returns:
+        A positive tty number when configured explicitly, otherwise 0 to ask
+        the kernel for the first available virtual terminal.
+    """
+    greeter_tty = cfg.get_int("greeter", "tty", -1)
+
+    if greeter_tty > 0:
+        return greeter_tty
+
+    if parser.tty is not None and parser.tty > 0:
+        return int(parser.tty)
+
+    return 0
+
+
+async def run_daemon_async(parser: argparse.Namespace, cfg: wldm.inifile.IniFile) -> int:
+    greeter_tty = _configured_greeter_tty(parser, cfg)
+    greeter_max_restarts = cfg.get_int("greeter", "max-restarts", 3)
 
     # The daemon controls VT switching itself so it can always bring the
     # greeter back to a known console after a session exits.

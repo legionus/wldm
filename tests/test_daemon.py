@@ -728,6 +728,72 @@ def test_run_daemon_async_fails_when_tty_switch_fails(monkeypatch):
     assert closed == [88]
 
 
+def test_configured_greeter_tty_uses_configured_terminal():
+    tty = wldm.daemon._configured_greeter_tty(SimpleNamespace(tty=9), make_config(tty="7"))
+
+    assert tty == 7
+
+
+def test_configured_greeter_tty_uses_cli_terminal_for_auto_config():
+    tty = wldm.daemon._configured_greeter_tty(SimpleNamespace(tty=9), make_config(tty="-1"))
+
+    assert tty == 9
+
+
+def test_configured_greeter_tty_uses_auto_without_explicit_terminal():
+    assert wldm.daemon._configured_greeter_tty(SimpleNamespace(tty=None), make_config(tty="-1")) == 0
+    assert wldm.daemon._configured_greeter_tty(SimpleNamespace(tty=None), make_config(tty="0")) == 0
+
+
+def test_run_daemon_async_uses_first_available_tty_for_auto_config(monkeypatch):
+    started = {}
+    stop_event = asyncio.Event()
+
+    async def fake_start_greeter(state, cfg, greeter_tty):
+        started["tty"] = greeter_tty
+        return DummyAsyncProc(pid=1, returncode=None)
+
+    async def fake_cleanup_async(state):
+        return None
+
+    monkeypatch.setattr(wldm.tty, "open_console", lambda: 88)
+    monkeypatch.setattr(wldm.tty, "available", lambda console: 12)
+    monkeypatch.setattr(
+        wldm.tty,
+        "change",
+        lambda console, tty: started.setdefault("change", (console, tty)) or True,
+    )
+    monkeypatch.setattr(wldm.daemon, "start_greeter", fake_start_greeter)
+    monkeypatch.setattr(wldm.daemon, "cleanup_async", fake_cleanup_async)
+    monkeypatch.setattr(
+        wldm.daemon,
+        "install_stop_handlers",
+        lambda loop, event: stop_event.set() if event is stop_event else None,
+    )
+    monkeypatch.setattr(wldm.daemon, "remove_stop_handlers", lambda loop: None)
+    monkeypatch.setattr(wldm.daemon, "_close_fd", lambda fd: None)
+    monkeypatch.setattr(wldm.daemon.asyncio, "Event", lambda: stop_event)
+
+    result = asyncio.run(wldm.daemon.run_daemon_async(SimpleNamespace(tty=None), make_config(tty="-1")))
+
+    assert result == wldm.daemon.wldm.EX_SUCCESS
+    assert started["tty"] == 12
+    assert started["change"] == (88, 12)
+
+
+def test_run_daemon_async_fails_when_auto_tty_is_unavailable(monkeypatch):
+    closed = []
+
+    monkeypatch.setattr(wldm.tty, "open_console", lambda: 88)
+    monkeypatch.setattr(wldm.tty, "available", lambda console: None)
+    monkeypatch.setattr(wldm.daemon, "_close_fd", lambda fd: closed.append(fd))
+
+    result = asyncio.run(wldm.daemon.run_daemon_async(SimpleNamespace(tty=None), make_config(tty="-1")))
+
+    assert result == wldm.daemon.wldm.EX_FAILURE
+    assert closed == [88]
+
+
 def test_run_daemon_async_stops_after_configured_failed_greeter_starts(monkeypatch):
     greeters = [DummyAsyncProc(pid=1, returncode=5), DummyAsyncProc(pid=2, returncode=6)]
     sleeps = []
@@ -790,7 +856,11 @@ def test_run_daemon_async_restarts_dbus_adapter_without_stopping(monkeypatch):
     monkeypatch.setattr(wldm.daemon, "wait_for_stop_or_client", fake_wait_for_stop_or_client)
     monkeypatch.setattr(wldm.daemon, "close_client_channel", fake_close_client_channel)
     monkeypatch.setattr(wldm.daemon, "cleanup_async", fake_cleanup_async)
-    monkeypatch.setattr(wldm.daemon, "install_stop_handlers", lambda loop, event: stop_event.set() if event is stop_event else None)
+    monkeypatch.setattr(
+        wldm.daemon,
+        "install_stop_handlers",
+        lambda loop, event: stop_event.set() if event is stop_event else None,
+    )
     monkeypatch.setattr(wldm.daemon, "remove_stop_handlers", lambda loop: None)
     monkeypatch.setattr(wldm.daemon, "_close_fd", lambda fd: None)
     monkeypatch.setattr(wldm.daemon.asyncio, "Event", lambda: stop_event)
@@ -820,7 +890,11 @@ def test_run_daemon_async_cleans_up_after_stop_signal(monkeypatch):
     monkeypatch.setattr(wldm.tty, "change", lambda console, tty: True)
     monkeypatch.setattr(wldm.daemon, "start_greeter", fake_start_greeter)
     monkeypatch.setattr(wldm.daemon, "cleanup_async", fake_cleanup_async)
-    monkeypatch.setattr(wldm.daemon, "install_stop_handlers", lambda loop, event: stop_event.set() if event is stop_event else None)
+    monkeypatch.setattr(
+        wldm.daemon,
+        "install_stop_handlers",
+        lambda loop, event: stop_event.set() if event is stop_event else None,
+    )
     monkeypatch.setattr(wldm.daemon, "remove_stop_handlers", lambda loop: None)
     monkeypatch.setattr(wldm.daemon, "_close_fd", lambda fd: closed.append(fd))
     monkeypatch.setattr(wldm.daemon.asyncio, "Event", lambda: stop_event)
