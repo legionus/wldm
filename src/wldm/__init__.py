@@ -7,7 +7,7 @@ import functools
 import logging
 import os
 import stat
-from typing import Callable, Iterator, ParamSpec, TextIO, TypeVar
+from typing import Callable, Dict, Iterator, Mapping, ParamSpec, TextIO, TypeVar
 
 
 __VERSION__ = '1'
@@ -19,6 +19,13 @@ logger = logging.getLogger("wldm")
 _dropped_privileges = False
 _P = ParamSpec("_P")
 _T = TypeVar("_T")
+INTERNAL_ENV_ALLOWLIST = {
+    "LANG",
+    "LANGUAGE",
+    "PATH",
+    "WLDM_SOURCE_TREE",
+    "WLDM_VERBOSITY",
+}
 
 
 def setup_logger(logger: logging.Logger, level: int,
@@ -177,6 +184,20 @@ def require_unprivileged(func: Callable[_P, _T]) -> Callable[_P, _T]:
         return func(*args, **kwargs)
 
     return wrapper
+
+
+def internal_helper_environ(extra: Mapping[str, str] | None = None) -> Dict[str, str]:
+    """Build the minimal environment passed to internal helper processes."""
+    env = {
+        name: value
+        for name, value in os.environ.items()
+        if name in INTERNAL_ENV_ALLOWLIST or name.startswith("LC_")
+    }
+
+    if extra is not None:
+        env.update(extra)
+
+    return env
 
 
 def drop_privileges(username: str, uid: int, gid: int, workdir: str) -> None:

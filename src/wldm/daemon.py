@@ -579,15 +579,14 @@ async def handle_request_async(state: DaemonState,
         proc = await asyncio.create_subprocess_exec(
             *state.internal_command, "user-session", "--",
             outcome.session_username,
-            env=dict(
-                os.environ,
-                WLDM_SEAT=state.seat,
-                WLDM_SESSION_COMMAND=outcome.session_command,
-                WLDM_SESSION_DESKTOP_NAMES=":".join(outcome.session_desktop_names or []),
-                WLDM_SESSION_NAME=outcome.session_name,
-                WLDM_SESSION_ICON=outcome.session_icon,
-                WLDM_SESSION_DESKTOP_FILE=outcome.session_desktop_file,
-            ),
+            env=wldm.internal_helper_environ({
+                "WLDM_SEAT": state.seat,
+                "WLDM_SESSION_COMMAND": outcome.session_command,
+                "WLDM_SESSION_DESKTOP_NAMES": ":".join(outcome.session_desktop_names or []),
+                "WLDM_SESSION_NAME": outcome.session_name,
+                "WLDM_SESSION_ICON": outcome.session_icon,
+                "WLDM_SESSION_DESKTOP_FILE": outcome.session_desktop_file,
+            }),
         )
         session = SessionState(proc=proc, username=outcome.session_username, command=outcome.session_command)
         state.active_sessions[proc.pid] = session
@@ -722,19 +721,18 @@ async def start_greeter(state: DaemonState,
     greeter_pam_service = cfg.get_str("greeter", "pam-service")
     greeter_user = cfg.get_str("greeter", "user")
     greeter_group = cfg.get_str("greeter", "group")
-    env = dict(
-        os.environ,
-        WLDM_SEAT=state.seat,
-        WLDM_DATA_DIR=cfg.get_str("greeter", "data-dir"),
-        WLDM_LOCALE_DIR=cfg.get_str("greeter", "locale-dir"),
-        WLDM_THEME=cfg.get_str("greeter", "theme"),
-        WLDM_GREETER_COMMAND=cfg.get_str("greeter", "command"),
-        WLDM_GREETER_SESSION_DIRS=cfg.get_str("greeter", "session-dirs"),
-        WLDM_GREETER_USER_SESSION_DIR=cfg.get_str("greeter", "user-session-dir"),
-        WLDM_ACTIONS=":".join(configured_power_actions(cfg)),
-        WLDM_GREETER_STDERR_LOG=cfg.get_str("greeter", "log-path"),
-        WLDM_GREETER_USER_SESSIONS="yes" if cfg.get_bool("greeter", "user-sessions") else "no",
-    )
+    env = wldm.internal_helper_environ({
+        "WLDM_SEAT": state.seat,
+        "WLDM_DATA_DIR": cfg.get_str("greeter", "data-dir"),
+        "WLDM_LOCALE_DIR": cfg.get_str("greeter", "locale-dir"),
+        "WLDM_THEME": cfg.get_str("greeter", "theme"),
+        "WLDM_GREETER_COMMAND": cfg.get_str("greeter", "command"),
+        "WLDM_GREETER_SESSION_DIRS": cfg.get_str("greeter", "session-dirs"),
+        "WLDM_GREETER_USER_SESSION_DIR": cfg.get_str("greeter", "user-session-dir"),
+        "WLDM_ACTIONS": ":".join(configured_power_actions(cfg)),
+        "WLDM_GREETER_STDERR_LOG": cfg.get_str("greeter", "log-path"),
+        "WLDM_GREETER_USER_SESSIONS": "yes" if cfg.get_bool("greeter", "user-sessions") else "no",
+    })
     greeter_state_dir = cfg.get_str("greeter", "state-dir")
 
     if greeter_state_dir:
@@ -777,7 +775,7 @@ async def start_dbus_adapter(state: DaemonState,
     try:
         return await start_client(state, "dbus-adapter", cfg,
             [*state.internal_command, "dbus-adapter", user, service],
-            dict(os.environ, WLDM_DBUS_LOG_PATH=log_path),
+            wldm.internal_helper_environ({"WLDM_DBUS_LOG_PATH": log_path}),
         )
 
     except Exception as e:

@@ -282,6 +282,36 @@ def test_require_unprivileged_rejects_privileged_call(monkeypatch):
     assert calls == ["called"]
 
 
+def test_internal_helper_environ_keeps_only_bootstrap_and_locale(monkeypatch):
+    monkeypatch.setattr(
+        wldm.os,
+        "environ",
+        {
+            "PATH": "/usr/bin",
+            "LANG": "C.UTF-8",
+            "LANGUAGE": "en",
+            "LC_TIME": "C",
+            "WLDM_SOURCE_TREE": "/srv/wldm",
+            "WLDM_VERBOSITY": "2",
+            "PYTHONPATH": "/srv/wldm/src",
+            "HOME": "/root",
+            "SECRET_TOKEN": "secret",
+        },
+    )
+
+    env = wldm.internal_helper_environ({"WLDM_SOCKET_FD": "11"})
+
+    assert env == {
+        "PATH": "/usr/bin",
+        "LANG": "C.UTF-8",
+        "LANGUAGE": "en",
+        "LC_TIME": "C",
+        "WLDM_SOURCE_TREE": "/srv/wldm",
+        "WLDM_VERBOSITY": "2",
+        "WLDM_SOCKET_FD": "11",
+    }
+
+
 def test_setup_verbosity_defaults_to_warning(monkeypatch):
     calls = []
 

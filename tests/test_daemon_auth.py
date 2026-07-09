@@ -120,6 +120,9 @@ def test_start_auth_session_starts_worker_and_sends_start_message(monkeypatch):
     proc = DummyProc(pid=999, returncode=0)
     writer = DummyWriter()
     calls = {}
+    monkeypatch.setenv("SECRET_TOKEN", "secret")
+    monkeypatch.setenv("PYTHONPATH", "/srv/wldm/src")
+    monkeypatch.setenv("WLDM_SOURCE_TREE", "/srv/wldm")
     patch_start_auth_runtime(
         monkeypatch,
         proc=proc,
@@ -138,6 +141,9 @@ def test_start_auth_session_starts_worker_and_sends_start_message(monkeypatch):
 
     assert calls["cmd"] == ("/usr/bin/python3", "-m", "wldm.command", "pam-worker")
     assert calls["env"]["WLDM_SOCKET_FD"] == str(calls["pass_fds"][0])
+    assert calls["env"]["WLDM_SOURCE_TREE"] == "/srv/wldm"
+    assert "SECRET_TOKEN" not in calls["env"]
+    assert "PYTHONPATH" not in calls["env"]
     assert auth_session.proc is proc
     assert message == {"v": 1, "kind": "prompt", "style": "visible", "text": "OTP:"}
     decoded = pam_worker_protocol.decode_message(writer.lines[0])

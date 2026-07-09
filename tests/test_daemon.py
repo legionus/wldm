@@ -368,6 +368,9 @@ def test_handle_request_async_starts_session_after_auth(monkeypatch):
     )
     proc = DummyAsyncProc(pid=777, returncode=0)
     task_calls = []
+    monkeypatch.setenv("SECRET_TOKEN", "secret")
+    monkeypatch.setenv("PYTHONPATH", "/srv/wldm/src")
+    monkeypatch.setenv("WLDM_SOURCE_TREE", "/srv/wldm")
 
     async def fake_create_subprocess_exec(*cmd, env=None):
         assert cmd == (
@@ -383,6 +386,9 @@ def test_handle_request_async_starts_session_after_auth(monkeypatch):
         assert env["WLDM_SESSION_NAME"] == "Plasma"
         assert env["WLDM_SESSION_ICON"] == "plasma"
         assert env["WLDM_SESSION_DESKTOP_FILE"] == "/usr/share/wayland-sessions/plasma.desktop"
+        assert env["WLDM_SOURCE_TREE"] == "/srv/wldm"
+        assert "SECRET_TOKEN" not in env
+        assert "PYTHONPATH" not in env
         return proc
 
     async def fake_exec(*cmd, env=None, start_new_session=False):
@@ -523,6 +529,9 @@ def test_start_greeter_passes_socket_env(monkeypatch):
     }
     calls = {}
     proc = DummyAsyncProc(pid=4321, returncode=0)
+    monkeypatch.setenv("SECRET_TOKEN", "secret")
+    monkeypatch.setenv("PYTHONPATH", "/srv/wldm/src")
+    monkeypatch.setenv("WLDM_SOURCE_TREE", "/srv/wldm")
 
     async def fake_create_subprocess_exec(*cmd, env=None, start_new_session=False, **kwargs):
         calls["cmd"] = cmd
@@ -570,6 +579,7 @@ def test_start_greeter_passes_socket_env(monkeypatch):
         "gdm",
     )
     assert calls["env"]["WLDM_SOCKET_FD"] == "11"
+    assert calls["env"]["WLDM_SOURCE_TREE"] == "/srv/wldm"
     assert calls["env"]["WLDM_SEAT"] == "seat9"
     assert calls["env"]["WLDM_THEME"] == "retro"
     assert calls["env"]["WLDM_GREETER_COMMAND"] == "labwc --"
@@ -583,6 +593,8 @@ def test_start_greeter_passes_socket_env(monkeypatch):
     assert calls["env"]["XKB_DEFAULT_MODEL"] == "pc105"
     assert calls["env"]["XKB_DEFAULT_LAYOUT"] == "us,ru"
     assert calls["env"]["XKB_DEFAULT_OPTIONS"] == "grp:alt_shift_toggle"
+    assert "SECRET_TOKEN" not in calls["env"]
+    assert "PYTHONPATH" not in calls["env"]
     assert calls["sock"].fileno() == 10
     assert calls["kwargs"]["pass_fds"] == (11,)
 
@@ -604,6 +616,9 @@ def test_start_dbus_adapter_starts_internal_client(monkeypatch):
     cfg["dbus"]["log-path"] = "/tmp/wldm/dbus.log"
     proc = DummyAsyncProc(pid=5555, returncode=0)
     calls = {}
+    monkeypatch.setenv("SECRET_TOKEN", "secret")
+    monkeypatch.setenv("PYTHONPATH", "/srv/wldm/src")
+    monkeypatch.setenv("WLDM_SOURCE_TREE", "/srv/wldm")
 
     async def fake_start_client(state_arg, name_arg, cfg_arg, argv_arg, env_arg):
         calls["state"] = state_arg
@@ -630,6 +645,9 @@ def test_start_dbus_adapter_starts_internal_client(monkeypatch):
     ]
     assert isinstance(calls["env"], dict)
     assert calls["env"]["WLDM_DBUS_LOG_PATH"] == "/tmp/wldm/dbus.log"
+    assert calls["env"]["WLDM_SOURCE_TREE"] == "/srv/wldm"
+    assert "SECRET_TOKEN" not in calls["env"]
+    assert "PYTHONPATH" not in calls["env"]
 
 
 def test_terminate_process_tree_sends_signals_to_process_group(monkeypatch):

@@ -3,7 +3,6 @@
 # Copyright (C) 2026  Alexey Gladkov <legion@kernel.org>
 
 import asyncio
-import os
 import socket
 from contextlib import suppress
 from dataclasses import dataclass
@@ -126,7 +125,7 @@ async def start_auth_session(internal_command: list[str],
     proc = await asyncio.create_subprocess_exec(
         *internal_command,
         "pam-worker",
-        env=dict(os.environ, WLDM_SOCKET_FD=str(child_sock.fileno())),
+        env=wldm.internal_helper_environ({"WLDM_SOCKET_FD": str(child_sock.fileno())}),
         pass_fds=(child_sock.fileno(),),
     )
     child_sock.close()
