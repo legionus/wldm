@@ -111,3 +111,20 @@ def test_read_message_socket_rejects_oversized_frame():
     finally:
         left.close()
         right.close()
+
+
+def test_read_message_socket_rejects_partial_header():
+    left, right = socket.socketpair()
+
+    try:
+        left.sendall(b"\x00")
+        left.close()
+
+        try:
+            pam_worker_protocol.read_message_socket(right)
+        except pam_worker_protocol.ProtocolError as exc:
+            assert "truncated protocol frame" in str(exc)
+        else:
+            raise AssertionError("read_message_socket() should reject partial frame headers")
+    finally:
+        right.close()

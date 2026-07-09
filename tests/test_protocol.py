@@ -216,6 +216,18 @@ def test_read_message_socket_rejects_oversized_frame_body():
         sock2.close()
 
 
+def test_read_message_socket_returns_none_on_partial_header():
+    sock1, sock2 = socket.socketpair()
+
+    try:
+        sock1.sendall(b"\x00")
+        sock1.close()
+
+        assert greeter_protocol.read_message_socket(sock2) is None
+    finally:
+        sock2.close()
+
+
 def test_is_request_validates_shape():
     msg = greeter_protocol.new_request(greeter_protocol.ACTION_CREATE_SESSION, {"username": "alice"})
 

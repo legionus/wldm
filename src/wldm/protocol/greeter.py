@@ -4,11 +4,11 @@
 
 import asyncio
 import socket
-import struct
 import uuid
 
 from typing import Any, Dict
 
+from wldm.protocol import framing
 from wldm.secret import SecretBytes
 
 
@@ -34,15 +34,14 @@ EVENT_SESSION_STARTING = "session-starting"
 EVENT_SESSION_FINISHED = "session-finished"
 EVENT_STATE_CHANGED = "state-changed"
 
-FRAME_HEADER = struct.Struct("!I")
-SIGNED_INT = struct.Struct("!i")
+FRAME_HEADER = framing.FRAME_HEADER
 
 TYPE_REQUEST = 1
 TYPE_RESPONSE = 2
 TYPE_EVENT = 3
 
 AUTH_FIELD_MAX_LENGTH = 256
-MAX_FRAME_BODY_LENGTH = 2048
+MAX_FRAME_BODY_LENGTH = framing.MAX_FRAME_BODY_LENGTH
 
 
 class ProtocolError(ValueError):
@@ -140,62 +139,26 @@ def new_conversation_response(request: Dict[str, Any],
     return new_response(request, ok=True, payload=payload)
 
 
-def _encode_bool(value: bool) -> bytes:
-    return bytes([1 if value else 0])
+_encode_bool = framing.encode_bool
+_encode_text = framing.encode_text
+_encode_blob = framing.encode_blob
+_encode_signed_int = framing.encode_signed_int
 
 
 def _decode_bool(payload: memoryview, offset: int) -> tuple[bool, int]:
-    if offset >= len(payload):
-        raise ProtocolError("truncated boolean field", payload.tobytes())
-
-    return payload[offset] != 0, offset + 1
-
-
-def _encode_text(value: str) -> bytes:
-    data = value.encode("utf-8")
-    return FRAME_HEADER.pack(len(data)) + data
+    return framing.decode_bool(payload, offset, ProtocolError)
 
 
 def _decode_text(payload: memoryview, offset: int) -> tuple[str, int]:
-    data, offset = _decode_blob(payload, offset)
-    try:
-        return data.decode("utf-8"), offset
-
-    except UnicodeDecodeError as exc:
-        raise ProtocolError("invalid utf-8 in protocol field", payload.tobytes()) from exc
-
-
-def _encode_blob(value: bytes | bytearray | str | SecretBytes) -> bytes:
-    if isinstance(value, SecretBytes):
-        data = value.as_bytes()
-
-    elif isinstance(value, str):
-        data = value.encode("utf-8")
-
-    else:
-        data = bytes(value)
-
-    return FRAME_HEADER.pack(len(data)) + data
+    return framing.decode_text(payload, offset, ProtocolError)
 
 
 def _decode_blob(payload: memoryview, offset: int) -> tuple[bytes, int]:
-    if offset + FRAME_HEADER.size > len(payload):
-        raise ProtocolError("truncated length-prefixed field", payload.tobytes())
-
-    size = FRAME_HEADER.unpack(payload[offset:offset + FRAME_HEADER.size])[0]
-    offset += FRAME_HEADER.size
-
-    if offset + size > len(payload):
-        raise ProtocolError("truncated protocol field data", payload.tobytes())
-
-    data = payload[offset:offset + size].tobytes()
-
-    return data, offset + size
+    return framing.decode_blob(payload, offset, ProtocolError)
 
 
 def _decode_secbytes(payload: memoryview, offset: int) -> tuple[SecretBytes, int]:
-    data, offset = _decode_blob(payload, offset)
-    return SecretBytes(data), offset
+    return framing.decode_secbytes(payload, offset, ProtocolError)
 
 
 def _encode_string_list(values: list[str]) -> bytes:
@@ -223,17 +186,8 @@ def _decode_string_list(payload: memoryview, offset: int) -> tuple[list[str], in
     return values, offset
 
 
-def _encode_signed_int(value: int) -> bytes:
-    return SIGNED_INT.pack(value)
-
-
 def _decode_signed_int(payload: memoryview, offset: int) -> tuple[int, int]:
-    if offset + SIGNED_INT.size > len(payload):
-        raise ProtocolError("truncated signed integer field", payload.tobytes())
-
-    value = SIGNED_INT.unpack(payload[offset:offset + SIGNED_INT.size])[0]
-
-    return value, offset + SIGNED_INT.size
+    return framing.decode_signed_int(payload, offset, ProtocolError)
 
 
 def _encode_response_payload(body: bytearray, action: str, payload: Dict[str, Any]) -> None:
@@ -398,32 +352,17 @@ def encode_message(message: Dict[str, Any]) -> bytes:
     else:
         raise ProtocolError("unknown protocol message type")
 
-    if len(body) > MAX_FRAME_BODY_LENGTH:
-        raise ProtocolError("protocol frame body is too large")
-
-    return FRAME_HEADER.pack(len(body)) + bytes(body)
+    return framing.encode_frame(body, MAX_FRAME_BODY_LENGTH, ProtocolError)
 
 
 def decode_message(raw: bytes | str) -> Dict[str, Any]:
     if isinstance(raw, str):
         raw = raw.encode("utf-8")
 
-    if len(raw) < FRAME_HEADER.size:
-        raise ProtocolError("truncated protocol frame", raw)
+    payload = framing.frame_payload(raw, MAX_FRAME_BODY_LENGTH, ProtocolError)
 
-    body_len = FRAME_HEADER.unpack(raw[:FRAME_HEADER.size])[0]
-    body = raw[FRAME_HEADER.size:]
-
-    if body_len > MAX_FRAME_BODY_LENGTH:
-        raise ProtocolError("protocol frame body is too large", raw[:FRAME_HEADER.size])
-
-    if len(body) != body_len:
-        raise ProtocolError("protocol frame length mismatch", raw)
-
-    if len(body) < 2:
+    if len(payload) < 2:
         raise ProtocolError("truncated protocol body", raw)
-
-    payload = memoryview(body)
 
     if payload[0] != PROTOCOL_VERSION:
         raise ProtocolError("unsupported protocol version", raw)
@@ -528,65 +467,24 @@ def decode_message(raw: bytes | str) -> Dict[str, Any]:
 
 
 async def read_message_async(reader: asyncio.StreamReader) -> Dict[str, Any] | None:
-    try:
-        header = await reader.readexactly(FRAME_HEADER.size)
+    frame = await framing.read_frame_async(
+        reader,
+        MAX_FRAME_BODY_LENGTH,
+        ProtocolError,
+        "truncated protocol frame header",
+    )
+    if frame is None:
+        return None
 
-    except asyncio.IncompleteReadError as exc:
-        if len(exc.partial) == 0:
-            return None
-
-        raise ProtocolError("truncated protocol frame header", bytes(exc.partial)) from exc
-
-    body_len = FRAME_HEADER.unpack(header)[0]
-
-    if body_len > MAX_FRAME_BODY_LENGTH:
-        raise ProtocolError("protocol frame body is too large", header)
-
-    try:
-        body = await reader.readexactly(body_len)
-
-    except asyncio.IncompleteReadError as exc:
-        raise ProtocolError("truncated protocol frame body", header + bytes(exc.partial)) from exc
-
-    return decode_message(header + body)
+    return decode_message(frame)
 
 
 def read_message_socket(sock: socket.socket) -> Dict[str, Any] | None:
-    header = _recv_exact(sock, FRAME_HEADER.size)
-
-    if header is None:
+    frame = framing.read_frame_socket(sock, MAX_FRAME_BODY_LENGTH, ProtocolError)
+    if frame is None:
         return None
 
-    body_len = FRAME_HEADER.unpack(header)[0]
-
-    if body_len > MAX_FRAME_BODY_LENGTH:
-        raise ProtocolError("protocol frame body is too large", header)
-
-    body = _recv_exact(sock, body_len)
-
-    if body is None:
-        raise ProtocolError("truncated protocol frame body", header)
-
-    return decode_message(header + body)
-
-
-def _recv_exact(sock: socket.socket, size: int) -> bytes | None:
-    chunks = bytearray()
-
-    while len(chunks) < size:
-        chunk = sock.recv(size - len(chunks))
-
-        if not chunk:
-            if not chunks:
-                return None
-            break
-
-        chunks.extend(chunk)
-
-    if len(chunks) != size:
-        return None
-
-    return bytes(chunks)
+    return decode_message(frame)
 
 
 def is_request(message: Dict[str, Any], action: str | None = None) -> bool:
