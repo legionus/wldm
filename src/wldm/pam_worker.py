@@ -4,7 +4,6 @@
 
 import argparse
 import ctypes
-import os
 import socket
 
 from ctypes import POINTER, byref, c_char, c_char_p, c_void_p, cast, sizeof
@@ -250,21 +249,6 @@ def _conversation_conv(n_messages: int,
     return ffi.PAM_SUCCESS
 
 
-def inherited_socket_fd() -> int:
-    """Return the daemon-provided PAM worker socket fd."""
-    value = os.environ.get("WLDM_SOCKET_FD", "")
-
-    try:
-        fd = int(value)
-    except ValueError as exc:
-        raise RuntimeError("invalid or missing WLDM_SOCKET_FD") from exc
-
-    if fd < 0:
-        raise RuntimeError("WLDM_SOCKET_FD must be non-negative")
-
-    return fd
-
-
 def run_auth_session(sock: Any, service: str, username: str, tty: str) -> int:
     """Run one blocking PAM authentication session and report prompts upstream."""
     logger.info("pam-worker start service=%s user=%s tty=%s",
@@ -325,7 +309,7 @@ def run_auth_session(sock: Any, service: str, username: str, tty: str) -> int:
 
 def cmd_main(_parser: argparse.Namespace) -> int:
     """Run the PAM worker subcommand."""
-    fd = inherited_socket_fd()
+    fd = wldm.inherited_socket_fd("WLDM_SOCKET_FD")
     sock = socket.socket(fileno=fd)
 
     try:

@@ -207,27 +207,6 @@ def test_conversation_conv_rejects_response_buffer_and_callback_failures(monkeyp
     assert pam_worker._conversation_conv(1, msgs, response, ctypes.c_void_p(123)) == ffi.PAM_CONV_ERR
 
 
-def test_inherited_socket_fd_validates_environment(monkeypatch):
-    monkeypatch.setenv("WLDM_SOCKET_FD", "7")
-    assert pam_worker.inherited_socket_fd() == 7
-
-    monkeypatch.setenv("WLDM_SOCKET_FD", "bad")
-    try:
-        pam_worker.inherited_socket_fd()
-    except RuntimeError as exc:
-        assert "invalid or missing" in str(exc)
-    else:
-        raise AssertionError("non-integer fd should fail")
-
-    monkeypatch.setenv("WLDM_SOCKET_FD", "-1")
-    try:
-        pam_worker.inherited_socket_fd()
-    except RuntimeError as exc:
-        assert "non-negative" in str(exc)
-    else:
-        raise AssertionError("negative fd should fail")
-
-
 def test_run_auth_session_reports_ready_and_failures(monkeypatch):
     calls = []
     sock = SimpleNamespace(sendall=lambda data: calls.append(pam_worker_protocol.decode_message(data)))
@@ -302,7 +281,7 @@ def test_cmd_main_reads_start_message_and_calls_run_auth_session(monkeypatch):
     try:
         left.sendall(pam_worker_protocol.encode_message(pam_worker_protocol.new_start("login", "alice", "/dev/tty7")))
         right_fd = right.detach()
-        monkeypatch.setattr(pam_worker, "inherited_socket_fd", lambda: right_fd)
+        monkeypatch.setattr(pam_worker.wldm, "inherited_socket_fd", lambda env_name: right_fd)
 
         def fake_run_auth_session(sock, service, username, tty):
             calls["args"] = (service, username, tty)
@@ -324,7 +303,7 @@ def test_cmd_main_rejects_non_start_message(monkeypatch):
     try:
         left.sendall(pam_worker_protocol.encode_message(pam_worker_protocol.new_cancel()))
         right_fd = right.detach()
-        monkeypatch.setattr(pam_worker, "inherited_socket_fd", lambda: right_fd)
+        monkeypatch.setattr(pam_worker.wldm, "inherited_socket_fd", lambda env_name: right_fd)
 
         try:
             pam_worker.cmd_main(SimpleNamespace())
@@ -342,7 +321,7 @@ def test_cmd_main_rejects_closed_channel_before_start(monkeypatch):
     try:
         left.close()
         right_fd = right.detach()
-        monkeypatch.setattr(pam_worker, "inherited_socket_fd", lambda: right_fd)
+        monkeypatch.setattr(pam_worker.wldm, "inherited_socket_fd", lambda env_name: right_fd)
 
         try:
             pam_worker.cmd_main(SimpleNamespace())

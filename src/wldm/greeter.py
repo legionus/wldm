@@ -57,7 +57,8 @@ def _is_valid_widget(spec: Dict[str, Any], widget: Any) -> bool:
     return all(hasattr(widget, method) for method in methods)
 
 class _SocketClient:
-    def __init__(self, fd: int) -> None:
+    def __init__(self) -> None:
+        fd = wldm.inherited_socket_fd("WLDM_SOCKET_FD")
         self.sock = socket.socket(fileno=fd)
 
     def write_message(self, message: Dict[str, Any]) -> None:
@@ -72,14 +73,6 @@ class _SocketClient:
 
     def close(self) -> None:
         self.sock.close()
-
-
-def _new_ipc_client() -> Any:
-    socket_fd = os.environ.get("WLDM_SOCKET_FD", "").strip()
-    if socket_fd:
-        return _SocketClient(fd=int(socket_fd))
-
-    raise RuntimeError("environ variable `WLDM_SOCKET_FD' not specified")
 
 
 def _available_actions() -> set[str]:
@@ -172,7 +165,7 @@ class GreeterApp(greeter_ui.GreeterUI):
         self.app.connect('activate', self.on_activate)
 
         self.sessions = wldm.sessions.desktop_sessions()
-        self.client = client if client is not None else _new_ipc_client()
+        self.client = client if client is not None else _SocketClient()
 
         self.quit = False
         self.actions = _available_actions()
@@ -483,10 +476,6 @@ def cmd_main(_parser: argparse.Namespace) -> int:
         return wldm.EX_FAILURE
 
     _setup_greeter_i18n()
-
-    if "WLDM_SOCKET_FD" not in os.environ:
-        logger.critical("environ variable `WLDM_SOCKET_FD' not specified")
-        return wldm.EX_FAILURE
 
     logger.debug("Resource path: %s", resource_path)
 

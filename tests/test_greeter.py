@@ -1001,31 +1001,18 @@ def test_send_recv_answer_treats_clean_eof_and_unexpected_errors_as_connection_l
     assert any("unexpected error" in item for item in events if isinstance(item, str))
 
 
-def test_new_ipc_client_requires_socket_fd_env(monkeypatch):
-    greeter = load_greeter_module(monkeypatch)
-
-    monkeypatch.delenv("WLDM_SOCKET_FD", raising=False)
-
-    try:
-        greeter._new_ipc_client()
-    except RuntimeError as exc:
-        assert "WLDM_SOCKET_FD" in str(exc)
-    else:
-        raise AssertionError("_new_ipc_client() should have failed")
-
-
-def test_new_ipc_client_uses_socket_fd(monkeypatch):
+def test_socket_client_uses_inherited_socket_fd(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
     calls = []
 
-    class FakeSocketClient:
-        def __init__(self, fd):
-            calls.append(fd)
+    class FakeSocket:
+        def __init__(self, fileno):
+            calls.append(fileno)
 
-    monkeypatch.setenv("WLDM_SOCKET_FD", "11")
-    monkeypatch.setattr(greeter, "_SocketClient", FakeSocketClient)
+    monkeypatch.setattr(greeter.wldm, "inherited_socket_fd", lambda env_name: 11)
+    monkeypatch.setattr(greeter.socket, "socket", FakeSocket)
 
-    greeter._new_ipc_client()
+    greeter._SocketClient()
 
     assert calls == [11]
 

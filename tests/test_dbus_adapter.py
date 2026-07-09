@@ -95,26 +95,6 @@ def test_session_paths_follow_active_session_pids():
     ]
 
 
-def test_adapter_ipc_fd_requires_environment_variable(monkeypatch):
-    monkeypatch.delenv("WLDM_SOCKET_FD", raising=False)
-
-    try:
-        wldm.dbus_adapter.adapter_ipc_fd()
-    except RuntimeError as exc:
-        assert "WLDM_SOCKET_FD" in str(exc)
-    else:
-        raise AssertionError("adapter_ipc_fd() should require the inherited fd")
-
-
-def test_adapter_ipc_fd_marks_fd_inheritable(monkeypatch):
-    calls = []
-    monkeypatch.setenv("WLDM_SOCKET_FD", "17")
-    monkeypatch.setattr(wldm.dbus_adapter.os, "set_inheritable", lambda fd, value: calls.append((fd, value)))
-
-    assert wldm.dbus_adapter.adapter_ipc_fd() == 17
-    assert calls == [(17, True)]
-
-
 def test_request_state_rejects_bad_responses(monkeypatch):
     request = {"v": 1, "id": "req-1", "type": "request", "action": greeter_protocol.ACTION_GET_STATE, "payload": {}}
     monkeypatch.setattr(wldm.dbus_adapter.greeter_protocol, "new_request", lambda action, payload: dict(request))
@@ -365,7 +345,7 @@ def test_run_adapter_drops_privileges_and_runs_loop(monkeypatch):
             calls["thread_join"] = timeout
 
     monkeypatch.setattr(wldm.dbus_adapter, "SocketClient", lambda fd: calls.update({"fd": fd}) or client)
-    monkeypatch.setattr(wldm.dbus_adapter, "adapter_ipc_fd", lambda: 13)
+    monkeypatch.setattr(wldm.dbus_adapter.wldm, "inherited_socket_fd", lambda env_name: 13)
     monkeypatch.setattr(
         wldm.dbus_adapter,
         "load_unprivileged_modules",

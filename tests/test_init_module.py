@@ -4,6 +4,7 @@
 import argparse
 import logging
 import os
+import socket
 import stat
 from pathlib import Path
 from types import SimpleNamespace
@@ -310,6 +311,83 @@ def test_internal_helper_environ_keeps_only_bootstrap_and_locale(monkeypatch):
         "WLDM_VERBOSITY": "2",
         "WLDM_SOCKET_FD": "11",
     }
+
+
+def test_inherited_socket_fd_accepts_stream_socket(monkeypatch):
+    left, right = socket.socketpair()
+    calls = []
+    try:
+        fd = right.fileno()
+        monkeypatch.setenv("WLDM_SOCKET_FD", str(fd))
+        monkeypatch.setattr(wldm.os, "set_inheritable", lambda fd_arg, value: calls.append((fd_arg, value)))
+
+        assert wldm.inherited_socket_fd("WLDM_SOCKET_FD") == fd
+        assert calls == [(fd, True)]
+        right.sendall(b"x")
+        assert left.recv(1) == b"x"
+    finally:
+        left.close()
+        right.close()
+
+
+def test_inherited_socket_fd_rejects_invalid_environment(monkeypatch):
+    for value in ("", "bad", "-1", "0", "1", "2"):
+        monkeypatch.setenv("WLDM_SOCKET_FD", value)
+
+        try:
+            wldm.inherited_socket_fd("WLDM_SOCKET_FD")
+        except RuntimeError as exc:
+            assert "WLDM_SOCKET_FD" in str(exc)
+        else:
+            raise AssertionError(f"{value!r} should not be accepted")
+
+
+def test_inherited_socket_fd_rejects_closed_fd(monkeypatch):
+    left, right = socket.socketpair()
+    fd = right.fileno()
+    monkeypatch.setenv("WLDM_SOCKET_FD", str(fd))
+    right.close()
+    try:
+        wldm.inherited_socket_fd("WLDM_SOCKET_FD")
+    except RuntimeError as exc:
+        assert "not an open fd" in str(exc)
+    else:
+        raise AssertionError("closed fd should not be accepted")
+    finally:
+        left.close()
+
+
+def test_inherited_socket_fd_rejects_non_socket_fd(monkeypatch, tmp_path):
+    path = tmp_path / "regular"
+    path.write_text("data", encoding="utf-8")
+    fd = os.open(path, os.O_RDONLY)
+    try:
+        monkeypatch.setenv("WLDM_SOCKET_FD", str(fd))
+
+        try:
+            wldm.inherited_socket_fd("WLDM_SOCKET_FD")
+        except RuntimeError as exc:
+            assert "not a socket fd" in str(exc)
+        else:
+            raise AssertionError("regular file fd should not be accepted")
+    finally:
+        os.close(fd)
+
+
+def test_inherited_socket_fd_rejects_non_stream_socket(monkeypatch):
+    left, right = socket.socketpair(type=socket.SOCK_DGRAM)
+    try:
+        monkeypatch.setenv("WLDM_SOCKET_FD", str(right.fileno()))
+
+        try:
+            wldm.inherited_socket_fd("WLDM_SOCKET_FD")
+        except RuntimeError as exc:
+            assert "SOCK_STREAM" in str(exc)
+        else:
+            raise AssertionError("datagram socket should not be accepted")
+    finally:
+        left.close()
+        right.close()
 
 
 def test_setup_verbosity_defaults_to_warning(monkeypatch):

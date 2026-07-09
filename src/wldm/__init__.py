@@ -6,6 +6,7 @@ import contextlib
 import functools
 import logging
 import os
+import socket
 import stat
 from typing import Callable, Dict, Iterator, Mapping, ParamSpec, TextIO, TypeVar
 
@@ -198,6 +199,39 @@ def internal_helper_environ(extra: Mapping[str, str] | None = None) -> Dict[str,
         env.update(extra)
 
     return env
+
+
+def inherited_socket_fd(env_name: str) -> int:
+    """Return and validate one inherited stream socket fd from the environment."""
+    value = os.environ.get(env_name, "").strip()
+
+    try:
+        fd = int(value)
+    except ValueError as exc:
+        raise RuntimeError(f"invalid or missing {env_name}") from exc
+
+    if fd < 3:
+        raise RuntimeError(f"{env_name} must refer to an inherited socket fd")
+
+    try:
+        st = os.fstat(fd)
+    except OSError as exc:
+        raise RuntimeError(f"{env_name} is not an open fd: {fd}") from exc
+
+    if not stat.S_ISSOCK(st.st_mode):
+        raise RuntimeError(f"{env_name} is not a socket fd: {fd}")
+
+    sock = socket.fromfd(fd, socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        sock_type = sock.getsockopt(socket.SOL_SOCKET, socket.SO_TYPE)
+    finally:
+        sock.close()
+
+    if sock_type != socket.SOCK_STREAM:
+        raise RuntimeError(f"{env_name} must be a SOCK_STREAM socket")
+
+    os.set_inheritable(fd, True)
+    return fd
 
 
 def drop_privileges(username: str, uid: int, gid: int, workdir: str) -> None:

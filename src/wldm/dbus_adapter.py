@@ -110,21 +110,6 @@ def load_unprivileged_modules() -> _UnprivilegedModules:
     return _UnprivilegedModules(Gio=Gio, GLib=GLib, threading=threading)
 
 
-def adapter_ipc_fd() -> int:
-    """Return the inherited daemon IPC fd for the adapter process.
-
-    Returns:
-        The connected socket fd passed down by the daemon.
-    """
-    socket_fd = os.environ.get("WLDM_SOCKET_FD", "").strip()
-    if not socket_fd:
-        raise RuntimeError("environ variable `WLDM_SOCKET_FD' not specified")
-
-    fd = int(socket_fd)
-    os.set_inheritable(fd, True)
-    return fd
-
-
 def seat_object_path(seat: str) -> str:
     """Build the stable D-Bus object path for one seat id.
 
@@ -560,7 +545,7 @@ def run_adapter(username: str, uid: int, gid: int, workdir: str, service_name: s
     Returns:
         A shell-style process exit status.
     """
-    client = SocketClient(adapter_ipc_fd())
+    client = SocketClient(wldm.inherited_socket_fd("WLDM_SOCKET_FD"))
 
     try:
         wldm.drop_privileges(username, uid, gid, workdir)

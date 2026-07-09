@@ -97,16 +97,6 @@ def redirect_greeter_stderr(log_path: Optional[str] = None) -> None:
     logfile.close()
 
 
-def greeter_ipc_fd() -> int:
-    socket_fd = os.environ.get("WLDM_SOCKET_FD", "").strip()
-    if not socket_fd:
-        raise RuntimeError("environ variable `WLDM_SOCKET_FD' not specified")
-
-    fd = int(socket_fd)
-    os.set_inheritable(fd, True)
-    return fd
-
-
 @wldm.require_unprivileged
 def build_greeter_argv() -> List[str]:
     """Resolve the final greeter argv from the daemon-provided command string.
@@ -209,7 +199,7 @@ def run_greeter_session(pw: pwd.struct_passwd,
                         gid: int,
                         pam_service: str,
                         tty_number: int) -> int:
-    ipc_fd = greeter_ipc_fd()
+    ipc_fd = wldm.inherited_socket_fd("WLDM_SOCKET_FD")
 
     try:
         with open_console_fd() as console:

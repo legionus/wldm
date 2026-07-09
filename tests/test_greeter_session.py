@@ -30,7 +30,7 @@ class DummyContext:
 
 
 def patch_run_greeter_session_runtime(monkeypatch, *, ttydev, pamh="pamh", env=None, tty_hook=None):
-    monkeypatch.setattr(wldm.greeter_session, "greeter_ipc_fd", lambda: 13)
+    monkeypatch.setattr(wldm.greeter_session.wldm, "inherited_socket_fd", lambda env_name: 13)
     monkeypatch.setattr(wldm.greeter_session, "open_console_fd", lambda: DummyContext(88))
     monkeypatch.setattr(wldm.greeter_session.wldm.tty, "TTYdevice", lambda console, uid, number=0: ttydev)
     monkeypatch.setattr(wldm.greeter_session, "prepare_greeter_terminal", tty_hook or (lambda tty: None))
@@ -236,26 +236,6 @@ def test_redirect_greeter_stderr_ignores_empty_path(monkeypatch):
     )
 
     wldm.greeter_session.redirect_greeter_stderr()
-
-
-def test_greeter_ipc_fd_marks_inherited_fd_inheritable(monkeypatch):
-    calls = []
-    monkeypatch.setenv("WLDM_SOCKET_FD", "13")
-    monkeypatch.setattr(wldm.greeter_session.os, "set_inheritable", lambda fd, value: calls.append((fd, value)))
-
-    assert wldm.greeter_session.greeter_ipc_fd() == 13
-    assert calls == [(13, True)]
-
-
-def test_greeter_ipc_fd_requires_environment_variable(monkeypatch):
-    monkeypatch.delenv("WLDM_SOCKET_FD", raising=False)
-
-    try:
-        wldm.greeter_session.greeter_ipc_fd()
-    except RuntimeError as exc:
-        assert "WLDM_SOCKET_FD" in str(exc)
-    else:
-        raise AssertionError("greeter_ipc_fd() should require the inherited fd")
 
 
 def test_build_greeter_argv_requires_command(monkeypatch):
