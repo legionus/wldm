@@ -70,6 +70,7 @@ SESSION_XML = f"""\
 """
 
 
+@wldm.require_unprivileged
 def load_unprivileged_modules() -> tuple[Any, Any]:
     """Import modules that are only needed after dropping privileges.
 

@@ -398,6 +398,17 @@ def test_run_adapter_drops_privileges_and_runs_loop(monkeypatch):
     assert client.closed is True
 
 
+def test_load_unprivileged_modules_requires_unprivileged_context(monkeypatch):
+    monkeypatch.setattr(wldm.dbus_adapter.wldm, "_dropped_privileges", False)
+
+    try:
+        wldm.dbus_adapter.load_unprivileged_modules()
+    except RuntimeError as exc:
+        assert "requires dropped privileges" in str(exc)
+    else:
+        raise AssertionError("load_unprivileged_modules() should require dropped privileges")
+
+
 def test_cmd_main_runs_adapter(monkeypatch):
     pw = pwd.struct_passwd(("gdm", "x", 32, 32, "", "/var/lib/gdm", "/bin/false"))
     calls = {}

@@ -224,6 +224,7 @@ def test_resolve_config_path_handles_empty_and_absolute(tmp_path):
 
 def test_drop_privileges_switches_groups_and_workdir(monkeypatch):
     calls = []
+    monkeypatch.setattr(wldm, "_dropped_privileges", False)
     monkeypatch.setattr(wldm.os, "initgroups", lambda username, gid: calls.append(("initgroups", username, gid)))
     monkeypatch.setattr(wldm.os, "setgid", lambda gid: calls.append(("setgid", gid)))
     monkeypatch.setattr(wldm.os, "setuid", lambda uid: calls.append(("setuid", uid)))
@@ -237,6 +238,48 @@ def test_drop_privileges_switches_groups_and_workdir(monkeypatch):
         ("setuid", 1000),
         ("chdir", "/home/alice"),
     ]
+    assert wldm._dropped_privileges is True
+
+
+def test_privileges_dropped_requires_drop_and_non_root(monkeypatch):
+    monkeypatch.setattr(wldm, "_dropped_privileges", False)
+    monkeypatch.setattr(wldm.os, "geteuid", lambda: 1000)
+
+    assert wldm.privileges_dropped() is False
+
+    monkeypatch.setattr(wldm, "_dropped_privileges", True)
+
+    assert wldm.privileges_dropped() is True
+
+    monkeypatch.setattr(wldm.os, "geteuid", lambda: 0)
+
+    assert wldm.privileges_dropped() is False
+
+
+def test_require_unprivileged_rejects_privileged_call(monkeypatch):
+    calls = []
+
+    @wldm.require_unprivileged
+    def guarded() -> str:
+        calls.append("called")
+        return "ok"
+
+    monkeypatch.setattr(wldm, "_dropped_privileges", False)
+
+    try:
+        guarded()
+    except RuntimeError as exc:
+        assert "requires dropped privileges" in str(exc)
+    else:
+        raise AssertionError("guarded function should require dropped privileges")
+
+    assert calls == []
+
+    monkeypatch.setattr(wldm, "_dropped_privileges", True)
+    monkeypatch.setattr(wldm.os, "geteuid", lambda: 1000)
+
+    assert guarded() == "ok"
+    assert calls == ["called"]
 
 
 def test_setup_verbosity_defaults_to_warning(monkeypatch):

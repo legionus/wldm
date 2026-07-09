@@ -21,6 +21,7 @@ import wldm.wtmp
 logger = wldm.logger
 
 
+@wldm.require_unprivileged
 def _load_unprivileged_modules() -> tuple[Any]:
     """Import modules that are only needed after dropping privileges.
 
@@ -113,6 +114,7 @@ def process_exit_status(status: int) -> int:
     return wldm.EX_FAILURE
 
 
+@wldm.require_unprivileged
 def build_session_argv(shell: str) -> List[str]:
     """Resolve the final session argv from the daemon-provided command string.
 

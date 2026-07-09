@@ -47,6 +47,11 @@ def patch_parent_session_runtime(monkeypatch, *, tty_class, wait_status, critica
         )
 
 
+def mark_unprivileged(monkeypatch):
+    monkeypatch.setattr(wldm, "_dropped_privileges", True)
+    monkeypatch.setattr(wldm.os, "geteuid", lambda: 1000)
+
+
 def test_new_user_environ_merges_pam_and_user_fields(monkeypatch):
     monkeypatch.setattr(wldm.pam, "getenvlist",
                         lambda pamh: {"LANG": "C.UTF-8", "XDG_SESSION_TYPE": "wayland"})
@@ -158,6 +163,7 @@ def test_cmd_main_fails_without_session_command(monkeypatch):
 
 
 def test_build_session_argv_uses_shell_for_non_absolute_command(monkeypatch):
+    mark_unprivileged(monkeypatch)
     monkeypatch.setenv("WLDM_SESSION_COMMAND", 'startplasma-wayland --profile "KDE Plasma"')
     monkeypatch.setattr(wldm.user_session.os.path, "isabs", lambda path: False)
     monkeypatch.setattr(wldm.user_session.os, "access", lambda path, mode: False)
@@ -168,6 +174,7 @@ def test_build_session_argv_uses_shell_for_non_absolute_command(monkeypatch):
 
 
 def test_build_session_argv_preserves_absolute_executable(monkeypatch):
+    mark_unprivileged(monkeypatch)
     monkeypatch.setenv("WLDM_SESSION_COMMAND", '/usr/bin/startplasma-wayland --profile "KDE Plasma"')
     monkeypatch.setattr(wldm.user_session.os.path, "isabs", lambda path: path.startswith("/"))
     monkeypatch.setattr(wldm.user_session.os, "access", lambda path, mode: True)
@@ -178,6 +185,7 @@ def test_build_session_argv_preserves_absolute_executable(monkeypatch):
 
 
 def test_build_session_argv_expands_desktop_entry_field_codes(monkeypatch):
+    mark_unprivileged(monkeypatch)
     monkeypatch.setenv("WLDM_SESSION_COMMAND", "sway --name %c --desktop-file %k %u %%done")
     monkeypatch.setenv("WLDM_SESSION_NAME", "Sway Session")
     monkeypatch.setenv("WLDM_SESSION_DESKTOP_FILE", "/usr/share/wayland-sessions/sway.desktop")
@@ -194,6 +202,7 @@ def test_build_session_argv_expands_desktop_entry_field_codes(monkeypatch):
 
 
 def test_build_session_argv_expands_desktop_entry_icon_field(monkeypatch):
+    mark_unprivileged(monkeypatch)
     monkeypatch.setenv("WLDM_SESSION_COMMAND", "labwc %i")
     monkeypatch.setenv("WLDM_SESSION_ICON", "labwc-icon")
     monkeypatch.setattr(wldm.user_session.os.path, "isabs", lambda path: False)
@@ -205,6 +214,7 @@ def test_build_session_argv_expands_desktop_entry_icon_field(monkeypatch):
 
 
 def test_build_session_argv_rejects_invalid_desktop_entry_field_codes(monkeypatch):
+    mark_unprivileged(monkeypatch)
     monkeypatch.setattr(wldm.user_session.os.path, "isabs", lambda path: False)
     monkeypatch.setattr(wldm.user_session.os, "access", lambda path, mode: False)
 
@@ -217,6 +227,18 @@ def test_build_session_argv_rejects_invalid_desktop_entry_field_codes(monkeypatc
             pass
         else:
             raise AssertionError(f"{command!r} should be rejected")
+
+
+def test_build_session_argv_requires_unprivileged_context(monkeypatch):
+    monkeypatch.setattr(wldm, "_dropped_privileges", False)
+    monkeypatch.setenv("WLDM_SESSION_COMMAND", "sway")
+
+    try:
+        wldm.user_session.build_session_argv("/bin/bash")
+    except RuntimeError as exc:
+        assert "requires dropped privileges" in str(exc)
+    else:
+        raise AssertionError("build_session_argv() should require dropped privileges")
 
 
 def test_cmd_main_passes_wrapper_paths_to_run_user_session(monkeypatch):

@@ -3,10 +3,11 @@
 
 import argparse
 import contextlib
+import functools
 import logging
 import os
 import stat
-from typing import Iterator, TextIO
+from typing import Callable, Iterator, ParamSpec, TextIO, TypeVar
 
 
 __VERSION__ = '1'
@@ -15,6 +16,9 @@ EX_SUCCESS = 0  # Successful exit status.
 EX_FAILURE = 1  # Failing exit status.
 
 logger = logging.getLogger("wldm")
+_dropped_privileges = False
+_P = ParamSpec("_P")
+_T = TypeVar("_T")
 
 
 def setup_logger(logger: logging.Logger, level: int,
@@ -159,13 +163,32 @@ def resolve_config_path(path: str, *,
     return os.path.realpath(os.path.join(base_dir or ".", path))
 
 
+def privileges_dropped() -> bool:
+    """Return whether the process has passed the normal privilege drop point."""
+    return _dropped_privileges and os.geteuid() != 0
+
+
+def require_unprivileged(func: Callable[_P, _T]) -> Callable[_P, _T]:
+    """Reject calls that should only happen after dropping privileges."""
+    @functools.wraps(func)
+    def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _T:
+        if not privileges_dropped():
+            raise RuntimeError(f"{func.__name__} requires dropped privileges")
+        return func(*args, **kwargs)
+
+    return wrapper
+
+
 def drop_privileges(username: str, uid: int, gid: int, workdir: str) -> None:
+    global _dropped_privileges
+
     # Switch to the target user and working directory.
     os.initgroups(username, gid)
     os.setgid(gid)
     os.setuid(uid)
 
     os.chdir(workdir)
+    _dropped_privileges = True
 
 
 def close_inherited_fds(keep_fds: tuple[int, ...] = ()) -> None:

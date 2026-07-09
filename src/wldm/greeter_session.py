@@ -20,6 +20,7 @@ import wldm.tty
 logger = wldm.logger
 
 
+@wldm.require_unprivileged
 def _load_unprivileged_modules() -> tuple[Any]:
     """Import modules that are only needed after dropping privileges.
 
@@ -91,6 +92,7 @@ def greeter_ipc_fd() -> int:
     return fd
 
 
+@wldm.require_unprivileged
 def build_greeter_argv() -> List[str]:
     """Resolve the final greeter argv from the daemon-provided command string.
 

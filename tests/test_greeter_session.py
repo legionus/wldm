@@ -46,6 +46,11 @@ def patch_run_greeter_session_runtime(monkeypatch, *, ttydev, pamh="pamh", env=N
     monkeypatch.setattr(wldm.greeter_session, "build_greeter_argv", lambda: ["cage", "--", "greeter"])
 
 
+def mark_unprivileged(monkeypatch):
+    monkeypatch.setattr(wldm.greeter_session.wldm, "_dropped_privileges", True)
+    monkeypatch.setattr(wldm.greeter_session.wldm.os, "geteuid", lambda: 1000)
+
+
 def test_new_greeter_environ_preserves_safe_base_env_and_adds_runtime_dir(monkeypatch):
     monkeypatch.setattr(
         wldm.greeter_session.os,
@@ -123,6 +128,7 @@ def test_cmd_main_runs_greeter_session(monkeypatch):
 
 
 def test_build_greeter_argv_uses_daemon_command(monkeypatch):
+    mark_unprivileged(monkeypatch)
     monkeypatch.setenv("WLDM_GREETER_COMMAND", "cage -s -m last --")
     monkeypatch.setattr(wldm.greeter_session.wldm_command, "internal_command_prefix",
                         lambda: ["/usr/bin/python3", "/srv/wldm/src/wldm/command.py"])
@@ -252,6 +258,7 @@ def test_greeter_ipc_fd_requires_environment_variable(monkeypatch):
 
 
 def test_build_greeter_argv_requires_command(monkeypatch):
+    mark_unprivileged(monkeypatch)
     monkeypatch.delenv("WLDM_GREETER_COMMAND", raising=False)
 
     try:
@@ -263,6 +270,7 @@ def test_build_greeter_argv_requires_command(monkeypatch):
 
 
 def test_build_greeter_argv_rejects_invalid_shell_syntax(monkeypatch):
+    mark_unprivileged(monkeypatch)
     monkeypatch.setenv("WLDM_GREETER_COMMAND", "cage '")
 
     try:
@@ -271,6 +279,18 @@ def test_build_greeter_argv_rejects_invalid_shell_syntax(monkeypatch):
         assert "invalid greeter command" in str(exc)
     else:
         raise AssertionError("build_greeter_argv() should reject invalid shell syntax")
+
+
+def test_build_greeter_argv_requires_unprivileged_context(monkeypatch):
+    monkeypatch.setattr(wldm.greeter_session.wldm, "_dropped_privileges", False)
+    monkeypatch.setenv("WLDM_GREETER_COMMAND", "cage --")
+
+    try:
+        wldm.greeter_session.build_greeter_argv()
+    except RuntimeError as exc:
+        assert "requires dropped privileges" in str(exc)
+    else:
+        raise AssertionError("build_greeter_argv() should require dropped privileges")
 
 
 def test_open_console_fd_raises_when_console_is_unavailable(monkeypatch):
