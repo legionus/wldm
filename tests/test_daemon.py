@@ -8,8 +8,8 @@ from types import SimpleNamespace
 import wldm.daemon
 import wldm.config
 import wldm.inifile
-import wldm.greeter_protocol as greeter_protocol
-import wldm.pam_worker_protocol as pam_worker_protocol
+import wldm.protocol.greeter as greeter_protocol
+import wldm.protocol.pam_worker as pam_worker_protocol
 import wldm.secret
 import wldm.state
 import wldm.tty

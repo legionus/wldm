@@ -4,8 +4,14 @@
 import asyncio
 import socket
 
-import wldm.greeter_protocol as greeter_protocol
+import wldm.protocol.greeter as greeter_protocol
 import wldm.secret
+
+
+def test_legacy_greeter_protocol_module_reexports_new_protocol():
+    import wldm.greeter_protocol as legacy_greeter_protocol
+
+    assert legacy_greeter_protocol.ProtocolError is greeter_protocol.ProtocolError
 
 
 class ChunkReader:

@@ -12,7 +12,7 @@ from typing import Any
 import wldm
 import wldm._pam_ffi as ffi
 import wldm.pam
-import wldm.pam_worker_protocol as worker_protocol
+import wldm.protocol.pam_worker as worker_protocol
 from wldm._libc import calloc, free
 from wldm.secret import SecretBytes
 

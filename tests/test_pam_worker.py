@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import wldm._pam_ffi as ffi
 import wldm.pam_worker as pam_worker
-import wldm.pam_worker_protocol as pam_worker_protocol
+import wldm.protocol.pam_worker as pam_worker_protocol
 
 
 def pam_messages(*items):

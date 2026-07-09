@@ -10,7 +10,7 @@ import socket
 from typing import Any, Callable, NamedTuple, Protocol
 
 import wldm
-import wldm.greeter_protocol as greeter_protocol
+import wldm.protocol.greeter as greeter_protocol
 
 logger = wldm.logger
 

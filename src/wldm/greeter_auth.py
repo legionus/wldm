@@ -7,7 +7,7 @@ from typing import Any
 
 import wldm
 from wldm import _gtk_ffi as gtk_ffi
-import wldm.greeter_protocol as greeter_protocol
+import wldm.protocol.greeter as greeter_protocol
 
 _ = gettext.gettext
 logger = wldm.logger

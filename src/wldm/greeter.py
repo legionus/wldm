@@ -31,7 +31,7 @@ import wldm.greeter_client as greeter_client
 # pylint: disable-next=wrong-import-position
 import wldm.greeter_ui as greeter_ui
 # pylint: disable-next=wrong-import-position
-import wldm.greeter_protocol as greeter_protocol
+import wldm.protocol.greeter as greeter_protocol
 # pylint: disable-next=wrong-import-position
 import wldm.policy
 # pylint: disable-next=wrong-import-position

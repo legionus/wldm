@@ -5,8 +5,8 @@ import asyncio
 from types import SimpleNamespace
 
 import wldm.daemon_auth
-import wldm.greeter_protocol as greeter_protocol
-import wldm.pam_worker_protocol as pam_worker_protocol
+import wldm.protocol.greeter as greeter_protocol
+import wldm.protocol.pam_worker as pam_worker_protocol
 from wldm.secret import SecretBytes
 from tests.helpers_daemon import DummyProc, DummyWriter, make_worker_auth_session
 

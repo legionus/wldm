@@ -17,9 +17,9 @@ import wldm.command
 import wldm.config
 import wldm.daemon_auth as daemon_auth
 import wldm.inifile
-import wldm.pam_worker_protocol as pam_worker_protocol
+import wldm.protocol.pam_worker as pam_worker_protocol
 import wldm.policy
-import wldm.greeter_protocol as greeter_protocol
+import wldm.protocol.greeter as greeter_protocol
 import wldm.secret
 import wldm.state
 import wldm.tty

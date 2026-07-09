@@ -6,7 +6,7 @@ import gettext
 from typing import Any
 
 import wldm
-import wldm.greeter_protocol as greeter_protocol
+import wldm.protocol.greeter as greeter_protocol
 
 _ = gettext.gettext
 logger = wldm.logger

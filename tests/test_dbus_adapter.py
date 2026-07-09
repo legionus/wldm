@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pwd
 
 import wldm.dbus_adapter
-import wldm.greeter_protocol as greeter_protocol
+import wldm.protocol.greeter as greeter_protocol
 
 
 class DummyClient:

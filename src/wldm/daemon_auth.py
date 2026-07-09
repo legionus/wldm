@@ -10,8 +10,8 @@ from typing import Any
 from asyncio.subprocess import Process as AsyncProcess
 
 import wldm
-import wldm.greeter_protocol as greeter_protocol
-import wldm.pam_worker_protocol as pam_worker_protocol
+import wldm.protocol.greeter as greeter_protocol
+import wldm.protocol.pam_worker as pam_worker_protocol
 import wldm.secret
 
 logger = wldm.logger
