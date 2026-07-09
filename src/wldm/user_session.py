@@ -7,8 +7,7 @@ import contextlib
 import os
 import os.path
 import pwd
-import subprocess
-from typing import Dict, Iterator, List, Optional, Any, cast
+from typing import Any, Dict, Iterator, List, NamedTuple, Optional, Protocol, Sequence
 
 import wldm
 import wldm.config
@@ -21,8 +20,20 @@ import wldm.wtmp
 logger = wldm.logger
 
 
+class _ShlexModule(Protocol):
+    def split(self, s: str, comments: bool = False, posix: bool = True) -> list[str]:
+        ...
+
+    def join(self, split_command: Sequence[str]) -> str:
+        ...
+
+
+class _UnprivilegedModules(NamedTuple):
+    shlex: _ShlexModule
+
+
 @wldm.require_unprivileged
-def _load_unprivileged_modules() -> tuple[Any]:
+def _load_unprivileged_modules() -> _UnprivilegedModules:
     """Import modules that are only needed after dropping privileges.
 
     Returns:
@@ -31,7 +42,7 @@ def _load_unprivileged_modules() -> tuple[Any]:
     """
     import shlex
 
-    return (shlex,)
+    return _UnprivilegedModules(shlex=shlex)
 
 
 def _validate_execute_path(name: str, execute: str) -> str:
@@ -42,6 +53,26 @@ def _validate_execute_path(name: str, execute: str) -> str:
         raise RuntimeError(f"Could not find the {name} executable: {execute}")
 
     return execute
+
+
+def _run_session_hook_command(cmd: list[str], *,
+                              check: bool,
+                              cwd: str,
+                              env: Dict[str, str],
+                              user: int,
+                              group: int,
+                              extra_groups: list[int]) -> Any:
+    import subprocess
+
+    return subprocess.run(
+        cmd,
+        check=check,
+        cwd=cwd,
+        env=env,
+        user=user,
+        group=group,
+        extra_groups=extra_groups,
+    )
 
 
 def new_user_environ(pamh: Optional[Any],
@@ -90,7 +121,7 @@ def run_session_hook(name: str,
     )
     extra_groups = os.getgrouplist(pw.pw_name, pw.pw_gid)
 
-    result = subprocess.run(
+    result = _run_session_hook_command(
         [execute],
         check=False,
         cwd=pw.pw_dir,
@@ -128,10 +159,10 @@ def build_session_argv(shell: str) -> List[str]:
     if not session_command:
         raise RuntimeError("environ variable `WLDM_SESSION_COMMAND' not specified")
 
-    (shlex,) = _load_unprivileged_modules()
+    modules = _load_unprivileged_modules()
 
     args = _expand_exec_field_codes(
-        cast(List[str], shlex.split(session_command)),
+        modules.shlex.split(session_command),
         name=os.environ.get("WLDM_SESSION_NAME", ""),
         icon=os.environ.get("WLDM_SESSION_ICON", ""),
         path=os.environ.get("WLDM_SESSION_DESKTOP_FILE", ""),
@@ -143,7 +174,7 @@ def build_session_argv(shell: str) -> List[str]:
         raise RuntimeError("Invalid session command: empty command")
 
     if not os.path.isabs(prog) or not os.access(prog, os.X_OK):
-        return [shell, "-c", shlex.join(args)]
+        return [shell, "-c", modules.shlex.join(args)]
 
     return [prog] + prog_args
 

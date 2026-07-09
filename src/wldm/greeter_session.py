@@ -9,10 +9,9 @@ import os
 import os.path
 import pwd
 
-from typing import Dict, Iterator, List, Optional, Any
+from typing import Any, Dict, Iterator, List, NamedTuple, Optional, Protocol
 
 import wldm
-import wldm.command as wldm_command
 import wldm.pam
 import wldm.policy
 import wldm.tty
@@ -20,8 +19,23 @@ import wldm.tty
 logger = wldm.logger
 
 
+class _ShlexModule(Protocol):
+    def split(self, s: str, comments: bool = False, posix: bool = True) -> list[str]:
+        ...
+
+
+class _CommandModule(Protocol):
+    def internal_command_prefix(self) -> list[str]:
+        ...
+
+
+class _UnprivilegedModules(NamedTuple):
+    shlex: _ShlexModule
+    command: _CommandModule
+
+
 @wldm.require_unprivileged
-def _load_unprivileged_modules() -> tuple[Any]:
+def _load_unprivileged_modules() -> _UnprivilegedModules:
     """Import modules that are only needed after dropping privileges.
 
     Returns:
@@ -29,8 +43,9 @@ def _load_unprivileged_modules() -> tuple[Any]:
         path.
     """
     import shlex
+    import wldm.command as wldm_command
 
-    return (shlex,)
+    return _UnprivilegedModules(shlex=shlex, command=wldm_command)
 
 
 def _base_greeter_environ() -> Dict[str, str]:
@@ -103,17 +118,17 @@ def build_greeter_argv() -> List[str]:
     if not command:
         raise RuntimeError("environ variable `WLDM_GREETER_COMMAND' not specified")
 
-    (shlex,) = _load_unprivileged_modules()
+    modules = _load_unprivileged_modules()
 
     try:
-        argv = shlex.split(command)
+        argv = modules.shlex.split(command)
     except ValueError as exc:
         raise RuntimeError(f"invalid greeter command: {exc}") from exc
 
     if not argv:
         raise RuntimeError("invalid greeter command: empty command")
 
-    return [*argv, *wldm_command.internal_command_prefix(), "greeter"]
+    return [*argv, *modules.command.internal_command_prefix(), "greeter"]
 
 
 def _process_exit_status(status: int) -> int:
@@ -205,7 +220,6 @@ def run_greeter_session(pw: pwd.struct_passwd,
 
                 with open_greeter_pam_session(pam_service, pw, ttydev) as pamh:
                     env = _new_greeter_environ(pamh, pw)
-                    prog_args = build_greeter_argv()
 
                     pid = os.fork()
 
@@ -215,6 +229,7 @@ def run_greeter_session(pw: pwd.struct_passwd,
                             os.dup2(ttydev.fd, 1)
 
                             wldm.drop_privileges(pw.pw_name, pw.pw_uid, gid, pw.pw_dir)
+                            prog_args = build_greeter_argv()
                             wldm.close_inherited_fds((ipc_fd,))
 
                             os.execvpe(prog_args[0], prog_args, env)

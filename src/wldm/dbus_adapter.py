@@ -6,9 +6,8 @@ import argparse
 import os
 import pwd
 import socket
-import threading
 
-from typing import Any
+from typing import Any, Callable, NamedTuple, Protocol
 
 import wldm
 import wldm.greeter_protocol as greeter_protocol
@@ -70,21 +69,45 @@ SESSION_XML = f"""\
 """
 
 
+class _Thread(Protocol):
+    def start(self) -> None:
+        ...
+
+    def join(self, timeout: float | None = None) -> None:
+        ...
+
+
+class _ThreadingModule(Protocol):
+    def Thread(self, *,
+               target: Callable[..., Any],
+               args: tuple[Any, ...],
+               daemon: bool) -> _Thread:
+        ...
+
+
+class _UnprivilegedModules(NamedTuple):
+    Gio: Any
+    GLib: Any
+    threading: _ThreadingModule
+
+
 @wldm.require_unprivileged
-def load_unprivileged_modules() -> tuple[Any, Any]:
+def load_unprivileged_modules() -> _UnprivilegedModules:
     """Import modules that are only needed after dropping privileges.
 
     Returns:
-        A ``(Gio, GLib)`` pair from ``gi.repository`` for the unprivileged
-        D-Bus adapter path.
+        A ``(Gio, GLib, threading)`` tuple for the unprivileged D-Bus adapter
+        path.
     """
+    import threading
+
     try:
         from gi.repository import Gio, GLib  # type: ignore[import-untyped]
 
     except Exception as e:
         raise RuntimeError(f"D-Bus support is unavailable: {e}") from e
 
-    return Gio, GLib
+    return _UnprivilegedModules(Gio=Gio, GLib=GLib, threading=threading)
 
 
 def adapter_ipc_fd() -> int:
@@ -545,16 +568,16 @@ def run_adapter(username: str, uid: int, gid: int, workdir: str, service_name: s
         # Keep the optional D-Bus stack out of the privileged part of the
         # adapter so import-time side effects happen only after the uid/gid
         # switch.
-        Gio, GLib = load_unprivileged_modules()
+        modules = load_unprivileged_modules()
 
-        service = DisplayManagerService(service_name, request_state(client), Gio, GLib)
+        service = DisplayManagerService(service_name, request_state(client), modules.Gio, modules.GLib)
 
-        loop = GLib.MainLoop()
+        loop = modules.GLib.MainLoop()
         service.loop = loop
 
-        thread = threading.Thread(
+        thread = modules.threading.Thread(
             target=read_daemon_events,
-            args=(client, service, GLib, loop),
+            args=(client, service, modules.GLib, loop),
             daemon=True,
         )
         thread.start()

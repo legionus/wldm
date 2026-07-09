@@ -366,7 +366,15 @@ def test_run_adapter_drops_privileges_and_runs_loop(monkeypatch):
 
     monkeypatch.setattr(wldm.dbus_adapter, "SocketClient", lambda fd: calls.update({"fd": fd}) or client)
     monkeypatch.setattr(wldm.dbus_adapter, "adapter_ipc_fd", lambda: 13)
-    monkeypatch.setattr(wldm.dbus_adapter, "load_unprivileged_modules", lambda: ("gio", DummyGLib))
+    monkeypatch.setattr(
+        wldm.dbus_adapter,
+        "load_unprivileged_modules",
+        lambda: wldm.dbus_adapter._UnprivilegedModules(
+            Gio="gio",
+            GLib=DummyGLib,
+            threading=SimpleNamespace(Thread=DummyThread),
+        ),
+    )
     monkeypatch.setattr(
         wldm.dbus_adapter,
         "DisplayManagerService",
@@ -382,7 +390,6 @@ def test_run_adapter_drops_privileges_and_runs_loop(monkeypatch):
             {"drop_privileges": (username, uid, gid, workdir)}
         ),
     )
-    monkeypatch.setattr(wldm.dbus_adapter.threading, "Thread", DummyThread)
 
     result = wldm.dbus_adapter.run_adapter("gdm", 32, 32, "/var/lib/gdm", "org.example.DisplayManager")
 

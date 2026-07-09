@@ -104,7 +104,7 @@ def test_run_session_hook_executes_command_as_user(monkeypatch):
         calls["extra_groups"] = extra_groups
         return SimpleNamespace(returncode=0)
 
-    monkeypatch.setattr(wldm.user_session.subprocess, "run", fake_run)
+    monkeypatch.setattr(wldm.user_session, "_run_session_hook_command", fake_run)
 
     result = wldm.user_session.run_session_hook(
         "pre",
@@ -132,8 +132,8 @@ def test_run_session_hook_reports_failure(monkeypatch):
 
     patch_session_hook_primitives(monkeypatch, extra_groups=[pw.pw_gid])
     monkeypatch.setattr(
-        wldm.user_session.subprocess,
-        "run",
+        wldm.user_session,
+        "_run_session_hook_command",
         lambda *args, **kwargs: SimpleNamespace(returncode=7),
     )
     monkeypatch.setattr(

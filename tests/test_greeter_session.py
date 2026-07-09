@@ -4,6 +4,7 @@
 from types import SimpleNamespace
 import pwd
 
+import wldm.command
 import wldm.greeter_session
 import wldm.pam
 import wldm.tty
@@ -130,7 +131,7 @@ def test_cmd_main_runs_greeter_session(monkeypatch):
 def test_build_greeter_argv_uses_daemon_command(monkeypatch):
     mark_unprivileged(monkeypatch)
     monkeypatch.setenv("WLDM_GREETER_COMMAND", "cage -s -m last --")
-    monkeypatch.setattr(wldm.greeter_session.wldm_command, "internal_command_prefix",
+    monkeypatch.setattr(wldm.command, "internal_command_prefix",
                         lambda: ["/usr/bin/python3", "/srv/wldm/src/wldm/command.py"])
 
     argv = wldm.greeter_session.build_greeter_argv()
@@ -391,6 +392,11 @@ def test_run_greeter_session_child_exec_preserves_passed_socket_fd(monkeypatch):
                         }))
     monkeypatch.setattr(wldm.greeter_session.wldm, "close_inherited_fds",
                         lambda keep_fds=(): calls.update({"keep_fds": keep_fds}))
+    monkeypatch.setattr(
+        wldm.greeter_session,
+        "build_greeter_argv",
+        lambda: calls.setdefault("argv_after_drop", "drop_privileges" in calls) and ["cage", "--", "greeter"],
+    )
     monkeypatch.setattr(wldm.greeter_session.os, "execvpe",
                         lambda prog, argv, env: calls.update({"execvpe": (prog, argv, env)}) or
                         (_ for _ in ()).throw(SystemExit(0)))
@@ -406,6 +412,7 @@ def test_run_greeter_session_child_exec_preserves_passed_socket_fd(monkeypatch):
 
     assert calls["dup2"] == [(55, 0), (55, 1)]
     assert calls["drop_privileges"] == ("gdm", 32, 32, "/var/lib/gdm")
+    assert calls["argv_after_drop"] is True
     assert calls["keep_fds"] == (13,)
     assert calls["execvpe"] == ("cage", ["cage", "--", "greeter"], {"PATH": "/usr/bin", "WLDM_SOCKET_FD": "13"})
     assert calls["closed_fds"] == [13]
