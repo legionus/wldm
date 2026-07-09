@@ -55,8 +55,22 @@ def test_desktop_sessions_filters_and_sorts_entries(monkeypatch):
     )
 
     assert greeter.wldm.sessions.desktop_sessions() == [
-        {"name": "Alpha", "command": "alpha", "comment": "Alpha session", "desktop_names": ["AlphaDesktop", "WL"]},
-        {"name": "Beta", "command": "beta", "comment": "Beta session", "desktop_names": ["b"]},
+        {
+            "name": "Alpha",
+            "command": "alpha",
+            "comment": "Alpha session",
+            "icon": "",
+            "desktop_file": "/usr/share/wayland-sessions/a.desktop",
+            "desktop_names": ["AlphaDesktop", "WL"],
+        },
+        {
+            "name": "Beta",
+            "command": "beta",
+            "comment": "Beta session",
+            "icon": "",
+            "desktop_file": "/usr/share/wayland-sessions/b.desktop",
+            "desktop_names": ["b"],
+        },
     ]
 
 
@@ -287,8 +301,22 @@ def test_desktop_sessions_merge_user_entries_before_system(monkeypatch):
     )
 
     assert greeter.wldm.sessions.desktop_sessions("alice") == [
-        {"name": "Labwc", "command": "labwc", "comment": "Labwc", "desktop_names": ["labwc"]},
-        {"name": "Sway", "command": "sway --debug", "comment": "User sway", "desktop_names": ["user"]},
+        {
+            "name": "Labwc",
+            "command": "labwc",
+            "comment": "Labwc",
+            "icon": "",
+            "desktop_file": "/usr/share/wayland-sessions/labwc.desktop",
+            "desktop_names": ["labwc"],
+        },
+        {
+            "name": "Sway",
+            "command": "sway --debug",
+            "comment": "User sway",
+            "icon": "",
+            "desktop_file": "/home/alice/.local/share/wayland-sessions/user.desktop",
+            "desktop_names": ["user"],
+        },
     ]
     assert scanned_paths == [
         "/home/alice/.local/share/wayland-sessions",
@@ -337,7 +365,14 @@ def test_desktop_sessions_ignores_invalid_entries(monkeypatch):
     )
 
     assert greeter.wldm.sessions.desktop_sessions() == [
-        {"name": "Good", "command": "good", "comment": "Good session", "desktop_names": ["good"]},
+        {
+            "name": "Good",
+            "command": "good",
+            "comment": "Good session",
+            "icon": "",
+            "desktop_file": "/usr/share/wayland-sessions/good.desktop",
+            "desktop_names": ["good"],
+        },
     ]
 
 
@@ -1073,7 +1108,14 @@ def test_on_login_clicked_includes_desktop_names_in_auth_request(monkeypatch):
     app.username_entry = StubEntry("alice")
     app.password_entry = StubEntry("secret")
     app.status_label = types.SimpleNamespace(set_text=lambda text: None)
-    app.sessions = [{"name": "Sway", "command": "sway", "comment": "Sway", "desktop_names": ["sway", "wlroots"]}]
+    app.sessions = [{
+        "name": "Sway",
+        "command": "sway",
+        "comment": "Sway",
+        "icon": "sway",
+        "desktop_file": "/usr/share/wayland-sessions/sway.desktop",
+        "desktop_names": ["sway", "wlroots"],
+    }]
     app.sessions_entry = selected_entry("Sway")
     sent = []
 
@@ -1096,6 +1138,9 @@ def test_on_login_clicked_includes_desktop_names_in_auth_request(monkeypatch):
 
     assert sent[-1]["action"] == greeter.greeter_protocol.ACTION_START_SESSION
     assert sent[-1]["payload"]["desktop_names"] == ["sway", "wlroots"]
+    assert sent[-1]["payload"]["name"] == "Sway"
+    assert sent[-1]["payload"]["icon"] == "sway"
+    assert sent[-1]["payload"]["desktop_file"] == "/usr/share/wayland-sessions/sway.desktop"
 
 
 def test_on_login_clicked_rejects_overlong_username(monkeypatch):
@@ -1228,9 +1273,22 @@ def test_start_selected_session_sends_start_request(monkeypatch):
     sent = {}
     app.send_recv_answer = lambda data: sent.update(data) or {"ok": True, "payload": {}}
 
-    assert greeter.GreeterApp.start_selected_session(app, "sway", ["sway", "wlroots"]) is True
+    assert greeter.GreeterApp.start_selected_session(
+        app,
+        "sway",
+        ["sway", "wlroots"],
+        "Sway",
+        "sway",
+        "/usr/share/wayland-sessions/sway.desktop",
+    ) is True
     assert sent["action"] == greeter.greeter_protocol.ACTION_START_SESSION
-    assert sent["payload"] == {"command": "sway", "desktop_names": ["sway", "wlroots"]}
+    assert sent["payload"] == {
+        "command": "sway",
+        "desktop_names": ["sway", "wlroots"],
+        "name": "Sway",
+        "icon": "sway",
+        "desktop_file": "/usr/share/wayland-sessions/sway.desktop",
+    }
 
 
 def test_handle_conversation_answer_sets_pending_prompt(monkeypatch):

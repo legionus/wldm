@@ -128,15 +128,74 @@ def build_session_argv(shell: str) -> List[str]:
 
     (shlex,) = _load_unprivileged_modules()
 
-    prog, *args = cast(List[str], shlex.split(session_command))
+    args = _expand_exec_field_codes(
+        cast(List[str], shlex.split(session_command)),
+        name=os.environ.get("WLDM_SESSION_NAME", ""),
+        icon=os.environ.get("WLDM_SESSION_ICON", ""),
+        path=os.environ.get("WLDM_SESSION_DESKTOP_FILE", ""),
+    )
+
+    prog, *prog_args = args
 
     if not prog:
         raise RuntimeError("Invalid session command: empty command")
 
     if not os.path.isabs(prog) or not os.access(prog, os.X_OK):
-        return [shell, "-c", shlex.join([prog] + args)]
+        return [shell, "-c", shlex.join(args)]
 
-    return [prog] + args
+    return [prog] + prog_args
+
+
+def _expand_exec_field_codes(args: List[str], *,
+                             name: str,
+                             icon: str,
+                             path: str) -> List[str]:
+    expanded_args: List[str] = []
+
+    for arg in args:
+        if arg == "%i":
+            if icon:
+                expanded_args.extend(["--icon", icon])
+            continue
+
+        expanded = []
+        index = 0
+
+        while index < len(arg):
+            char = arg[index]
+
+            if char != "%":
+                expanded.append(char)
+                index += 1
+                continue
+
+            if index + 1 >= len(arg):
+                raise RuntimeError("Invalid session command: dangling field code marker")
+
+            field_code = arg[index + 1]
+            index += 2
+
+            if field_code == "%":
+                expanded.append("%")
+            elif field_code in {"f", "F", "u", "U", "d", "D", "n", "N", "v", "m"}:
+                continue
+            elif field_code == "c":
+                expanded.append(name)
+            elif field_code == "k":
+                expanded.append(path)
+            elif field_code == "i":
+                raise RuntimeError("Invalid session command: field code %i must be a separate argument")
+            else:
+                raise RuntimeError(f"Invalid session command: unsupported field code %{field_code}")
+
+        expanded_arg = "".join(expanded)
+        if expanded_arg:
+            expanded_args.append(expanded_arg)
+
+    if not expanded_args:
+        raise RuntimeError("Invalid session command: empty command")
+
+    return expanded_args
 
 
 def exec_user_program(ttydev: wldm.tty.TTYdevice,

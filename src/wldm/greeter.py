@@ -422,9 +422,14 @@ class GreeterApp(greeter_ui.GreeterUI):
         """Read one reply for the current pending auth prompt."""
         return greeter_auth.read_prompt_response(self)
 
-    def start_selected_session(self, command: str, desktop_names: list[str]) -> bool:
+    def start_selected_session(self,
+                               command: str,
+                               desktop_names: list[str],
+                               name: str = "",
+                               icon: str = "",
+                               desktop_file: str = "") -> bool:
         """Ask the daemon to start one already-authenticated session."""
-        return greeter_auth.start_selected_session(self, command, desktop_names)
+        return greeter_auth.start_selected_session(self, command, desktop_names, name, icon, desktop_file)
 
     def handle_conversation_answer(self, answer: Dict[str, Any]) -> str:
         """Advance the current greeter-side conversation state from one reply."""

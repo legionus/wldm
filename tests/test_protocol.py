@@ -96,13 +96,25 @@ def test_encode_and_decode_continue_session_request():
 def test_encode_and_decode_start_session_request():
     msg = greeter_protocol.new_request(
         greeter_protocol.ACTION_START_SESSION,
-        {"command": "sway", "desktop_names": ["sway", "wlroots"]},
+        {
+            "command": "sway",
+            "desktop_names": ["sway", "wlroots"],
+            "name": "Sway",
+            "icon": "sway",
+            "desktop_file": "/usr/share/wayland-sessions/sway.desktop",
+        },
     )
 
     decoded = greeter_protocol.decode_message(greeter_protocol.encode_message(msg))
 
     assert decoded["action"] == greeter_protocol.ACTION_START_SESSION
-    assert decoded["payload"] == {"command": "sway", "desktop_names": ["sway", "wlroots"]}
+    assert decoded["payload"] == {
+        "command": "sway",
+        "desktop_names": ["sway", "wlroots"],
+        "name": "Sway",
+        "icon": "sway",
+        "desktop_file": "/usr/share/wayland-sessions/sway.desktop",
+    }
 
 
 def test_encode_and_decode_conversation_response():

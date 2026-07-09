@@ -75,6 +75,7 @@ def desktop_sessions(username: str = "") -> List[Dict[str, Any]]:
                                     "Name",
                                     "Exec",
                                     "Comment",
+                                    "Icon",
                                     "DesktopNames",
                                 },
                             },
@@ -90,6 +91,7 @@ def desktop_sessions(username: str = "") -> List[Dict[str, Any]]:
                     entry_name = desktop.get("Desktop Entry", "Name")
                     entry_exec = desktop.get("Desktop Entry", "Exec")
                     entry_comment = desktop.get("Desktop Entry", "Comment")
+                    entry_icon = desktop.get("Desktop Entry", "Icon")
 
                     entry_desktop_names = _parse_desktop_names(desktop.get("Desktop Entry", "DesktopNames"))
 
@@ -103,6 +105,8 @@ def desktop_sessions(username: str = "") -> List[Dict[str, Any]]:
                         "name": entry_name,
                         "command": entry_exec,
                         "comment": entry_comment,
+                        "icon": entry_icon,
+                        "desktop_file": path,
                         "desktop_names": entry_desktop_names,
                     })
         except OSError as e:

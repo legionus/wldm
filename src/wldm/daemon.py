@@ -52,6 +52,9 @@ class RequestOutcome:
     session_username: str = ""
     session_command: str = ""
     session_desktop_names: list[str] | None = None
+    session_name: str = ""
+    session_icon: str = ""
+    session_desktop_file: str = ""
     control_action: str = ""
 
 
@@ -199,6 +202,9 @@ def process_request(state: DaemonState,
             session_username=auth_session.username,
             session_command=payload["command"],
             session_desktop_names=list(payload.get("desktop_names", [])),
+            session_name=str(payload.get("name", "")),
+            session_icon=str(payload.get("icon", "")),
+            session_desktop_file=str(payload.get("desktop_file", "")),
         )
         client_state(state, client_name).auth_session = None
         return outcome
@@ -578,6 +584,9 @@ async def handle_request_async(state: DaemonState,
                 WLDM_SEAT=state.seat,
                 WLDM_SESSION_COMMAND=outcome.session_command,
                 WLDM_SESSION_DESKTOP_NAMES=":".join(outcome.session_desktop_names or []),
+                WLDM_SESSION_NAME=outcome.session_name,
+                WLDM_SESSION_ICON=outcome.session_icon,
+                WLDM_SESSION_DESKTOP_FILE=outcome.session_desktop_file,
             ),
         )
         session = SessionState(proc=proc, username=outcome.session_username, command=outcome.session_command)

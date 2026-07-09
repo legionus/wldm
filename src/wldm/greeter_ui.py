@@ -239,16 +239,22 @@ class GreeterUI:
         self.refresh_sessions(username, preferred_command=self.last_session_command)
         self.update_identity_preview()
 
-    def selected_session_data(self) -> tuple[str, list[str]]:
-        """Return the current session command and desktop names."""
+    def selected_session_data(self) -> tuple[str, list[str], str, str, str]:
+        """Return the current session command and desktop entry metadata."""
         command = self.get_session_command()
         desktop_names: list[str] = []
+        name = ""
+        icon = ""
+        desktop_file = ""
         session_entry = self.get_selected_session()
 
         if session_entry is not None:
             desktop_names = list(session_entry.get("desktop_names", []))
+            name = str(session_entry.get("name", ""))
+            icon = str(session_entry.get("icon", ""))
+            desktop_file = str(session_entry.get("desktop_file", ""))
 
-        return command, desktop_names
+        return command, desktop_names, name, icon, desktop_file
 
     def refresh_sessions(self, username: str = "", preferred_command: str = "") -> None:
         """Refresh the greeter session list for one username."""

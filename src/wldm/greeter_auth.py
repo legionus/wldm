@@ -66,13 +66,21 @@ def read_prompt_response(app: Any) -> wldm.secret.SecretBytes | None:
     return response
 
 
-def start_selected_session(app: Any, command: str, desktop_names: list[str]) -> bool:
+def start_selected_session(app: Any,
+                           command: str,
+                           desktop_names: list[str],
+                           name: str = "",
+                           icon: str = "",
+                           desktop_file: str = "") -> bool:
     """Ask the daemon to start one already-authenticated session."""
     start_request = greeter_protocol.new_request(
         greeter_protocol.ACTION_START_SESSION,
         {
             "command": command,
             "desktop_names": desktop_names,
+            "name": name,
+            "icon": icon,
+            "desktop_file": desktop_file,
         },
     )
     start_answer = app.send_recv_answer(start_request)
@@ -137,10 +145,10 @@ def on_login_clicked(app: Any) -> None:
         return
 
     if getattr(app, "session_ready", False):
-        command, desktop_names = app.selected_session_data()
+        command, desktop_names, name, icon, desktop_file = app.selected_session_data()
         app.set_auth_state(True)
 
-        if app.start_selected_session(command, desktop_names):
+        if app.start_selected_session(command, desktop_names, name, icon, desktop_file):
             app.last_username = app.auth_username.strip()
             app.last_session_command = command
             app.username_entry.set_text("")

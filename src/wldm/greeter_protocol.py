@@ -356,6 +356,9 @@ def encode_message(message: Dict[str, Any]) -> bytes:
         elif message.get("action") == ACTION_START_SESSION:
             body.extend(_encode_text(str(payload.get("command", ""))))
             body.extend(_encode_string_list(list(payload.get("desktop_names", []))))
+            body.extend(_encode_text(str(payload.get("name", ""))))
+            body.extend(_encode_text(str(payload.get("icon", ""))))
+            body.extend(_encode_text(str(payload.get("desktop_file", ""))))
 
     elif message_type == "response":
         body.append(TYPE_RESPONSE)
@@ -449,9 +452,15 @@ def decode_message(raw: bytes | str) -> Dict[str, Any]:
         elif action == ACTION_START_SESSION:
             command, offset = _decode_text(payload, offset)
             desktop_names, offset = _decode_string_list(payload, offset)
+            name, offset = _decode_text(payload, offset)
+            icon, offset = _decode_text(payload, offset)
+            desktop_file, offset = _decode_text(payload, offset)
             decoded["payload"] = {
                 "command": command,
                 "desktop_names": desktop_names,
+                "name": name,
+                "icon": icon,
+                "desktop_file": desktop_file,
             }
 
         return _finish_decoded_message(decoded, payload, offset, raw)

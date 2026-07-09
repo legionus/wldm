@@ -177,6 +177,48 @@ def test_build_session_argv_preserves_absolute_executable(monkeypatch):
     assert argv == ["/usr/bin/startplasma-wayland", "--profile", "KDE Plasma"]
 
 
+def test_build_session_argv_expands_desktop_entry_field_codes(monkeypatch):
+    monkeypatch.setenv("WLDM_SESSION_COMMAND", "sway --name %c --desktop-file %k %u %%done")
+    monkeypatch.setenv("WLDM_SESSION_NAME", "Sway Session")
+    monkeypatch.setenv("WLDM_SESSION_DESKTOP_FILE", "/usr/share/wayland-sessions/sway.desktop")
+    monkeypatch.setattr(wldm.user_session.os.path, "isabs", lambda path: False)
+    monkeypatch.setattr(wldm.user_session.os, "access", lambda path, mode: False)
+
+    argv = wldm.user_session.build_session_argv("/bin/bash")
+
+    assert argv == [
+        "/bin/bash",
+        "-c",
+        "sway --name 'Sway Session' --desktop-file /usr/share/wayland-sessions/sway.desktop %done",
+    ]
+
+
+def test_build_session_argv_expands_desktop_entry_icon_field(monkeypatch):
+    monkeypatch.setenv("WLDM_SESSION_COMMAND", "labwc %i")
+    monkeypatch.setenv("WLDM_SESSION_ICON", "labwc-icon")
+    monkeypatch.setattr(wldm.user_session.os.path, "isabs", lambda path: False)
+    monkeypatch.setattr(wldm.user_session.os, "access", lambda path, mode: False)
+
+    argv = wldm.user_session.build_session_argv("/bin/bash")
+
+    assert argv == ["/bin/bash", "-c", "labwc --icon labwc-icon"]
+
+
+def test_build_session_argv_rejects_invalid_desktop_entry_field_codes(monkeypatch):
+    monkeypatch.setattr(wldm.user_session.os.path, "isabs", lambda path: False)
+    monkeypatch.setattr(wldm.user_session.os, "access", lambda path, mode: False)
+
+    for command in ["sway %Z", "sway %", "sway icon=%i"]:
+        monkeypatch.setenv("WLDM_SESSION_COMMAND", command)
+
+        try:
+            wldm.user_session.build_session_argv("/bin/bash")
+        except RuntimeError:
+            pass
+        else:
+            raise AssertionError(f"{command!r} should be rejected")
+
+
 def test_cmd_main_passes_wrapper_paths_to_run_user_session(monkeypatch):
     pw = pwd.struct_passwd(("alice", "x", 1001, 1001, "", "/home/alice", "/bin/bash"))
     calls = {}

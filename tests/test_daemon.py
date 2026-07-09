@@ -236,7 +236,13 @@ def test_process_request_start_session_after_ready():
     state.clients["greeter"].auth_session = make_daemon_auth_session(wldm.daemon, "alice", ready=True)
     req = greeter_protocol.new_request(
         greeter_protocol.ACTION_START_SESSION,
-        {"command": "startplasma-wayland --debug", "desktop_names": ["plasma", "kde"]},
+        {
+            "command": "startplasma-wayland --debug",
+            "desktop_names": ["plasma", "kde"],
+            "name": "Plasma",
+            "icon": "plasma",
+            "desktop_file": "/usr/share/wayland-sessions/plasma.desktop",
+        },
     )
 
     outcome = wldm.daemon.process_request(state, "greeter", req, make_config())
@@ -251,6 +257,9 @@ def test_process_request_start_session_after_ready():
     assert outcome.session_username == "alice"
     assert outcome.session_command == "startplasma-wayland --debug"
     assert outcome.session_desktop_names == ["plasma", "kde"]
+    assert outcome.session_name == "Plasma"
+    assert outcome.session_icon == "plasma"
+    assert outcome.session_desktop_file == "/usr/share/wayland-sessions/plasma.desktop"
     assert state.clients["greeter"].auth_session is None
 
 
@@ -352,6 +361,9 @@ def test_handle_request_async_starts_session_after_auth(monkeypatch):
         {
             "command": "startplasma-wayland --debug",
             "desktop_names": ["plasma", "kde"],
+            "name": "Plasma",
+            "icon": "plasma",
+            "desktop_file": "/usr/share/wayland-sessions/plasma.desktop",
         },
     )
     proc = DummyAsyncProc(pid=777, returncode=0)
@@ -368,6 +380,9 @@ def test_handle_request_async_starts_session_after_auth(monkeypatch):
         assert env["WLDM_SEAT"] == "seat0"
         assert env["WLDM_SESSION_COMMAND"] == "startplasma-wayland --debug"
         assert env["WLDM_SESSION_DESKTOP_NAMES"] == "plasma:kde"
+        assert env["WLDM_SESSION_NAME"] == "Plasma"
+        assert env["WLDM_SESSION_ICON"] == "plasma"
+        assert env["WLDM_SESSION_DESKTOP_FILE"] == "/usr/share/wayland-sessions/plasma.desktop"
         return proc
 
     async def fake_exec(*cmd, env=None, start_new_session=False):
