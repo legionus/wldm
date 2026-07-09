@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import wldm.daemon
 import wldm.config
 import wldm.inifile
+import wldm.process
 import wldm.protocol.greeter as greeter_protocol
 import wldm.protocol.pam_worker as pam_worker_protocol
 import wldm.secret
@@ -654,9 +655,9 @@ def test_terminate_process_tree_sends_signals_to_process_group(monkeypatch):
     proc = DummyAsyncProc(pid=4321, returncode=None)
     signals = []
 
-    monkeypatch.setattr(wldm.daemon.os, "killpg", lambda pid, sig: signals.append((pid, sig)))
+    monkeypatch.setattr(wldm.process.os, "killpg", lambda pid, sig: signals.append((pid, sig)))
 
-    asyncio.run(wldm.daemon.terminate_process_tree(proc, "the greeter"))
+    asyncio.run(wldm.process.terminate_process_group(proc, "the greeter"))
 
     assert signals == [(4321, signal.SIGTERM)]
     assert proc.wait_calls == 1
@@ -676,7 +677,7 @@ def test_cleanup_async_terminates_greeter_and_sessions(monkeypatch):
     async def fake_close_channel(state):
         return None
 
-    monkeypatch.setattr(wldm.daemon, "terminate_process_tree", fake_terminate)
+    monkeypatch.setattr(wldm.process, "terminate_process_group", fake_terminate)
     monkeypatch.setattr(wldm.daemon, "close_greeter_channel", fake_close_channel)
 
     asyncio.run(wldm.daemon.cleanup_async(state))
@@ -692,7 +693,7 @@ def test_wait_for_stop_or_process_returns_true_when_stop_is_set():
     stop_event = asyncio.Event()
     stop_event.set()
 
-    result = asyncio.run(wldm.daemon.wait_for_stop_or_process(proc, stop_event))
+    result = asyncio.run(wldm.process.wait_for_stop_or_process(proc, stop_event))
 
     assert result is True
 
@@ -701,7 +702,7 @@ def test_wait_for_stop_or_process_returns_false_when_process_exits():
     proc = DummyAsyncProc(pid=11, returncode=0)
     stop_event = asyncio.Event()
 
-    result = asyncio.run(wldm.daemon.wait_for_stop_or_process(proc, stop_event))
+    result = asyncio.run(wldm.process.wait_for_stop_or_process(proc, stop_event))
 
     assert result is False
 
@@ -812,18 +813,12 @@ def test_run_daemon_async_cleans_up_after_stop_signal(monkeypatch):
     async def fake_start_greeter(state, cfg, greeter_tty):
         return DummyAsyncProc(pid=1, returncode=None)
 
-    async def fake_wait_for_stop_or_process(proc, event):
-        assert event is stop_event
-        stop_event.set()
-        return True
-
     async def fake_cleanup_async(state):
         cleanup_calls.append(state)
 
     monkeypatch.setattr(wldm.tty, "open_console", lambda: 88)
     monkeypatch.setattr(wldm.tty, "change", lambda console, tty: True)
     monkeypatch.setattr(wldm.daemon, "start_greeter", fake_start_greeter)
-    monkeypatch.setattr(wldm.daemon, "wait_for_stop_or_process", fake_wait_for_stop_or_process)
     monkeypatch.setattr(wldm.daemon, "cleanup_async", fake_cleanup_async)
     monkeypatch.setattr(wldm.daemon, "install_stop_handlers", lambda loop, event: stop_event.set() if event is stop_event else None)
     monkeypatch.setattr(wldm.daemon, "remove_stop_handlers", lambda loop: None)

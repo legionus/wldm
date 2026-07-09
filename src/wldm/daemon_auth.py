@@ -12,6 +12,7 @@ from asyncio.subprocess import Process as AsyncProcess
 import wldm
 import wldm.protocol.greeter as greeter_protocol
 import wldm.protocol.pam_worker as pam_worker_protocol
+import wldm.process
 import wldm.secret
 
 logger = wldm.logger
@@ -38,26 +39,6 @@ def tty_device_path(tty_num: int) -> str:
     return f"/dev/tty{tty_num}"
 
 
-async def terminate_process(proc: AsyncProcess,
-                            name: str,
-                            timeout: float = 5.0) -> None:
-    """Terminate one direct child process without process-group semantics."""
-    if proc.returncode is not None:
-        return
-
-    logger.info("terminate %s (pid=%d)", name, proc.pid)
-    proc.terminate()
-
-    try:
-        await asyncio.wait_for(proc.wait(), timeout=timeout)
-        return
-    except asyncio.TimeoutError:
-        logger.critical("%s (pid=%d) did not stop after SIGTERM, sending SIGKILL", name, proc.pid)
-
-    proc.kill()
-    await proc.wait()
-
-
 async def stop_auth_session(auth_session: AuthSessionState,
                             *,
                             send_cancel: bool = False) -> None:
@@ -76,7 +57,7 @@ async def stop_auth_session(auth_session: AuthSessionState,
     with suppress(Exception):
         await auth_session.writer.wait_closed()
 
-    await terminate_process(auth_session.proc, "pam-worker")
+    await wldm.process.terminate_process(auth_session.proc, "pam-worker")
 
 
 async def read_auth_worker_message(auth_session: AuthSessionState) -> dict[str, object] | None:

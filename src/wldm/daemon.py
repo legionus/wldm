@@ -19,6 +19,7 @@ import wldm.daemon_auth as daemon_auth
 import wldm.inifile
 import wldm.protocol.pam_worker as pam_worker_protocol
 import wldm.policy
+import wldm.process
 import wldm.protocol.greeter as greeter_protocol
 import wldm.secret
 import wldm.state
@@ -306,34 +307,6 @@ def track_session_task(state: DaemonState, task: asyncio.Task[None]) -> None:
     task.add_done_callback(state.session_tasks.discard)
 
 
-async def terminate_process_tree(proc: AsyncProcess,
-                                 name: str,
-                                 timeout: float = 5.0) -> None:
-    if proc.returncode is not None:
-        return
-
-    logger.info("terminate %s (pid=%d)", name, proc.pid)
-
-    try:
-        os.killpg(proc.pid, signal.SIGTERM)
-    except ProcessLookupError:
-        return
-
-    try:
-        await asyncio.wait_for(proc.wait(), timeout=timeout)
-        return
-    except asyncio.TimeoutError:
-        logger.critical("%s (pid=%d) did not stop after SIGTERM, sending SIGKILL", name, proc.pid)
-    except ProcessLookupError:
-        return
-
-    with suppress(ProcessLookupError):
-        os.killpg(proc.pid, signal.SIGKILL)
-
-    with suppress(Exception):
-        await proc.wait()
-
-
 def install_stop_handlers(loop: asyncio.AbstractEventLoop,
                           stop_event: asyncio.Event) -> None:
     for signum in [signal.SIGTERM, signal.SIGINT]:
@@ -345,35 +318,6 @@ def remove_stop_handlers(loop: asyncio.AbstractEventLoop) -> None:
     for signum in [signal.SIGTERM, signal.SIGINT]:
         with suppress(NotImplementedError):
             loop.remove_signal_handler(signum)
-
-
-async def wait_for_stop_or_process(proc: AsyncProcess,
-                                   stop_event: asyncio.Event) -> bool:
-    proc_task = asyncio.create_task(proc.wait())
-    stop_task = asyncio.create_task(stop_event.wait())
-    ret = False
-
-    try:
-        done, _ = await asyncio.wait(
-            {proc_task, stop_task},
-            return_when=asyncio.FIRST_COMPLETED,
-        )
-
-        ret = stop_task in done and stop_event.is_set()
-
-    except Exception as e:
-        logger.exception("unexpected failure while waiting for process pid=%d: %s", proc.pid, e)
-
-    for task in [proc_task, stop_task]:
-        if task.done():
-            continue
-
-        task.cancel()
-
-        with suppress(asyncio.CancelledError):
-            await task
-
-    return ret
 
 
 async def wait_for_stop_or_client(state: DaemonState,
@@ -834,18 +778,18 @@ async def cleanup_async(state: DaemonState) -> None:
     # shutdown sequence and start new work while the daemon is tearing down.
     greeter = client_state(state, "greeter")
     if greeter.proc is not None and greeter.proc.returncode is None:
-        await terminate_process_tree(greeter.proc, "the greeter")
+        await wldm.process.terminate_process_group(greeter.proc, "the greeter")
 
     for name, client in state.clients.items():
         if name == "greeter":
             continue
 
         if client.proc is not None and client.proc.returncode is None:
-            await terminate_process_tree(client.proc, name)
+            await wldm.process.terminate_process_group(client.proc, name)
 
     for session in list(state.active_sessions.values()):
         with suppress(Exception):
-            await terminate_process_tree(session.proc, "user session")
+            await wldm.process.terminate_process_group(session.proc, "user session")
 
     if state.session_tasks:
         await asyncio.gather(*state.session_tasks, return_exceptions=True)

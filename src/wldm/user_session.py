@@ -14,6 +14,7 @@ import wldm.config
 import wldm.inifile
 import wldm.pam
 import wldm.policy
+import wldm.process
 import wldm.tty
 import wldm.wtmp
 
@@ -135,14 +136,6 @@ def run_session_hook(name: str,
 
     logger.critical("[!] %s hook failed with status %d: %s", name, result.returncode, execute)
     return False
-
-
-def process_exit_status(status: int) -> int:
-    if os.WIFEXITED(status):
-        return os.WEXITSTATUS(status)
-    if os.WIFSIGNALED(status):
-        return 128 + os.WTERMSIG(status)
-    return wldm.EX_FAILURE
 
 
 @wldm.require_unprivileged
@@ -331,7 +324,7 @@ def run_user_session(pw: pwd.struct_passwd,
                         wldm.wtmp.login(wtmp_line, pw.pw_name)
 
                         _, status = os.waitpid(pid, 0)
-                        exitcode = process_exit_status(status)
+                        exitcode = wldm.process.process_exit_status(status)
 
                         if exitcode != 0:
                             logger.critical(

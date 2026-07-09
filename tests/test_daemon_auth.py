@@ -5,6 +5,7 @@ import asyncio
 from types import SimpleNamespace
 
 import wldm.daemon_auth
+import wldm.process
 import wldm.protocol.greeter as greeter_protocol
 import wldm.protocol.pam_worker as pam_worker_protocol
 from wldm.secret import SecretBytes
@@ -94,7 +95,7 @@ def test_stop_auth_session_can_send_cancel_and_close_writer(monkeypatch):
     async def fake_terminate_process(proc, name, timeout=5.0):
         calls.append((proc.pid, name, timeout))
 
-    monkeypatch.setattr(wldm.daemon_auth, "terminate_process", fake_terminate_process)
+    monkeypatch.setattr(wldm.process, "terminate_process", fake_terminate_process)
 
     asyncio.run(wldm.daemon_auth.stop_auth_session(auth_session, send_cancel=True))
 
@@ -172,8 +173,8 @@ def test_terminate_process_escalates_to_kill_after_timeout(monkeypatch):
         calls.append(("timeout", timeout))
         raise asyncio.TimeoutError()
 
-    monkeypatch.setattr(wldm.daemon_auth.asyncio, "wait_for", fake_wait_for)
+    monkeypatch.setattr(wldm.process.asyncio, "wait_for", fake_wait_for)
 
-    asyncio.run(wldm.daemon_auth.terminate_process(SlowProc(), "pam-worker"))
+    asyncio.run(wldm.process.terminate_process(SlowProc(), "pam-worker"))
 
     assert calls == ["terminate", ("timeout", 5.0), "kill", "wait"]

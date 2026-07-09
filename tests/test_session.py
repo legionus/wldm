@@ -8,6 +8,7 @@ import wldm
 import wldm.config
 import wldm.inifile
 import wldm.pam
+import wldm.process
 import wldm.tty
 import wldm.user_session
 import wldm.wtmp
@@ -486,11 +487,11 @@ def test_run_user_session_aborts_when_pre_hook_fails(monkeypatch):
 
 
 def test_process_exit_status_maps_signal_to_shell_style_code(monkeypatch):
-    monkeypatch.setattr(wldm.user_session.os, "WIFEXITED", lambda status: False)
-    monkeypatch.setattr(wldm.user_session.os, "WIFSIGNALED", lambda status: True)
-    monkeypatch.setattr(wldm.user_session.os, "WTERMSIG", lambda status: 15)
+    monkeypatch.setattr(wldm.process.os, "WIFEXITED", lambda status: False)
+    monkeypatch.setattr(wldm.process.os, "WIFSIGNALED", lambda status: True)
+    monkeypatch.setattr(wldm.process.os, "WTERMSIG", lambda status: 15)
 
-    assert wldm.user_session.process_exit_status(9) == 143
+    assert wldm.process.process_exit_status(9) == 143
 
 
 def test_prepare_user_terminal_switches_and_sets_controlling_tty(monkeypatch):

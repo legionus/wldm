@@ -14,6 +14,7 @@ from typing import Any, Dict, Iterator, List, NamedTuple, Optional, Protocol
 import wldm
 import wldm.pam
 import wldm.policy
+import wldm.process
 import wldm.tty
 
 logger = wldm.logger
@@ -119,14 +120,6 @@ def build_greeter_argv() -> List[str]:
         raise RuntimeError("invalid greeter command: empty command")
 
     return [*argv, *modules.command.internal_command_prefix(), "greeter"]
-
-
-def _process_exit_status(status: int) -> int:
-    if os.WIFEXITED(status):
-        return os.WEXITSTATUS(status)
-    if os.WIFSIGNALED(status):
-        return 128 + os.WTERMSIG(status)
-    return wldm.EX_FAILURE
 
 
 def prepare_greeter_terminal(ttydev: wldm.tty.TTYdevice) -> None:
@@ -236,7 +229,7 @@ def run_greeter_session(pw: pwd.struct_passwd,
 
                     _, status = os.waitpid(pid, 0)
 
-                    return _process_exit_status(status)
+                    return wldm.process.process_exit_status(status)
 
             finally:
                 ttydev.close()
