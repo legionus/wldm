@@ -6,7 +6,6 @@ import argparse
 import gettext
 import locale
 import os
-import os.path
 import socket
 import sys
 import threading

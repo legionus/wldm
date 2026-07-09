@@ -6,7 +6,6 @@ import argparse
 import contextlib
 import grp
 import os
-import os.path
 import pwd
 
 from typing import Any, Dict, Iterator, List, NamedTuple, Optional, Protocol

@@ -3,7 +3,6 @@
 # Copyright (C) 2026  Alexey Gladkov <legion@kernel.org>
 
 import os
-import os.path
 import pwd
 
 from typing import Any, Dict, List
