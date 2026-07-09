@@ -34,6 +34,7 @@ def _configured_keyboard_short_names() -> list[str]:
 
 def keyboard_state() -> tuple[list[KeyboardLayout], int]:
     """Read available keyboard layouts and the active layout index from GTK."""
+    # pylint: disable-next=no-value-for-parameter
     display = Gdk.Display.get_default()
 
     if display is None or not hasattr(display, "get_default_seat"):

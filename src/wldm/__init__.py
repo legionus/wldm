@@ -179,6 +179,7 @@ def privileges_dropped() -> bool:
 def require_unprivileged(func: Callable[_P, _T]) -> Callable[_P, _T]:
     """Reject calls that should only happen after dropping privileges."""
     @functools.wraps(func)
+    # pylint: disable-next=no-member
     def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _T:
         if not privileges_dropped():
             raise RuntimeError(f"{func.__name__} requires dropped privileges")

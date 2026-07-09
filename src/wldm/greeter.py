@@ -131,6 +131,7 @@ def _themed_resource_path() -> str:
 
 def _load_builder_from_resource_path() -> Any:
     """Create a GtkBuilder loaded from the current greeter resource path."""
+    # pylint: disable-next=no-value-for-parameter
     builder = Gtk.Builder.new()
     builder.set_translation_domain(GETTEXT_DOMAIN)
     builder.add_from_file(os.path.join(resource_path, "greeter.ui"))
@@ -465,6 +466,7 @@ def cmd_main(_parser: argparse.Namespace) -> int:
     if os.path.isfile(css_file):
         css_provider = Gtk.CssProvider()
         css_provider.load_from_path(css_file)
+        # pylint: disable-next=no-value-for-parameter
         Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(),
                                                   css_provider,
                                                   Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
