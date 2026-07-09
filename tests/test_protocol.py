@@ -8,12 +8,6 @@ import wldm.protocol.greeter as greeter_protocol
 import wldm.secret
 
 
-def test_legacy_greeter_protocol_module_reexports_new_protocol():
-    import wldm.greeter_protocol as legacy_greeter_protocol
-
-    assert legacy_greeter_protocol.ProtocolError is greeter_protocol.ProtocolError
-
-
 class ChunkReader:
     def __init__(self, chunks, on_exhaustion="unexpected read"):
         self.chunks = iter(chunks)

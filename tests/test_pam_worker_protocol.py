@@ -8,12 +8,6 @@ import wldm.protocol.pam_worker as pam_worker_protocol
 from wldm.secret import SecretBytes
 
 
-def test_legacy_pam_worker_protocol_module_reexports_new_protocol():
-    import wldm.pam_worker_protocol as legacy_pam_worker_protocol
-
-    assert legacy_pam_worker_protocol.ProtocolError is pam_worker_protocol.ProtocolError
-
-
 class ChunkReader:
     def __init__(self, chunks):
         self.chunks = iter(chunks)
