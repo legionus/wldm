@@ -5,11 +5,11 @@
 import argparse
 import os
 import pwd
-import socket
 
 from typing import Any, Callable, NamedTuple, Protocol
 
 import wldm
+import wldm.ipc_client
 import wldm.protocol.greeter as greeter_protocol
 
 logger = wldm.logger
@@ -176,21 +176,7 @@ def seat_paths(snapshot: dict[str, object]) -> list[str]:
     return [seat_object_path(seat)]
 
 
-class SocketClient:
-    def __init__(self, fd: int) -> None:
-        self.sock = socket.socket(fileno=fd)
-
-    def write_message(self, message: dict[str, object]) -> None:
-        self.sock.sendall(greeter_protocol.encode_message(message))
-
-    def read_message(self) -> dict[str, object] | None:
-        return greeter_protocol.read_message_socket(self.sock)
-
-    def close(self) -> None:
-        self.sock.close()
-
-
-def request_state(client: SocketClient) -> dict[str, object]:
+def request_state(client: wldm.ipc_client.SocketClient) -> dict[str, object]:
     """Fetch the initial daemon state snapshot over the internal protocol.
 
     Args:
@@ -491,7 +477,7 @@ def schedule_loop_quit(loop: Any) -> bool:
     return False
 
 
-def read_daemon_events(client: SocketClient,
+def read_daemon_events(client: wldm.ipc_client.SocketClient,
                        service: DisplayManagerService,
                        GLib: Any,
                        loop: Any) -> None:
@@ -545,7 +531,7 @@ def run_adapter(username: str, uid: int, gid: int, workdir: str, service_name: s
     Returns:
         A shell-style process exit status.
     """
-    client = SocketClient(wldm.inherited_socket_fd("WLDM_SOCKET_FD"))
+    client = wldm.ipc_client.SocketClient.from_inherited_env()
 
     try:
         wldm.drop_privileges(username, uid, gid, workdir)

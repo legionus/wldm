@@ -7,7 +7,6 @@ import gettext
 import locale
 import os
 import os.path
-import select
 import socket
 import sys
 import threading
@@ -30,6 +29,8 @@ import wldm.greeter_auth as greeter_auth
 import wldm.greeter_client as greeter_client
 # pylint: disable-next=wrong-import-position
 import wldm.greeter_ui as greeter_ui
+# pylint: disable-next=wrong-import-position
+import wldm.ipc_client
 # pylint: disable-next=wrong-import-position
 import wldm.protocol.greeter as greeter_protocol
 # pylint: disable-next=wrong-import-position
@@ -55,25 +56,6 @@ def _is_valid_widget(spec: Dict[str, Any], widget: Any) -> bool:
     methods = tuple(spec.get("methods", ()))
 
     return all(hasattr(widget, method) for method in methods)
-
-class _SocketClient:
-    def __init__(self) -> None:
-        fd = wldm.inherited_socket_fd("WLDM_SOCKET_FD")
-        self.sock = socket.socket(fileno=fd)
-
-    def write_message(self, message: Dict[str, Any]) -> None:
-        self.sock.sendall(greeter_protocol.encode_message(message))
-
-    def read_message(self) -> Dict[str, Any] | None:
-        return greeter_protocol.read_message_socket(self.sock)
-
-    def can_read(self) -> bool:
-        readable, _, _ = select.select([self.sock], [], [], 0.0)
-        return self.sock in readable
-
-    def close(self) -> None:
-        self.sock.close()
-
 
 def _available_actions() -> set[str]:
     value = os.environ.get("WLDM_ACTIONS", "")
@@ -165,7 +147,7 @@ class GreeterApp(greeter_ui.GreeterUI):
         self.app.connect('activate', self.on_activate)
 
         self.sessions = wldm.sessions.desktop_sessions()
-        self.client = client if client is not None else _SocketClient()
+        self.client = client if client is not None else wldm.ipc_client.SocketClient.from_inherited_env()
 
         self.quit = False
         self.actions = _available_actions()

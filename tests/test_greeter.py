@@ -1001,22 +1001,6 @@ def test_send_recv_answer_treats_clean_eof_and_unexpected_errors_as_connection_l
     assert any("unexpected error" in item for item in events if isinstance(item, str))
 
 
-def test_socket_client_uses_inherited_socket_fd(monkeypatch):
-    greeter = load_greeter_module(monkeypatch)
-    calls = []
-
-    class FakeSocket:
-        def __init__(self, fileno):
-            calls.append(fileno)
-
-    monkeypatch.setattr(greeter.wldm, "inherited_socket_fd", lambda env_name: 11)
-    monkeypatch.setattr(greeter.socket, "socket", FakeSocket)
-
-    greeter._SocketClient()
-
-    assert calls == [11]
-
-
 def test_on_login_clicked_sets_failure_and_clears_password(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
 

@@ -344,8 +344,11 @@ def test_run_adapter_drops_privileges_and_runs_loop(monkeypatch):
         def join(self, timeout):
             calls["thread_join"] = timeout
 
-    monkeypatch.setattr(wldm.dbus_adapter, "SocketClient", lambda fd: calls.update({"fd": fd}) or client)
-    monkeypatch.setattr(wldm.dbus_adapter.wldm, "inherited_socket_fd", lambda env_name: 13)
+    monkeypatch.setattr(
+        wldm.dbus_adapter.wldm.ipc_client.SocketClient,
+        "from_inherited_env",
+        staticmethod(lambda: calls.update({"fd": 13}) or client),
+    )
     monkeypatch.setattr(
         wldm.dbus_adapter,
         "load_unprivileged_modules",
