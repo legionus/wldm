@@ -40,6 +40,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
+            python3-build \
             python3-gi \
             python3-pip \
             gobject-introspection \
@@ -64,3 +65,21 @@ jobs:
         run: |
           grep -F 'python3 -I -P -m wldm.command "$@"' /tmp/wldm-root/usr/sbin/wldm
           grep -F 'ExecStart=/usr/sbin/wldm' /tmp/wldm-root/usr/lib/systemd/system/wldm.service
+
+      - name: Run make install from sdist
+        run: |
+          rm -rf dist /tmp/wldm-sdist /tmp/wldm-sdist-root
+          python3 -m build --sdist
+          mkdir -p /tmp/wldm-sdist
+          tar -xf dist/wldm-*.tar.gz -C /tmp/wldm-sdist --strip-components=1
+          make -C /tmp/wldm-sdist install DESTDIR=/tmp/wldm-sdist-root PREFIX=/usr
+
+      - name: Verify sdist installed artifacts
+        run: |
+          test -x /tmp/wldm-sdist-root/usr/sbin/wldm
+          test -f /tmp/wldm-sdist-root/etc/wldm.ini
+          test -f /tmp/wldm-sdist-root/usr/lib/systemd/system/wldm.service
+          test -f /tmp/wldm-sdist-root/usr/share/dbus-1/system.d/wldm-dbus.conf
+          test -f /tmp/wldm-sdist-root/usr/share/wldm/resources/greeter.ui
+          test -f /tmp/wldm-sdist-root/usr/share/wldm/resources/style.css
+          test -x /tmp/wldm-sdist-root/usr/share/wldm/scripts/wayland-session

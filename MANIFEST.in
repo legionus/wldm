@@ -4,4 +4,6 @@ include config/wldm-devel.ini
 include data/resources/greeter.ui
 include data/resources/style.css
 include data/scripts/wayland-session
+include data/scripts/wldm.in
+include data/dbus-1/system.d/wldm-dbus.conf.in
 include data/systemd/wldm.service.in
