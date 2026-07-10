@@ -6,7 +6,7 @@ from ctypes import create_string_buffer
 from typing import Any
 
 import wldm.gtk._ffi as ffi
-from wldm._libc import strlen
+from wldm.libc.memory import strlen
 from wldm.secret import SecretBytes
 
 

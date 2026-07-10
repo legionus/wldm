@@ -2,7 +2,7 @@
 # Copyright (C) 2026  Alexey Gladkov <legion@kernel.org>
 
 import wldm.wtmp
-import wldm._libc
+import wldm.libc._ffi as libc_ffi
 
 
 def test_tty_line_uses_device_basename():
@@ -10,10 +10,10 @@ def test_tty_line_uses_device_basename():
 
 
 def test_libc_require_library_raises_when_missing(monkeypatch):
-    monkeypatch.setattr(wldm._libc.ctypes.util, "find_library", lambda name: None)
+    monkeypatch.setattr(libc_ffi.ctypes.util, "find_library", lambda name: None)
 
     try:
-        wldm._libc._require_library("c")
+        libc_ffi.require_library("c")
     except RuntimeError as exc:
         assert "required library: c" in str(exc)
     else:

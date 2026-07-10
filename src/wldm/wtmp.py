@@ -5,15 +5,21 @@
 import os
 
 import wldm
-from wldm._libc import logwtmp as libc_logwtmp
+import wldm.libc.wtmp as libc_wtmp
 
 logger = wldm.logger
 
-_logwtmp = libc_logwtmp
+_logwtmp = libc_wtmp.logwtmp
 
 
 def available() -> bool:
-    return _logwtmp is not None
+    if _logwtmp is None:
+        return False
+
+    if _logwtmp is libc_wtmp.logwtmp:
+        return libc_wtmp.available()
+
+    return True
 
 
 def tty_line(tty_path: str) -> str:
@@ -25,7 +31,8 @@ def login(tty_path: str, username: str, host: str = "") -> None:
         logger.debug("wtmp support is not available")
         return
 
-    _logwtmp(tty_line(tty_path).encode(), username.encode(), host.encode())
+    if _logwtmp(tty_line(tty_path).encode(), username.encode(), host.encode()) is False:
+        logger.debug("wtmp support is not available")
 
 
 def logout(tty_path: str, host: str = "") -> None:
@@ -33,4 +40,5 @@ def logout(tty_path: str, host: str = "") -> None:
         logger.debug("wtmp support is not available")
         return
 
-    _logwtmp(tty_line(tty_path).encode(), b"", host.encode())
+    if _logwtmp(tty_line(tty_path).encode(), b"", host.encode()) is False:
+        logger.debug("wtmp support is not available")

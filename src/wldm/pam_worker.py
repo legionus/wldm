@@ -12,8 +12,8 @@ from typing import Any
 import wldm
 import wldm.pam as pam
 import wldm.pam._ffi as ffi
+from wldm.libc.memory import calloc, free
 import wldm.protocol.pam_worker as worker_protocol
-from wldm._libc import calloc, free
 from wldm.secret import SecretBytes
 
 logger = wldm.logger
