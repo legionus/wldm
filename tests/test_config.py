@@ -68,6 +68,7 @@ def test_read_config_prefers_explicit_env_path(monkeypatch, tmp_path):
 
 def test_read_config_sets_default_runtime_greeter_values(monkeypatch):
     monkeypatch.delenv("WLDM_CONFIG", raising=False)
+    monkeypatch.setattr(wldm.config, "_config_candidates", lambda: [])
     monkeypatch.setattr(pwd, "getpwuid", lambda uid: pwd.struct_passwd(
         ("fallback-user", "x", 1000, 1000, "", "/home/fallback-user", "/bin/sh")))
     monkeypatch.setattr(grp, "getgrgid", lambda gid: grp.struct_group(
@@ -158,6 +159,7 @@ def test_read_config_ignores_invalid_explicit_file(monkeypatch, tmp_path):
     config_file.write_text("not an ini file\n", encoding="utf-8")
 
     monkeypatch.setenv("WLDM_CONFIG", str(config_file))
+    monkeypatch.setattr(wldm.config, "_config_candidates", lambda: [str(config_file)])
     monkeypatch.setattr(pwd, "getpwuid", lambda uid: pwd.struct_passwd(
         ("fallback-user", "x", 1000, 1000, "", "/home/fallback-user", "/bin/sh")))
     monkeypatch.setattr(grp, "getgrgid", lambda gid: grp.struct_group(
@@ -173,6 +175,7 @@ def test_read_config_ignores_oversized_explicit_file(monkeypatch, tmp_path):
     config_file.write_text("A" * (wldm.policy.CONFIG_MAX_FILE_SIZE + 1), encoding="utf-8")
 
     monkeypatch.setenv("WLDM_CONFIG", str(config_file))
+    monkeypatch.setattr(wldm.config, "_config_candidates", lambda: [str(config_file)])
     monkeypatch.setattr(pwd, "getpwuid", lambda uid: pwd.struct_passwd(
         ("fallback-user", "x", 1000, 1000, "", "/home/fallback-user", "/bin/sh")))
     monkeypatch.setattr(grp, "getgrgid", lambda gid: grp.struct_group(

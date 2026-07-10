@@ -287,8 +287,8 @@ def test_load_last_session_reads_state_file(tmp_path):
     assert wldm.state.load_last_session(str(state_dir)) == ("alice", "sway --debug")
 
 
-def test_save_last_session_writes_state_file(tmp_path):
-    state_dir = tmp_path / "state"
+def test_save_last_session_writes_state_file(secure_tmp_path):
+    state_dir = secure_tmp_path / "state"
 
     wldm.state.save_last_session(str(state_dir), "alice", "labwc")
 

@@ -151,6 +151,7 @@ def test_run_session_hook_reports_failure(monkeypatch):
 
 def test_cmd_main_fails_without_session_command(monkeypatch):
     pw = pwd.struct_passwd(("alice", "x", 1001, 1001, "", "/home/alice", "/bin/bash"))
+    calls = []
 
     monkeypatch.setattr(wldm.user_session.pwd, "getpwnam", lambda username: pw)
     monkeypatch.setattr(
@@ -158,9 +159,15 @@ def test_cmd_main_fails_without_session_command(monkeypatch):
         "read_config",
         lambda: make_config({"pam-service": "custom-login", "execute": "", "pre-execute": "", "post-execute": ""}),
     )
+    monkeypatch.setattr(
+        wldm.user_session,
+        "run_user_session",
+        lambda *args: calls.append(args) or wldm.EX_FAILURE,
+    )
     result = wldm.user_session.cmd_main(SimpleNamespace(username="alice"))
 
     assert result == wldm.EX_FAILURE
+    assert calls == [(pw, "custom-login", "", "", "")]
 
 
 def test_build_session_argv_uses_shell_for_non_absolute_command(monkeypatch):

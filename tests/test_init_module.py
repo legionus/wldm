@@ -75,10 +75,10 @@ def test_setup_verbosity_respects_quiet(monkeypatch):
     assert wldm.os.environ["WLDM_VERBOSITY"] == "3"
 
 
-def test_setup_file_logger_creates_parent_dir_and_adds_handler(tmp_path):
+def test_setup_file_logger_creates_parent_dir_and_adds_handler(secure_tmp_path):
     logger = logging.getLogger("wldm.test.setup_file_logger")
     logger.handlers.clear()
-    log_path = tmp_path / "wldm" / "daemon.log"
+    log_path = secure_tmp_path / "wldm" / "daemon.log"
 
     configured = wldm.setup_file_logger(logger, level=logging.INFO, fmt="%(message)s", path=str(log_path))
 
@@ -89,10 +89,10 @@ def test_setup_file_logger_creates_parent_dir_and_adds_handler(tmp_path):
     assert stat.S_IMODE(os.stat(log_path).st_mode) == 0o600
 
 
-def test_ensure_secure_directory_rejects_symlink(tmp_path):
-    target = tmp_path / "real"
+def test_ensure_secure_directory_rejects_symlink(secure_tmp_path):
+    target = secure_tmp_path / "real"
     target.mkdir()
-    link = tmp_path / "link"
+    link = secure_tmp_path / "link"
     link.symlink_to(target)
 
     try:
@@ -103,10 +103,10 @@ def test_ensure_secure_directory_rejects_symlink(tmp_path):
         raise AssertionError("ensure_secure_directory() should reject symlinks")
 
 
-def test_open_secure_append_file_rejects_symlink(tmp_path):
-    target = tmp_path / "real.log"
+def test_open_secure_append_file_rejects_symlink(secure_tmp_path):
+    target = secure_tmp_path / "real.log"
     target.write_text("")
-    link = tmp_path / "daemon.log"
+    link = secure_tmp_path / "daemon.log"
     link.symlink_to(target)
 
     try:

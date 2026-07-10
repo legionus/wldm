@@ -41,8 +41,8 @@ def test_save_last_session_file_skips_incomplete_input(tmp_path):
     assert path.exists() is False
 
 
-def test_load_and_save_last_session_dir_helpers(tmp_path):
-    state_dir = tmp_path / "state"
+def test_load_and_save_last_session_dir_helpers(secure_tmp_path):
+    state_dir = secure_tmp_path / "state"
 
     assert wldm.state.load_last_session("") == ("", "")
 
