@@ -5,7 +5,7 @@ import importlib
 import pwd
 import types
 
-import wldm.gtk._ffi as gtk_private_ffi
+import wldm.gtk._ffi
 
 from tests.helpers_greeter import (
     DummyButton,
@@ -535,9 +535,9 @@ def test_send_recv_answer_round_trips_protocol_messages(monkeypatch):
 
 def test_read_password_secret_uses_native_ffi_when_available(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
-    monkeypatch.setattr(gtk_private_ffi, "load_gtk_library", lambda: None)
+    monkeypatch.setattr(wldm.gtk._ffi, "load_gtk_library", lambda: None)
 
-    secret = greeter.greeter_auth.gtk_ffi.read_password_secret(types.SimpleNamespace(get_text=lambda: "secret"))
+    secret = greeter.greeter_auth.read_password_secret(types.SimpleNamespace(get_text=lambda: "secret"))
 
     assert secret.as_bytes() == b"secret"
     secret.clear()
@@ -545,11 +545,11 @@ def test_read_password_secret_uses_native_ffi_when_available(monkeypatch):
 
 def test_read_password_secret_falls_back_to_entry_text(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
-    monkeypatch.setattr(gtk_private_ffi, "load_gtk_library",
+    monkeypatch.setattr(wldm.gtk._ffi, "load_gtk_library",
                         lambda: types.SimpleNamespace(gtk_editable_get_text=lambda pointer: b"native"))
-    monkeypatch.setattr(gtk_private_ffi, "editable_pointer", lambda entry: None)
+    monkeypatch.setattr(wldm.gtk._ffi, "editable_pointer", lambda entry: None)
 
-    secret = greeter.greeter_auth.gtk_ffi.read_password_secret(types.SimpleNamespace(get_text=lambda: "secret"))
+    secret = greeter.greeter_auth.read_password_secret(types.SimpleNamespace(get_text=lambda: "secret"))
 
     assert secret.as_bytes() == b"secret"
     secret.clear()
@@ -726,7 +726,7 @@ def test_login_click_remembers_selected_session_before_username_clear(monkeypatc
         def clear(self):
             return None
 
-    monkeypatch.setattr(greeter.greeter_auth.gtk_ffi, "read_password_secret", lambda entry: DummySecret())
+    monkeypatch.setattr(greeter.greeter_auth, "read_password_secret", lambda entry: DummySecret())
 
     greeter.GreeterApp.on_login_clicked(app)
     greeter.GreeterApp.on_login_clicked(app)
@@ -1235,7 +1235,7 @@ def test_read_prompt_response_rejects_empty_secret_prompt(monkeypatch):
         def clear(self):
             return None
 
-    monkeypatch.setattr(greeter.greeter_auth.gtk_ffi, "read_password_secret", lambda entry: EmptySecret())
+    monkeypatch.setattr(greeter.greeter_auth, "read_password_secret", lambda entry: EmptySecret())
 
     assert greeter.GreeterApp.read_prompt_response(app) is None
     assert app.status_label.text == "Password:"

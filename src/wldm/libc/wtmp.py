@@ -25,10 +25,6 @@ def _logwtmp_func() -> Any | None:
     return None if _logwtmp is _missing else _logwtmp
 
 
-def available() -> bool:
-    return _logwtmp_func() is not None
-
-
 def logwtmp(line: bytes, user: bytes, host: bytes) -> bool:
     func = _logwtmp_func()
     if func is None:

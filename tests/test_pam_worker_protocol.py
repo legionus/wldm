@@ -4,6 +4,7 @@
 import asyncio
 import socket
 
+from wldm.protocol import framing
 import wldm.protocol.pam_worker as pam_worker_protocol
 from wldm.secret import SecretBytes
 
@@ -94,7 +95,7 @@ def test_read_message_socket_rejects_oversized_frame():
     left, right = socket.socketpair()
 
     try:
-        left.sendall(pam_worker_protocol.FRAME_HEADER.pack(pam_worker_protocol.MAX_FRAME_BODY_LENGTH + 1))
+        left.sendall(framing.FRAME_HEADER.pack(framing.MAX_FRAME_BODY_LENGTH + 1))
 
         try:
             pam_worker_protocol.read_message_socket(right)

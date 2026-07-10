@@ -84,7 +84,7 @@ def decode_last_client_message(greeter_protocol, state, name="greeter"):
 
 
 def make_daemon_auth_session(daemon_mod, username="alice", ready=False):
-    return daemon_mod.AuthSessionState(
+    return daemon_mod.daemon_auth.AuthSessionState(
         service="login",
         username=username,
         tty="/dev/tty7",

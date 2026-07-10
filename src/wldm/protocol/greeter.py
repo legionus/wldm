@@ -34,14 +34,11 @@ EVENT_SESSION_STARTING = "session-starting"
 EVENT_SESSION_FINISHED = "session-finished"
 EVENT_STATE_CHANGED = "state-changed"
 
-FRAME_HEADER = framing.FRAME_HEADER
-
 TYPE_REQUEST = 1
 TYPE_RESPONSE = 2
 TYPE_EVENT = 3
 
 AUTH_FIELD_MAX_LENGTH = 256
-MAX_FRAME_BODY_LENGTH = framing.MAX_FRAME_BODY_LENGTH
 
 
 class ProtocolError(ValueError):
@@ -139,12 +136,6 @@ def new_conversation_response(request: Dict[str, Any],
     return new_response(request, ok=True, payload=payload)
 
 
-_encode_bool = framing.encode_bool
-_encode_text = framing.encode_text
-_encode_blob = framing.encode_blob
-_encode_signed_int = framing.encode_signed_int
-
-
 def _decode_bool(payload: memoryview, offset: int) -> tuple[bool, int]:
     return framing.decode_bool(payload, offset, ProtocolError)
 
@@ -162,20 +153,20 @@ def _decode_secbytes(payload: memoryview, offset: int) -> tuple[SecretBytes, int
 
 
 def _encode_string_list(values: list[str]) -> bytes:
-    encoded = bytearray(FRAME_HEADER.pack(len(values)))
+    encoded = bytearray(framing.FRAME_HEADER.pack(len(values)))
 
     for value in values:
-        encoded.extend(_encode_text(value))
+        encoded.extend(framing.encode_text(value))
 
     return bytes(encoded)
 
 
 def _decode_string_list(payload: memoryview, offset: int) -> tuple[list[str], int]:
-    if offset + FRAME_HEADER.size > len(payload):
+    if offset + framing.FRAME_HEADER.size > len(payload):
         raise ProtocolError("truncated string list length", payload.tobytes())
 
-    count = FRAME_HEADER.unpack(payload[offset:offset + FRAME_HEADER.size])[0]
-    offset += FRAME_HEADER.size
+    count = framing.FRAME_HEADER.unpack(payload[offset:offset + framing.FRAME_HEADER.size])[0]
+    offset += framing.FRAME_HEADER.size
 
     values = []
 
@@ -192,30 +183,30 @@ def _decode_signed_int(payload: memoryview, offset: int) -> tuple[int, int]:
 
 def _encode_response_payload(body: bytearray, action: str, payload: Dict[str, Any]) -> None:
     if action in {ACTION_CREATE_SESSION, ACTION_CONTINUE_SESSION}:
-        body.extend(_encode_text(str(payload.get("state", ""))))
+        body.extend(framing.encode_text(str(payload.get("state", ""))))
         message = payload.get("message")
         if isinstance(message, dict):
-            body.extend(_encode_bool(True))
+            body.extend(framing.encode_bool(True))
             message_payload = message
-            body.extend(_encode_text(str(message_payload.get("style", ""))))
-            body.extend(_encode_text(str(message_payload.get("text", ""))))
+            body.extend(framing.encode_text(str(message_payload.get("style", ""))))
+            body.extend(framing.encode_text(str(message_payload.get("text", ""))))
         else:
-            body.extend(_encode_bool(False))
+            body.extend(framing.encode_bool(False))
 
     elif action == ACTION_GET_STATE:
-        body.extend(_encode_text(str(payload.get("seat", ""))))
-        body.extend(_encode_bool(bool(payload.get("greeter_ready", False))))
+        body.extend(framing.encode_text(str(payload.get("seat", ""))))
+        body.extend(framing.encode_bool(bool(payload.get("greeter_ready", False))))
 
         sessions = list(payload.get("active_sessions", []))
-        body.extend(FRAME_HEADER.pack(len(sessions)))
+        body.extend(framing.FRAME_HEADER.pack(len(sessions)))
 
         for session in sessions:
-            body.extend(_encode_signed_int(int(session.get("pid", 0))))
-            body.extend(_encode_text(str(session.get("username", ""))))
-            body.extend(_encode_text(str(session.get("command", ""))))
+            body.extend(framing.encode_signed_int(int(session.get("pid", 0))))
+            body.extend(framing.encode_text(str(session.get("username", ""))))
+            body.extend(framing.encode_text(str(session.get("command", ""))))
 
     elif action in CONTROL_ACTIONS:
-        body.extend(_encode_bool(bool(payload.get("accepted", False))))
+        body.extend(framing.encode_bool(bool(payload.get("accepted", False))))
 
 
 def _decode_response_payload(action: str, payload: memoryview, offset: int) -> tuple[Dict[str, Any], int]:
@@ -235,11 +226,11 @@ def _decode_response_payload(action: str, payload: memoryview, offset: int) -> t
         seat, offset = _decode_text(payload, offset)
         greeter_ready, offset = _decode_bool(payload, offset)
 
-        if offset + FRAME_HEADER.size > len(payload):
+        if offset + framing.FRAME_HEADER.size > len(payload):
             raise ProtocolError("truncated active session list length", payload.tobytes())
 
-        count = FRAME_HEADER.unpack(payload[offset:offset + FRAME_HEADER.size])[0]
-        offset += FRAME_HEADER.size
+        count = framing.FRAME_HEADER.unpack(payload[offset:offset + framing.FRAME_HEADER.size])[0]
+        offset += framing.FRAME_HEADER.size
 
         sessions = []
 
@@ -298,68 +289,68 @@ def encode_message(message: Dict[str, Any]) -> bytes:
     if message_type == "request":
         body.append(TYPE_REQUEST)
 
-        body.extend(_encode_text(str(message.get("id", ""))))
-        body.extend(_encode_text(str(message.get("action", ""))))
+        body.extend(framing.encode_text(str(message.get("id", ""))))
+        body.extend(framing.encode_text(str(message.get("action", ""))))
 
         payload = message.get("payload", {})
 
         if message.get("action") == ACTION_CREATE_SESSION:
-            body.extend(_encode_blob(payload.get("username", b"")))
+            body.extend(framing.encode_blob(payload.get("username", b"")))
         elif message.get("action") == ACTION_CONTINUE_SESSION:
-            body.extend(_encode_blob(payload.get("response", b"")))
+            body.extend(framing.encode_blob(payload.get("response", b"")))
         elif message.get("action") == ACTION_START_SESSION:
-            body.extend(_encode_text(str(payload.get("command", ""))))
+            body.extend(framing.encode_text(str(payload.get("command", ""))))
             body.extend(_encode_string_list(list(payload.get("desktop_names", []))))
-            body.extend(_encode_text(str(payload.get("name", ""))))
-            body.extend(_encode_text(str(payload.get("icon", ""))))
-            body.extend(_encode_text(str(payload.get("desktop_file", ""))))
+            body.extend(framing.encode_text(str(payload.get("name", ""))))
+            body.extend(framing.encode_text(str(payload.get("icon", ""))))
+            body.extend(framing.encode_text(str(payload.get("desktop_file", ""))))
 
     elif message_type == "response":
         body.append(TYPE_RESPONSE)
 
-        body.extend(_encode_text(str(message.get("id", ""))))
-        body.extend(_encode_text(str(message.get("action", ""))))
+        body.extend(framing.encode_text(str(message.get("id", ""))))
+        body.extend(framing.encode_text(str(message.get("action", ""))))
 
         ok = bool(message.get("ok", False))
-        body.extend(_encode_bool(ok))
+        body.extend(framing.encode_bool(ok))
 
         if ok:
             _encode_response_payload(body, str(message.get("action", "")), message.get("payload", {}))
         else:
             error = message.get("error", {})
-            body.extend(_encode_text(str(error.get("code", ""))))
-            body.extend(_encode_text(str(error.get("message", ""))))
+            body.extend(framing.encode_text(str(error.get("code", ""))))
+            body.extend(framing.encode_text(str(error.get("message", ""))))
 
     elif message_type == "event":
         body.append(TYPE_EVENT)
 
-        body.extend(_encode_text(str(message.get("event", ""))))
+        body.extend(framing.encode_text(str(message.get("event", ""))))
 
         payload = message.get("payload", {})
 
         if message.get("event") == EVENT_SESSION_STARTING:
-            body.extend(_encode_text(str(payload.get("command", ""))))
+            body.extend(framing.encode_text(str(payload.get("command", ""))))
             body.extend(_encode_string_list(list(payload.get("desktop_names", []))))
 
         elif message.get("event") == EVENT_SESSION_FINISHED:
-            body.extend(_encode_signed_int(int(payload.get("pid", 0))))
-            body.extend(_encode_signed_int(int(payload.get("returncode", 0))))
-            body.extend(_encode_bool(bool(payload.get("failed", False))))
-            body.extend(_encode_text(str(payload.get("message", ""))))
+            body.extend(framing.encode_signed_int(int(payload.get("pid", 0))))
+            body.extend(framing.encode_signed_int(int(payload.get("returncode", 0))))
+            body.extend(framing.encode_bool(bool(payload.get("failed", False))))
+            body.extend(framing.encode_text(str(payload.get("message", ""))))
 
         elif message.get("event") == EVENT_STATE_CHANGED:
             _encode_response_payload(body, ACTION_GET_STATE, payload)
     else:
         raise ProtocolError("unknown protocol message type")
 
-    return framing.encode_frame(body, MAX_FRAME_BODY_LENGTH, ProtocolError)
+    return framing.encode_frame(body, framing.MAX_FRAME_BODY_LENGTH, ProtocolError)
 
 
 def decode_message(raw: bytes | str) -> Dict[str, Any]:
     if isinstance(raw, str):
         raw = raw.encode("utf-8")
 
-    payload = framing.frame_payload(raw, MAX_FRAME_BODY_LENGTH, ProtocolError)
+    payload = framing.frame_payload(raw, framing.MAX_FRAME_BODY_LENGTH, ProtocolError)
 
     if len(payload) < 2:
         raise ProtocolError("truncated protocol body", raw)
@@ -469,7 +460,7 @@ def decode_message(raw: bytes | str) -> Dict[str, Any]:
 async def read_message_async(reader: asyncio.StreamReader) -> Dict[str, Any] | None:
     frame = await framing.read_frame_async(
         reader,
-        MAX_FRAME_BODY_LENGTH,
+        framing.MAX_FRAME_BODY_LENGTH,
         ProtocolError,
         "truncated protocol frame header",
     )
@@ -480,7 +471,7 @@ async def read_message_async(reader: asyncio.StreamReader) -> Dict[str, Any] | N
 
 
 def read_message_socket(sock: socket.socket) -> Dict[str, Any] | None:
-    frame = framing.read_frame_socket(sock, MAX_FRAME_BODY_LENGTH, ProtocolError)
+    frame = framing.read_frame_socket(sock, framing.MAX_FRAME_BODY_LENGTH, ProtocolError)
     if frame is None:
         return None
 

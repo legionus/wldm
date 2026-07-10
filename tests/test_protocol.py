@@ -4,6 +4,7 @@
 import asyncio
 import socket
 
+from wldm.protocol import framing
 import wldm.protocol.greeter as greeter_protocol
 import wldm.secret
 
@@ -23,10 +24,10 @@ class ChunkReader:
 
 
 def _append_trailing_payload_byte(frame):
-    body_len = greeter_protocol.FRAME_HEADER.unpack(frame[:greeter_protocol.FRAME_HEADER.size])[0]
-    body = frame[greeter_protocol.FRAME_HEADER.size:] + b"x"
+    body_len = framing.FRAME_HEADER.unpack(frame[:framing.FRAME_HEADER.size])[0]
+    body = frame[framing.FRAME_HEADER.size:] + b"x"
 
-    return greeter_protocol.FRAME_HEADER.pack(body_len + 1) + body
+    return framing.FRAME_HEADER.pack(body_len + 1) + body
 
 
 def test_new_request_creates_versioned_envelope():
@@ -145,7 +146,7 @@ def test_decode_message_rejects_truncated_frame():
 
 
 def test_decode_message_rejects_oversized_frame_body():
-    raw = greeter_protocol.FRAME_HEADER.pack(greeter_protocol.MAX_FRAME_BODY_LENGTH + 1)
+    raw = framing.FRAME_HEADER.pack(framing.MAX_FRAME_BODY_LENGTH + 1)
 
     try:
         greeter_protocol.decode_message(raw)
@@ -183,7 +184,7 @@ def test_decode_message_rejects_trailing_payload_bytes():
 
 
 def test_read_message_async_rejects_oversized_frame_body():
-    header = greeter_protocol.FRAME_HEADER.pack(greeter_protocol.MAX_FRAME_BODY_LENGTH + 1)
+    header = framing.FRAME_HEADER.pack(framing.MAX_FRAME_BODY_LENGTH + 1)
     reader = ChunkReader([header], on_exhaustion="body read should not happen for oversized frame")
 
     try:
@@ -197,7 +198,7 @@ def test_read_message_async_rejects_oversized_frame_body():
 def test_read_message_socket_rejects_oversized_frame_body():
     sock1, sock2 = socket.socketpair()
     try:
-        sock1.sendall(greeter_protocol.FRAME_HEADER.pack(greeter_protocol.MAX_FRAME_BODY_LENGTH + 1))
+        sock1.sendall(framing.FRAME_HEADER.pack(framing.MAX_FRAME_BODY_LENGTH + 1))
 
         try:
             greeter_protocol.read_message_socket(sock2)

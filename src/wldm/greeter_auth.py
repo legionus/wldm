@@ -6,8 +6,8 @@ import gettext
 from typing import Any
 
 import wldm
-import wldm.gtk as gtk_ffi
 import wldm.protocol.greeter as greeter_protocol
+from wldm.gtk import read_password_secret
 
 _ = gettext.gettext
 logger = wldm.logger
@@ -39,7 +39,7 @@ def read_prompt_response(app: Any) -> wldm.secret.SecretBytes | None:
         app.password_entry.set_text("")
         return wldm.secret.SecretBytes()
 
-    response = gtk_ffi.read_password_secret(app.password_entry)
+    response = read_password_secret(app.password_entry)
 
     if len(response) == 0:
         app.set_status(app.conversation_prompt_text or _("Enter a response."), error=True)

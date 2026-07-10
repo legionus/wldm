@@ -89,9 +89,6 @@ class SessionState:
         self.command = command
 
 
-AuthSessionState = daemon_auth.AuthSessionState
-
-
 class ClientState:
     __slots__ = ("proc", "writer", "task", "failures", "ready", "auth_session")
 
@@ -482,7 +479,7 @@ async def handle_request_async(state: DaemonState,
 
     if greeter_protocol.is_request(req, action=greeter_protocol.ACTION_CONTINUE_SESSION):
         payload = req["payload"]
-        auth_session: AuthSessionState | None = client.auth_session
+        auth_session: daemon_auth.AuthSessionState | None = client.auth_session
 
         if auth_session is None:
             payload["response"].clear()

@@ -18,10 +18,6 @@ KIND_PROMPT = "prompt"
 KIND_READY = "ready"
 KIND_FAILED = "failed"
 
-FRAME_HEADER = framing.FRAME_HEADER
-MAX_FRAME_BODY_LENGTH = framing.MAX_FRAME_BODY_LENGTH
-
-
 class ProtocolError(ValueError):
     """Raised when a PAM worker message is malformed."""
 
@@ -80,10 +76,6 @@ def new_failed(code: str, message: str) -> dict[str, object]:
     }
 
 
-_encode_blob = framing.encode_blob
-_encode_text = framing.encode_text
-
-
 def _decode_blob(payload: memoryview, offset: int) -> tuple[bytes, int]:
     return framing.decode_blob(payload, offset, ProtocolError)
 
@@ -98,42 +90,42 @@ def encode_message(message: dict[str, object]) -> bytes:
     body.append(PROTOCOL_VERSION)
 
     kind = str(message.get("kind", ""))
-    body.extend(_encode_text(kind))
+    body.extend(framing.encode_text(kind))
 
     if kind == KIND_START:
-        body.extend(_encode_text(str(message.get("service", ""))))
-        body.extend(_encode_text(str(message.get("username", ""))))
-        body.extend(_encode_text(str(message.get("tty", ""))))
+        body.extend(framing.encode_text(str(message.get("service", ""))))
+        body.extend(framing.encode_text(str(message.get("username", ""))))
+        body.extend(framing.encode_text(str(message.get("tty", ""))))
 
     elif kind == KIND_ANSWER:
         response = message.get("response", b"")
         if not isinstance(response, (bytes, bytearray, str, SecretBytes)):
             raise ProtocolError(f"unsupported PAM worker answer payload: {type(response).__name__}")
-        body.extend(_encode_blob(response))
+        body.extend(framing.encode_blob(response))
 
     elif kind == KIND_CANCEL:
         pass
 
     elif kind == KIND_PROMPT:
-        body.extend(_encode_text(str(message.get("style", ""))))
-        body.extend(_encode_text(str(message.get("text", ""))))
+        body.extend(framing.encode_text(str(message.get("style", ""))))
+        body.extend(framing.encode_text(str(message.get("text", ""))))
 
     elif kind == KIND_READY:
         pass
 
     elif kind == KIND_FAILED:
-        body.extend(_encode_text(str(message.get("code", ""))))
-        body.extend(_encode_text(str(message.get("message", ""))))
+        body.extend(framing.encode_text(str(message.get("code", ""))))
+        body.extend(framing.encode_text(str(message.get("message", ""))))
 
     else:
         raise ProtocolError(f"unsupported PAM worker message kind: {kind}")
 
-    return framing.encode_frame(body, MAX_FRAME_BODY_LENGTH, ProtocolError)
+    return framing.encode_frame(body, framing.MAX_FRAME_BODY_LENGTH, ProtocolError)
 
 
 def decode_message(frame: bytes) -> dict[str, object]:
     """Decode one PAM worker protocol frame."""
-    payload = framing.frame_payload(frame, MAX_FRAME_BODY_LENGTH, ProtocolError)
+    payload = framing.frame_payload(frame, framing.MAX_FRAME_BODY_LENGTH, ProtocolError)
     if not payload:
         raise ProtocolError("missing protocol body", frame)
 
@@ -185,7 +177,7 @@ async def read_message_async(reader: asyncio.StreamReader) -> dict[str, object] 
     """Read one PAM worker message from an asyncio stream."""
     frame = await framing.read_frame_async(
         reader,
-        MAX_FRAME_BODY_LENGTH,
+        framing.MAX_FRAME_BODY_LENGTH,
         ProtocolError,
         "truncated protocol frame",
     )
@@ -197,7 +189,7 @@ async def read_message_async(reader: asyncio.StreamReader) -> dict[str, object] 
 
 def read_message_socket(sock: socket.socket) -> dict[str, object] | None:
     """Read one PAM worker message from a blocking socket."""
-    frame = framing.read_frame_socket(sock, MAX_FRAME_BODY_LENGTH, ProtocolError, "truncated protocol frame")
+    frame = framing.read_frame_socket(sock, framing.MAX_FRAME_BODY_LENGTH, ProtocolError, "truncated protocol frame")
     if frame is None:
         return None
 
