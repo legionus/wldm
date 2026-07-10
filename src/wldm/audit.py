@@ -12,7 +12,7 @@ import wldm
 logger = wldm.logger
 
 ROLE_ALLOWED_CTYPES = {
-    "daemon": (None, "pam", "libpam.so", "libpam.so.", "c", "libc.so", "libc.so."),
+    "daemon": (None,),
     "greeter": (None, "gtk-4", "libgtk-4.so", "libgtk-4.so.", "c", "libc.so", "libc.so."),
     "greeter-session": (None, "pam", "libpam.so", "libpam.so.", "c", "libc.so", "libc.so."),
     "user-session": (None, "pam", "libpam.so", "libpam.so.", "c", "libc.so", "libc.so."),

@@ -6,9 +6,10 @@ import os
 import wldm.audit
 
 
-def test_is_allowed_ctypes_target_accepts_expected_daemon_libraries():
+def test_is_allowed_ctypes_target_accepts_daemon_null_target_only():
     assert wldm.audit._is_allowed_ctypes_target("daemon", None) is True
-    assert wldm.audit._is_allowed_ctypes_target("daemon", "pam") is True
+    assert wldm.audit._is_allowed_ctypes_target("daemon", "pam") is False
+    assert wldm.audit._is_allowed_ctypes_target("daemon", "libc.so.6") is False
     assert wldm.audit._is_allowed_ctypes_target("daemon", "/lib64/libpam.so.0") is False
     assert wldm.audit._is_allowed_ctypes_target("daemon", "/lib64/libc.so.6") is False
 
@@ -54,6 +55,22 @@ def test_setup_audit_hook_rejects_unexpected_ctypes_load(monkeypatch):
         raise AssertionError("audit hook should reject unexpected ctypes libraries")
 
 
+def test_setup_audit_hook_rejects_daemon_pam_and_libc_loads(monkeypatch):
+    hooks = []
+    monkeypatch.setattr(wldm.audit.sys, "addaudithook", lambda hook: hooks.append(hook))
+    monkeypatch.setattr(wldm.audit, "_active_role", None)
+
+    wldm.audit.setup_audit_hook("daemon")
+
+    for target in ("libpam.so.0", "libc.so.6"):
+        try:
+            hooks[0]("ctypes.dlopen", (target,))
+        except RuntimeError as exc:
+            assert "unexpected ctypes library load in daemon" in str(exc)
+        else:
+            raise AssertionError(f"audit hook should reject {target} in daemon")
+
+
 def test_setup_audit_hook_ignores_allowed_ctypes_load(monkeypatch):
     hooks = []
     monkeypatch.setattr(wldm.audit.sys, "addaudithook", lambda hook: hooks.append(hook))
@@ -62,7 +79,6 @@ def test_setup_audit_hook_ignores_allowed_ctypes_load(monkeypatch):
     wldm.audit.setup_audit_hook("daemon")
 
     hooks[0]("ctypes.dlopen", (None,))
-    hooks[0]("ctypes.dlopen", ("libpam.so.0",))
 
 
 def test_setup_audit_hook_rejects_role_change_in_one_process(monkeypatch):
