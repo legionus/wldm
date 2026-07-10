@@ -6,7 +6,7 @@ import gettext
 from typing import Any
 
 import wldm
-from wldm import _gtk_ffi as gtk_ffi
+import wldm.gtk as gtk_ffi
 import wldm.protocol.greeter as greeter_protocol
 
 _ = gettext.gettext

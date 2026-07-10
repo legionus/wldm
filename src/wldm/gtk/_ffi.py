@@ -1,29 +1,25 @@
-#!/usr/bin/env python
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (C) 2026  Alexey Gladkov <legion@kernel.org>
 
 import ctypes
-from ctypes import c_char_p, c_void_p, create_string_buffer
+from ctypes import c_char_p, c_void_p
 from ctypes.util import find_library
 from typing import Any
 
 import wldm
-from wldm._libc import strlen
-from wldm.secret import SecretBytes
-
 
 _gtk: ctypes.CDLL | None = None
 logger = wldm.logger
 
 
-def _load_library(name: str) -> ctypes.CDLL | None:
+def load_library(name: str) -> ctypes.CDLL | None:
     path = find_library(name)
     if path is None:
         return None
     return ctypes.CDLL(path)
 
 
-def _load_gtk_library() -> ctypes.CDLL | None:
+def load_gtk_library() -> ctypes.CDLL | None:
     """Load libgtk lazily for the native password-entry fast path.
 
     Returns:
@@ -35,7 +31,7 @@ def _load_gtk_library() -> ctypes.CDLL | None:
     if _gtk is not None:
         return _gtk
 
-    gtk = _load_library("gtk-4")
+    gtk = load_library("gtk-4")
 
     if gtk is not None:
         gtk.gtk_editable_get_text.argtypes = [c_void_p]
@@ -44,12 +40,13 @@ def _load_gtk_library() -> ctypes.CDLL | None:
     _gtk = gtk
     return _gtk
 
+
 _pycapsule_get_pointer = ctypes.pythonapi.PyCapsule_GetPointer
 _pycapsule_get_pointer.argtypes = [ctypes.py_object, c_char_p]
 _pycapsule_get_pointer.restype = c_void_p
 
 
-def _editable_pointer(editable: Any) -> c_void_p | None:
+def editable_pointer(editable: Any) -> c_void_p | None:
     pointer = getattr(editable, "__gpointer__", None)
 
     if pointer is None:
@@ -63,24 +60,3 @@ def _editable_pointer(editable: Any) -> c_void_p | None:
     except Exception as e:
         logger.debug("unable to extract Gtk editable pointer, using text fallback: %s", e)
         return None
-
-
-def read_password_secret(editable: Any) -> SecretBytes:
-    gtk = _load_gtk_library()
-
-    if gtk is None:
-        return SecretBytes(editable.get_text().encode("utf-8"))
-
-    pointer = _editable_pointer(editable)
-    if pointer is None or pointer.value is None:
-        return SecretBytes(editable.get_text().encode("utf-8"))
-
-    text_ptr = gtk.gtk_editable_get_text(pointer)
-    if text_ptr is None:
-        return SecretBytes()
-
-    length = int(strlen(text_ptr))
-    buffer = create_string_buffer(length + 1)
-    ctypes.memmove(buffer, text_ptr, length + 1)
-
-    return SecretBytes.from_buffer(buffer, length)

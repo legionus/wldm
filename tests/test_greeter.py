@@ -5,6 +5,8 @@ import importlib
 import pwd
 import types
 
+import wldm.gtk._ffi as gtk_private_ffi
+
 from tests.helpers_greeter import (
     DummyButton,
     DummyClient,
@@ -533,7 +535,7 @@ def test_send_recv_answer_round_trips_protocol_messages(monkeypatch):
 
 def test_read_password_secret_uses_native_ffi_when_available(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
-    monkeypatch.setattr(greeter.greeter_auth.gtk_ffi, "_load_gtk_library", lambda: None)
+    monkeypatch.setattr(gtk_private_ffi, "load_gtk_library", lambda: None)
 
     secret = greeter.greeter_auth.gtk_ffi.read_password_secret(types.SimpleNamespace(get_text=lambda: "secret"))
 
@@ -543,7 +545,9 @@ def test_read_password_secret_uses_native_ffi_when_available(monkeypatch):
 
 def test_read_password_secret_falls_back_to_entry_text(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
-    monkeypatch.setattr(greeter.greeter_auth.gtk_ffi, "_editable_pointer", lambda entry: None)
+    monkeypatch.setattr(gtk_private_ffi, "load_gtk_library",
+                        lambda: types.SimpleNamespace(gtk_editable_get_text=lambda pointer: b"native"))
+    monkeypatch.setattr(gtk_private_ffi, "editable_pointer", lambda entry: None)
 
     secret = greeter.greeter_auth.gtk_ffi.read_password_secret(types.SimpleNamespace(get_text=lambda: "secret"))
 
