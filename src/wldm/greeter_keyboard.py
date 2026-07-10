@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (C) 2026  Alexey Gladkov <legion@kernel.org>
 
-import dataclasses
 import os
 
 import gi  # type: ignore[import-untyped]
@@ -18,12 +17,23 @@ import wldm
 logger = wldm.logger
 
 
-@dataclasses.dataclass(frozen=True)
 class KeyboardLayout:
     """One configured keyboard layout and its short display name."""
 
-    short_name: str
-    long_name: str
+    __slots__ = ("short_name", "long_name")
+
+    def __init__(self, short_name: str, long_name: str) -> None:
+        self.short_name = short_name
+        self.long_name = long_name
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, KeyboardLayout):
+            return NotImplemented
+
+        return self.short_name == other.short_name and self.long_name == other.long_name
+
+    def __hash__(self) -> int:
+        return hash((self.short_name, self.long_name))
 
 
 def _configured_keyboard_short_names() -> list[str]:

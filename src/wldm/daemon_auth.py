@@ -5,7 +5,6 @@
 import asyncio
 import socket
 from contextlib import suppress
-from dataclasses import dataclass
 from typing import Any
 from asyncio.subprocess import Process as AsyncProcess
 
@@ -18,17 +17,26 @@ import wldm.secret
 logger = wldm.logger
 
 
-@dataclass
 class AuthSessionState:
     """Track one greeter-side configuring session backed by a PAM worker."""
 
-    service: str
-    username: str
-    tty: str
-    proc: AsyncProcess
-    reader: asyncio.StreamReader
-    writer: asyncio.StreamWriter
-    ready: bool = False
+    __slots__ = ("service", "username", "tty", "proc", "reader", "writer", "ready")
+
+    def __init__(self,
+                 service: str,
+                 username: str,
+                 tty: str,
+                 proc: AsyncProcess,
+                 reader: asyncio.StreamReader,
+                 writer: asyncio.StreamWriter,
+                 ready: bool = False) -> None:
+        self.service = service
+        self.username = username
+        self.tty = tty
+        self.proc = proc
+        self.reader = reader
+        self.writer = writer
+        self.ready = ready
 
 
 def tty_device_path(tty_num: int) -> str:

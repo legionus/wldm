@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (C) 2026  Alexey Gladkov <legion@kernel.org>
 
-from dataclasses import dataclass
 from typing import Dict, TextIO
 
 import wldm
@@ -12,9 +11,9 @@ class IniParseError(ValueError):
     pass
 
 
-@dataclass
 class IniFile:
-    sections: Dict[str, Dict[str, str]]
+    def __init__(self, sections: Dict[str, Dict[str, str]]) -> None:
+        self.sections = sections
 
     def __getitem__(self, section: str) -> Dict[str, str]:
         return self.sections[section]

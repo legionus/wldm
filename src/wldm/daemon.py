@@ -8,7 +8,6 @@ import os
 import signal
 import socket
 from contextlib import suppress
-from dataclasses import dataclass
 from typing import Any, Dict, Optional
 from asyncio.subprocess import Process as AsyncProcess
 
@@ -26,6 +25,7 @@ import wldm.state
 import wldm.tty
 
 logger = wldm.logger
+
 
 class DaemonState:
     def __init__(self,
@@ -46,36 +46,68 @@ class DaemonState:
         self.session_tasks: set[asyncio.Task[None]] = set()
 
 
-@dataclass
 class RequestOutcome:
-    response: Dict[str, Any]
-    event: Optional[Dict[str, Any]] = None
-    session_username: str = ""
-    session_command: str = ""
-    session_desktop_names: list[str] | None = None
-    session_name: str = ""
-    session_icon: str = ""
-    session_desktop_file: str = ""
-    control_action: str = ""
+    __slots__ = (
+        "response",
+        "event",
+        "session_username",
+        "session_command",
+        "session_desktop_names",
+        "session_name",
+        "session_icon",
+        "session_desktop_file",
+        "control_action",
+    )
+
+    def __init__(self,
+                 response: Dict[str, Any],
+                 event: Optional[Dict[str, Any]] = None,
+                 session_username: str = "",
+                 session_command: str = "",
+                 session_desktop_names: list[str] | None = None,
+                 session_name: str = "",
+                 session_icon: str = "",
+                 session_desktop_file: str = "",
+                 control_action: str = "") -> None:
+        self.response = response
+        self.event = event
+        self.session_username = session_username
+        self.session_command = session_command
+        self.session_desktop_names = session_desktop_names
+        self.session_name = session_name
+        self.session_icon = session_icon
+        self.session_desktop_file = session_desktop_file
+        self.control_action = control_action
 
 
-@dataclass
 class SessionState:
-    proc: AsyncProcess
-    username: str
-    command: str
+    __slots__ = ("proc", "username", "command")
+
+    def __init__(self, proc: AsyncProcess, username: str, command: str) -> None:
+        self.proc = proc
+        self.username = username
+        self.command = command
+
 
 AuthSessionState = daemon_auth.AuthSessionState
 
 
-@dataclass
 class ClientState:
-    proc: Optional[AsyncProcess] = None
-    writer: Optional[asyncio.StreamWriter] = None
-    task: Optional[asyncio.Task[None]] = None
-    failures: int = 0
-    ready: bool = False
-    auth_session: Optional[daemon_auth.AuthSessionState] = None
+    __slots__ = ("proc", "writer", "task", "failures", "ready", "auth_session")
+
+    def __init__(self,
+                 proc: Optional[AsyncProcess] = None,
+                 writer: Optional[asyncio.StreamWriter] = None,
+                 task: Optional[asyncio.Task[None]] = None,
+                 failures: int = 0,
+                 ready: bool = False,
+                 auth_session: Optional[daemon_auth.AuthSessionState] = None) -> None:
+        self.proc = proc
+        self.writer = writer
+        self.task = task
+        self.failures = failures
+        self.ready = ready
+        self.auth_session = auth_session
 
 
 POWER_ACTION_COMMANDS = {
