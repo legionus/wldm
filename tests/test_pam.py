@@ -2,20 +2,34 @@
 # Copyright (C) 2026  Alexey Gladkov <legion@kernel.org>
 
 import ctypes
+from types import SimpleNamespace
 
 import wldm.pam
-import wldm._pam_ffi
+import wldm.pam._ffi as ffi
+import wldm.pam.funcs as pam_funcs
+
+
+def fake_libpam(monkeypatch, **kwargs):
+    attrs = {"pam_strerror": lambda pamh, code: f"err {code}".encode()}
+    attrs.update(kwargs)
+    libpam = SimpleNamespace(**attrs)
+    monkeypatch.setattr(ffi, "libpam", lambda: libpam)
+    return libpam
 
 
 def test_simple_conv_returns_success():
-    assert wldm.pam._simple_conv(0, [], None, None) == wldm.pam.PAM_SUCCESS
+    assert pam_funcs._simple_conv(0, [], None, None) == wldm.pam.PAM_SUCCESS
+
+
+def test_pam_does_not_expose_libpam_binding():
+    assert not hasattr(wldm.pam, "libpam")
 
 
 def test_pam_ffi_require_library_raises_when_missing(monkeypatch):
-    monkeypatch.setattr(wldm._pam_ffi, "find_library", lambda name: None)
+    monkeypatch.setattr(ffi, "find_library", lambda name: None)
 
     try:
-        wldm._pam_ffi._require_library("pam")
+        ffi._require_library("pam")
     except RuntimeError as exc:
         assert "required library: pam" in str(exc)
     else:
@@ -23,25 +37,21 @@ def test_pam_ffi_require_library_raises_when_missing(monkeypatch):
 
 
 def test_pam_error_str_decodes_message(monkeypatch):
-    monkeypatch.setattr(wldm.pam.libpam, "pam_strerror", lambda pamh, code: b"Success")
+    fake_libpam(monkeypatch, pam_strerror=lambda pamh, code: b"Success")
 
     assert wldm.pam.pam_error_str(None, 0) == "Success"
 
 
 def test_pam_error_str_handles_none_and_exceptions(monkeypatch):
-    monkeypatch.setattr(wldm.pam.libpam, "pam_strerror", lambda pamh, code: None)
+    libpam = fake_libpam(monkeypatch, pam_strerror=lambda pamh, code: None)
     assert wldm.pam.pam_error_str(None, 7) == "pam error 7"
 
-    monkeypatch.setattr(
-        wldm.pam.libpam,
-        "pam_strerror",
-        lambda pamh, code: (_ for _ in ()).throw(RuntimeError("boom")),
-    )
+    libpam.pam_strerror = lambda pamh, code: (_ for _ in ()).throw(RuntimeError("boom"))
     assert wldm.pam.pam_error_str(None, 9) == "PAM error code 9"
 
 
 def test_start_pam_raises_on_failure(monkeypatch):
-    monkeypatch.setattr(wldm.pam.libpam, "pam_start", lambda service, user, conv, pamh: 5)
+    fake_libpam(monkeypatch, pam_start=lambda service, user, conv, pamh: 5)
     monkeypatch.setattr(wldm.pam, "pam_error_str", lambda pamh, code: f"err {code}")
 
     try:
@@ -53,7 +63,7 @@ def test_start_pam_raises_on_failure(monkeypatch):
 
 
 def test_start_pam_returns_handle_on_success(monkeypatch):
-    monkeypatch.setattr(wldm.pam.libpam, "pam_start", lambda service, user, conv, pamh: 0)
+    fake_libpam(monkeypatch, pam_start=lambda service, user, conv, pamh: 0)
 
     handle = wldm.pam.start_pam("login", "alice")
 
@@ -61,7 +71,7 @@ def test_start_pam_returns_handle_on_success(monkeypatch):
 
 
 def test_open_pam_session_raises_on_account_failure(monkeypatch):
-    monkeypatch.setattr(wldm.pam.libpam, "pam_acct_mgmt", lambda pamh, flags: 3)
+    fake_libpam(monkeypatch, pam_acct_mgmt=lambda pamh, flags: 3)
     monkeypatch.setattr(wldm.pam, "pam_error_str", lambda pamh, code: f"err {code}")
 
     try:
@@ -73,8 +83,7 @@ def test_open_pam_session_raises_on_account_failure(monkeypatch):
 
 
 def test_open_pam_session_raises_on_setcred_failure(monkeypatch):
-    monkeypatch.setattr(wldm.pam.libpam, "pam_acct_mgmt", lambda pamh, flags: 0)
-    monkeypatch.setattr(wldm.pam.libpam, "pam_setcred", lambda pamh, flags: 9)
+    fake_libpam(monkeypatch, pam_acct_mgmt=lambda pamh, flags: 0, pam_setcred=lambda pamh, flags: 9)
     monkeypatch.setattr(wldm.pam, "pam_error_str", lambda pamh, code: f"err {code}")
 
     try:
@@ -86,9 +95,8 @@ def test_open_pam_session_raises_on_setcred_failure(monkeypatch):
 
 
 def test_open_pam_session_raises_on_open_session_failure(monkeypatch):
-    monkeypatch.setattr(wldm.pam.libpam, "pam_acct_mgmt", lambda pamh, flags: 0)
-    monkeypatch.setattr(wldm.pam.libpam, "pam_setcred", lambda pamh, flags: 0)
-    monkeypatch.setattr(wldm.pam.libpam, "pam_open_session", lambda pamh, flags: 8)
+    fake_libpam(monkeypatch, pam_acct_mgmt=lambda pamh, flags: 0, pam_setcred=lambda pamh, flags: 0,
+                pam_open_session=lambda pamh, flags: 8)
     monkeypatch.setattr(wldm.pam, "pam_error_str", lambda pamh, code: f"err {code}")
 
     try:
@@ -100,21 +108,20 @@ def test_open_pam_session_raises_on_open_session_failure(monkeypatch):
 
 
 def test_open_pam_session_succeeds(monkeypatch):
-    monkeypatch.setattr(wldm.pam.libpam, "pam_acct_mgmt", lambda pamh, flags: 0)
-    monkeypatch.setattr(wldm.pam.libpam, "pam_setcred", lambda pamh, flags: 0)
-    monkeypatch.setattr(wldm.pam.libpam, "pam_open_session", lambda pamh, flags: 0)
+    fake_libpam(monkeypatch, pam_acct_mgmt=lambda pamh, flags: 0, pam_setcred=lambda pamh, flags: 0,
+                pam_open_session=lambda pamh, flags: 0)
 
     assert wldm.pam.open_pam_session("pamh") is None
 
 
 def test_open_pam_session_only_succeeds(monkeypatch):
-    monkeypatch.setattr(wldm.pam.libpam, "pam_open_session", lambda pamh, flags: 0)
+    fake_libpam(monkeypatch, pam_open_session=lambda pamh, flags: 0)
 
     assert wldm.pam.open_pam_session_only("pamh") is None
 
 
 def test_open_pam_session_only_raises_on_failure(monkeypatch):
-    monkeypatch.setattr(wldm.pam.libpam, "pam_open_session", lambda pamh, flags: 8)
+    fake_libpam(monkeypatch, pam_open_session=lambda pamh, flags: 8)
     monkeypatch.setattr(wldm.pam, "pam_error_str", lambda pamh, code: f"err {code}")
 
     try:
@@ -126,13 +133,13 @@ def test_open_pam_session_only_raises_on_failure(monkeypatch):
 
 
 def test_set_pam_item_succeeds(monkeypatch):
-    monkeypatch.setattr(wldm.pam.libpam, "pam_set_item", lambda pamh, item_type, value: 0)
+    fake_libpam(monkeypatch, pam_set_item=lambda pamh, item_type, value: 0)
 
     assert wldm.pam.set_pam_item("pamh", wldm.pam.PAM_TTY, "/dev/tty7") is None
 
 
 def test_set_pam_item_raises_on_failure(monkeypatch):
-    monkeypatch.setattr(wldm.pam.libpam, "pam_set_item", lambda pamh, item_type, value: 5)
+    fake_libpam(monkeypatch, pam_set_item=lambda pamh, item_type, value: 5)
     monkeypatch.setattr(wldm.pam, "pam_error_str", lambda pamh, code: f"err {code}")
 
     try:
@@ -144,13 +151,13 @@ def test_set_pam_item_raises_on_failure(monkeypatch):
 
 
 def test_putenv_succeeds(monkeypatch):
-    monkeypatch.setattr(wldm.pam.libpam, "pam_putenv", lambda pamh, entry: 0)
+    fake_libpam(monkeypatch, pam_putenv=lambda pamh, entry: 0)
 
     assert wldm.pam.putenv("pamh", "XDG_SESSION_TYPE", "wayland") is None
 
 
 def test_putenv_raises_on_failure(monkeypatch):
-    monkeypatch.setattr(wldm.pam.libpam, "pam_putenv", lambda pamh, entry: 6)
+    fake_libpam(monkeypatch, pam_putenv=lambda pamh, entry: 6)
     monkeypatch.setattr(wldm.pam, "pam_error_str", lambda pamh, code: f"err {code}")
 
     try:
@@ -162,7 +169,7 @@ def test_putenv_raises_on_failure(monkeypatch):
 
 
 def test_close_pam_session_raises_on_setcred_failure(monkeypatch):
-    monkeypatch.setattr(wldm.pam.libpam, "pam_setcred", lambda pamh, flags: 4)
+    fake_libpam(monkeypatch, pam_setcred=lambda pamh, flags: 4)
     monkeypatch.setattr(wldm.pam, "pam_error_str", lambda pamh, code: f"err {code}")
 
     try:
@@ -174,8 +181,7 @@ def test_close_pam_session_raises_on_setcred_failure(monkeypatch):
 
 
 def test_close_pam_session_raises_on_close_failure(monkeypatch):
-    monkeypatch.setattr(wldm.pam.libpam, "pam_setcred", lambda pamh, flags: 0)
-    monkeypatch.setattr(wldm.pam.libpam, "pam_close_session", lambda pamh, flags: 6)
+    fake_libpam(monkeypatch, pam_setcred=lambda pamh, flags: 0, pam_close_session=lambda pamh, flags: 6)
     monkeypatch.setattr(wldm.pam, "pam_error_str", lambda pamh, code: f"err {code}")
 
     try:
@@ -187,8 +193,7 @@ def test_close_pam_session_raises_on_close_failure(monkeypatch):
 
 
 def test_close_pam_session_succeeds(monkeypatch):
-    monkeypatch.setattr(wldm.pam.libpam, "pam_setcred", lambda pamh, flags: 0)
-    monkeypatch.setattr(wldm.pam.libpam, "pam_close_session", lambda pamh, flags: 0)
+    fake_libpam(monkeypatch, pam_setcred=lambda pamh, flags: 0, pam_close_session=lambda pamh, flags: 0)
 
     assert wldm.pam.close_pam_session("pamh") is None
 
@@ -196,7 +201,7 @@ def test_close_pam_session_succeeds(monkeypatch):
 def test_end_pam_calls_libpam_when_available(monkeypatch):
     calls = []
 
-    monkeypatch.setattr(wldm.pam.libpam, "pam_end", lambda pamh, status: calls.append((pamh, status)))
+    fake_libpam(monkeypatch, pam_end=lambda pamh, status: calls.append((pamh, status)))
 
     wldm.pam.end_pam("pamh")
 
@@ -211,7 +216,7 @@ def test_getenvlist_parses_valid_entries(monkeypatch):
         None,
     ]
 
-    monkeypatch.setattr(wldm.pam.libpam, "pam_getenvlist", lambda pamh: values)
+    fake_libpam(monkeypatch, pam_getenvlist=lambda pamh: values)
 
     env = wldm.pam.getenvlist("pamh")
 
@@ -223,6 +228,6 @@ def test_getenvlist_handles_index_error(monkeypatch):
         def __getitem__(self, idx):
             raise IndexError
 
-    monkeypatch.setattr(wldm.pam.libpam, "pam_getenvlist", lambda pamh: BrokenList())
+    fake_libpam(monkeypatch, pam_getenvlist=lambda pamh: BrokenList())
 
     assert wldm.pam.getenvlist("pamh") == {}

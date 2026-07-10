@@ -5,9 +5,16 @@ import ctypes
 import socket
 from types import SimpleNamespace
 
-import wldm._pam_ffi as ffi
+import wldm.pam as pam
+import wldm.pam._ffi as ffi
 import wldm.pam_worker as pam_worker
 import wldm.protocol.pam_worker as pam_worker_protocol
+
+
+def fake_libpam(monkeypatch, **kwargs):
+    libpam = SimpleNamespace(**kwargs)
+    monkeypatch.setattr(ffi, "libpam", lambda: libpam)
+    return libpam
 
 
 def pam_messages(*items):
@@ -127,22 +134,22 @@ def test_broker_registry_registers_unregisters_and_rejects_unknown():
 
 
 def test_prompt_style_maps_supported_pam_styles():
-    assert pam_worker._prompt_style(ffi.PAM_PROMPT_ECHO_OFF) == "secret"
-    assert pam_worker._prompt_style(ffi.PAM_PROMPT_ECHO_ON) == "visible"
-    assert pam_worker._prompt_style(ffi.PAM_TEXT_INFO) == "info"
-    assert pam_worker._prompt_style(ffi.PAM_ERROR_MSG) == "error"
+    assert pam_worker._prompt_style(pam.PAM_PROMPT_ECHO_OFF) == "secret"
+    assert pam_worker._prompt_style(pam.PAM_PROMPT_ECHO_ON) == "visible"
+    assert pam_worker._prompt_style(pam.PAM_TEXT_INFO) == "info"
+    assert pam_worker._prompt_style(pam.PAM_ERROR_MSG) == "error"
 
 
 def test_conversation_conv_populates_response_for_secret_prompt(monkeypatch):
     broker = SimpleNamespace(ask=lambda style, text: b"secret")
     monkeypatch.setattr(pam_worker, "_broker", lambda broker_id: broker)
 
-    _, msgs = pam_messages((ffi.PAM_PROMPT_ECHO_OFF, "Password:"))
+    _, msgs = pam_messages((pam.PAM_PROMPT_ECHO_OFF, "Password:"))
     response = (ctypes.POINTER(ffi.PamResponse) * 1)()
 
     rc = pam_worker._conversation_conv(1, msgs, response, ctypes.c_void_p(123))
 
-    assert rc == ffi.PAM_SUCCESS
+    assert rc == pam.PAM_SUCCESS
     assert ctypes.string_at(response[0][0].resp) == b"secret"
 
 
@@ -150,47 +157,47 @@ def test_conversation_conv_accepts_info_prompt_without_response(monkeypatch):
     broker = SimpleNamespace(ask=lambda style, text: b"")
     monkeypatch.setattr(pam_worker, "_broker", lambda broker_id: broker)
 
-    _, msgs = pam_messages((ffi.PAM_TEXT_INFO, "Hello"))
+    _, msgs = pam_messages((pam.PAM_TEXT_INFO, "Hello"))
     response = (ctypes.POINTER(ffi.PamResponse) * 1)()
 
     rc = pam_worker._conversation_conv(1, msgs, response, ctypes.c_void_p(123))
 
-    assert rc == ffi.PAM_SUCCESS
+    assert rc == pam.PAM_SUCCESS
     assert response[0][0].resp is None
 
 
 def test_conversation_conv_rejects_missing_appdata_and_bad_style(monkeypatch):
-    _, msgs = pam_messages((ffi.PAM_PROMPT_ECHO_OFF, "Password:"))
+    _, msgs = pam_messages((pam.PAM_PROMPT_ECHO_OFF, "Password:"))
     response = (ctypes.POINTER(ffi.PamResponse) * 1)()
 
-    assert pam_worker._conversation_conv(1, msgs, response, None) == ffi.PAM_CONV_ERR
+    assert pam_worker._conversation_conv(1, msgs, response, None) == pam.PAM_CONV_ERR
 
     broker = SimpleNamespace(ask=lambda style, text: b"secret")
     monkeypatch.setattr(pam_worker, "_broker", lambda broker_id: broker)
     _, bad_msgs = pam_messages((99, "???"))
-    assert pam_worker._conversation_conv(1, bad_msgs, response, ctypes.c_void_p(123)) == ffi.PAM_CONV_ERR
+    assert pam_worker._conversation_conv(1, bad_msgs, response, ctypes.c_void_p(123)) == pam.PAM_CONV_ERR
 
 
 def test_conversation_conv_rejects_unknown_broker_and_allocation_failure(monkeypatch):
-    _, msgs = pam_messages((ffi.PAM_PROMPT_ECHO_OFF, "Password:"))
+    _, msgs = pam_messages((pam.PAM_PROMPT_ECHO_OFF, "Password:"))
     response = (ctypes.POINTER(ffi.PamResponse) * 1)()
 
     monkeypatch.setattr(pam_worker, "_broker", lambda broker_id: (_ for _ in ()).throw(pam_worker.ConversationError("no broker")))
-    assert pam_worker._conversation_conv(1, msgs, response, ctypes.c_void_p(123)) == ffi.PAM_CONV_ERR
+    assert pam_worker._conversation_conv(1, msgs, response, ctypes.c_void_p(123)) == pam.PAM_CONV_ERR
 
     monkeypatch.setattr(pam_worker, "_broker", lambda broker_id: SimpleNamespace(ask=lambda style, text: b"secret"))
     monkeypatch.setattr(pam_worker, "calloc", lambda count, size: None)
-    assert pam_worker._conversation_conv(1, msgs, response, ctypes.c_void_p(123)) == ffi.PAM_CONV_ERR
+    assert pam_worker._conversation_conv(1, msgs, response, ctypes.c_void_p(123)) == pam.PAM_CONV_ERR
 
 
 def test_conversation_conv_rejects_cancelled_prompt(monkeypatch):
     broker = SimpleNamespace(ask=lambda style, text: None)
     monkeypatch.setattr(pam_worker, "_broker", lambda broker_id: broker)
 
-    _, msgs = pam_messages((ffi.PAM_PROMPT_ECHO_OFF, "Password:"))
+    _, msgs = pam_messages((pam.PAM_PROMPT_ECHO_OFF, "Password:"))
     response = (ctypes.POINTER(ffi.PamResponse) * 1)()
 
-    assert pam_worker._conversation_conv(1, msgs, response, ctypes.c_void_p(123)) == ffi.PAM_CONV_ERR
+    assert pam_worker._conversation_conv(1, msgs, response, ctypes.c_void_p(123)) == pam.PAM_CONV_ERR
 
 
 def test_conversation_conv_rejects_response_buffer_and_callback_failures(monkeypatch):
@@ -199,32 +206,35 @@ def test_conversation_conv_rejects_response_buffer_and_callback_failures(monkeyp
     monkeypatch.setattr(pam_worker, "_broker", lambda broker_id: broker)
     monkeypatch.setattr(pam_worker, "_copy_response_bytes", lambda data: None)
 
-    _, msgs = pam_messages((ffi.PAM_PROMPT_ECHO_OFF, "Password:"))
-    assert pam_worker._conversation_conv(1, msgs, response, ctypes.c_void_p(123)) == ffi.PAM_CONV_ERR
+    _, msgs = pam_messages((pam.PAM_PROMPT_ECHO_OFF, "Password:"))
+    assert pam_worker._conversation_conv(1, msgs, response, ctypes.c_void_p(123)) == pam.PAM_CONV_ERR
 
     failing_broker = SimpleNamespace(ask=lambda style, text: (_ for _ in ()).throw(RuntimeError("boom")))
     monkeypatch.setattr(pam_worker, "_broker", lambda broker_id: failing_broker)
-    assert pam_worker._conversation_conv(1, msgs, response, ctypes.c_void_p(123)) == ffi.PAM_CONV_ERR
+    assert pam_worker._conversation_conv(1, msgs, response, ctypes.c_void_p(123)) == pam.PAM_CONV_ERR
 
 
 def test_run_auth_session_reports_ready_and_failures(monkeypatch):
     calls = []
     sock = SimpleNamespace(sendall=lambda data: calls.append(pam_worker_protocol.decode_message(data)))
+    libpam = fake_libpam(
+        monkeypatch,
+        pam_start=lambda service, user, conv, pamh_ref: pam.PAM_SUCCESS,
+        pam_authenticate=lambda pamh_arg, flags: pam.PAM_SUCCESS,
+        pam_acct_mgmt=lambda pamh_arg, flags: pam.PAM_SUCCESS,
+    )
     monkeypatch.setattr(ffi, "pam_handle_t", lambda: ctypes.c_void_p())
-    monkeypatch.setattr(ffi.libpam, "pam_start", lambda service, user, conv, pamh_ref: ffi.PAM_SUCCESS)
-    monkeypatch.setattr(ffi.libpam, "pam_authenticate", lambda pamh_arg, flags: ffi.PAM_SUCCESS)
-    monkeypatch.setattr(ffi.libpam, "pam_acct_mgmt", lambda pamh_arg, flags: ffi.PAM_SUCCESS)
-    monkeypatch.setattr(pam_worker.wldm.pam, "set_pam_item", lambda pamh_arg, item, value: calls.append((item, value)))
-    monkeypatch.setattr(pam_worker.wldm.pam, "end_pam", lambda pamh_arg: calls.append(("end", pamh_arg)))
+    monkeypatch.setattr(pam_worker.pam, "set_pam_item", lambda pamh_arg, item, value: calls.append((item, value)))
+    monkeypatch.setattr(pam_worker.pam, "end_pam", lambda pamh_arg: calls.append(("end", pamh_arg)))
 
     assert pam_worker.run_auth_session(sock, "login", "alice", "/dev/tty7") == pam_worker.wldm.EX_SUCCESS
-    assert calls[0] == (ffi.PAM_TTY, "/dev/tty7")
+    assert calls[0] == (pam.PAM_TTY, "/dev/tty7")
     assert calls[1] == {"v": 1, "kind": "ready"}
     assert calls[2][0] == "end"
 
     calls.clear()
-    monkeypatch.setattr(ffi.libpam, "pam_authenticate", lambda pamh_arg, flags: ffi.PAM_CONV_ERR)
-    monkeypatch.setattr(pam_worker.wldm.pam, "pam_error_str", lambda pamh_arg, rc: "bad auth")
+    libpam.pam_authenticate = lambda pamh_arg, flags: pam.PAM_CONV_ERR
+    monkeypatch.setattr(pam_worker.pam, "pam_error_str", lambda pamh_arg, rc: "bad auth")
 
     assert pam_worker.run_auth_session(sock, "login", "alice", "") == pam_worker.wldm.EX_FAILURE
     assert calls[0] == {"v": 1, "kind": "failed", "code": "auth_failed", "message": "Authentication failed."}
@@ -233,45 +243,46 @@ def test_run_auth_session_reports_ready_and_failures(monkeypatch):
 def test_run_auth_session_handles_pam_start_account_and_conversation_errors(monkeypatch):
     calls = []
     sock = SimpleNamespace(sendall=lambda data: calls.append(pam_worker_protocol.decode_message(data)))
+    libpam = fake_libpam(monkeypatch, pam_start=lambda service, user, conv, pamh_ref: pam.PAM_ABORT)
 
     monkeypatch.setattr(ffi, "pam_handle_t", lambda: ctypes.c_void_p())
-    monkeypatch.setattr(pam_worker.wldm.pam, "set_pam_item", lambda pamh_arg, item, value: calls.append((item, value)))
-    monkeypatch.setattr(pam_worker.wldm.pam, "end_pam", lambda pamh_arg: calls.append(("end", pamh_arg)))
-    monkeypatch.setattr(pam_worker.wldm.pam, "pam_error_str", lambda pamh_arg, rc: "bad news")
+    monkeypatch.setattr(pam_worker.pam, "set_pam_item", lambda pamh_arg, item, value: calls.append((item, value)))
+    monkeypatch.setattr(pam_worker.pam, "end_pam", lambda pamh_arg: calls.append(("end", pamh_arg)))
+    monkeypatch.setattr(pam_worker.pam, "pam_error_str", lambda pamh_arg, rc: "bad news")
 
-    monkeypatch.setattr(ffi.libpam, "pam_start", lambda service, user, conv, pamh_ref: ffi.PAM_ABORT)
     assert pam_worker.run_auth_session(sock, "login", "alice", "/dev/tty7") == pam_worker.wldm.EX_FAILURE
     assert calls[0] == {"v": 1, "kind": "failed", "code": "auth_failed", "message": "pam_start failed: 26 (bad news)"}
     assert calls[1][0] == "end"
 
     calls.clear()
-    monkeypatch.setattr(ffi.libpam, "pam_start", lambda service, user, conv, pamh_ref: ffi.PAM_SUCCESS)
-    monkeypatch.setattr(ffi.libpam, "pam_authenticate", lambda pamh_arg, flags: ffi.PAM_SUCCESS)
-    monkeypatch.setattr(ffi.libpam, "pam_acct_mgmt", lambda pamh_arg, flags: ffi.PAM_ACCT_EXPIRED)
+    libpam.pam_start = lambda service, user, conv, pamh_ref: pam.PAM_SUCCESS
+    libpam.pam_authenticate = lambda pamh_arg, flags: pam.PAM_SUCCESS
+    libpam.pam_acct_mgmt = lambda pamh_arg, flags: pam.PAM_ACCT_EXPIRED
     assert pam_worker.run_auth_session(sock, "login", "alice", "") == pam_worker.wldm.EX_FAILURE
     assert calls[0] == {"v": 1, "kind": "failed", "code": "auth_failed", "message": "Account expired."}
     assert calls[1][0] == "end"
 
     calls.clear()
-    monkeypatch.setattr(ffi.libpam, "pam_authenticate",
-                        lambda pamh_arg, flags: (_ for _ in ()).throw(pam_worker.ConversationError("cancelled")))
+    libpam.pam_authenticate = lambda pamh_arg, flags: (_ for _ in ()).throw(
+        pam_worker.ConversationError("cancelled")
+    )
     assert pam_worker.run_auth_session(sock, "login", "alice", "") == pam_worker.wldm.EX_FAILURE
     assert len(calls) == 1
     assert calls[0][0] == "end"
 
 
 def test_user_facing_error_maps_common_pam_codes():
-    assert pam_worker.user_facing_error("auth", ffi.PAM_AUTH_ERR) == "Authentication failed."
-    assert pam_worker.user_facing_error("auth", ffi.PAM_MAXTRIES) == "Authentication failed."
-    assert pam_worker.user_facing_error("acct", ffi.PAM_NEW_AUTHTOK_REQD) == "Password change required."
-    assert pam_worker.user_facing_error("acct", ffi.PAM_ACCT_EXPIRED) == "Account expired."
-    assert pam_worker.user_facing_error("acct", ffi.PAM_ABORT) == "Authentication service unavailable."
+    assert pam_worker.user_facing_error("auth", pam.PAM_AUTH_ERR) == "Authentication failed."
+    assert pam_worker.user_facing_error("auth", pam.PAM_MAXTRIES) == "Authentication failed."
+    assert pam_worker.user_facing_error("acct", pam.PAM_NEW_AUTHTOK_REQD) == "Password change required."
+    assert pam_worker.user_facing_error("acct", pam.PAM_ACCT_EXPIRED) == "Account expired."
+    assert pam_worker.user_facing_error("acct", pam.PAM_ABORT) == "Authentication service unavailable."
 
 
 def test_failure_code_marks_only_retryable_auth_failures():
-    assert pam_worker.failure_code("auth", ffi.PAM_AUTH_ERR) == "auth_retryable"
-    assert pam_worker.failure_code("auth", ffi.PAM_MAXTRIES) == "auth_failed"
-    assert pam_worker.failure_code("acct", ffi.PAM_ACCT_EXPIRED) == "auth_failed"
+    assert pam_worker.failure_code("auth", pam.PAM_AUTH_ERR) == "auth_retryable"
+    assert pam_worker.failure_code("auth", pam.PAM_MAXTRIES) == "auth_failed"
+    assert pam_worker.failure_code("acct", pam.PAM_ACCT_EXPIRED) == "auth_failed"
 
 
 def test_cmd_main_reads_start_message_and_calls_run_auth_session(monkeypatch):

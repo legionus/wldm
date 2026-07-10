@@ -10,8 +10,8 @@ from ctypes import POINTER, byref, c_char, c_char_p, c_void_p, cast, sizeof
 from typing import Any
 
 import wldm
-import wldm._pam_ffi as ffi
-import wldm.pam
+import wldm.pam as pam
+import wldm.pam._ffi as ffi
 import wldm.protocol.pam_worker as worker_protocol
 from wldm._libc import calloc, free
 from wldm.secret import SecretBytes
@@ -89,13 +89,13 @@ def _broker(broker_id: int) -> PromptBroker:
 
 def _prompt_style(style: int) -> str:
     """Translate one PAM message style into greeter prompt style."""
-    if style == ffi.PAM_PROMPT_ECHO_OFF:
+    if style == pam.PAM_PROMPT_ECHO_OFF:
         return "secret"
-    if style == ffi.PAM_PROMPT_ECHO_ON:
+    if style == pam.PAM_PROMPT_ECHO_ON:
         return "visible"
-    if style == ffi.PAM_TEXT_INFO:
+    if style == pam.PAM_TEXT_INFO:
         return "info"
-    if style == ffi.PAM_ERROR_MSG:
+    if style == pam.PAM_ERROR_MSG:
         return "error"
     raise ConversationError(f"unsupported PAM message style: {style}")
 
@@ -135,23 +135,23 @@ def _resolve_broker_from_appdata(appdata_ptr: Any) -> PromptBroker:
 def user_facing_error(stage: str, rc: int) -> str:
     """Translate one PAM failure into a greeter-facing error message."""
     if stage == "auth":
-        if rc in {ffi.PAM_AUTH_ERR, ffi.PAM_USER_UNKNOWN, ffi.PAM_MAXTRIES}:
+        if rc in {pam.PAM_AUTH_ERR, pam.PAM_USER_UNKNOWN, pam.PAM_MAXTRIES}:
             return "Authentication failed."
 
-        if rc in {ffi.PAM_CRED_INSUFFICIENT, ffi.PAM_ABORT}:
+        if rc in {pam.PAM_CRED_INSUFFICIENT, pam.PAM_ABORT}:
             return "Authentication service unavailable."
 
     elif stage == "acct":
-        if rc == ffi.PAM_NEW_AUTHTOK_REQD:
+        if rc == pam.PAM_NEW_AUTHTOK_REQD:
             return "Password change required."
 
-        if rc == ffi.PAM_ACCT_EXPIRED:
+        if rc == pam.PAM_ACCT_EXPIRED:
             return "Account expired."
 
-        if rc in {ffi.PAM_AUTH_ERR, ffi.PAM_USER_UNKNOWN}:
+        if rc in {pam.PAM_AUTH_ERR, pam.PAM_USER_UNKNOWN}:
             return "Authentication failed."
 
-        if rc in {ffi.PAM_CRED_INSUFFICIENT, ffi.PAM_ABORT, ffi.PAM_AUTHTOK_LOCK_BUSY, ffi.PAM_AUTHTOK_DISABLE_AGING}:
+        if rc in {pam.PAM_CRED_INSUFFICIENT, pam.PAM_ABORT, pam.PAM_AUTHTOK_LOCK_BUSY, pam.PAM_AUTHTOK_DISABLE_AGING}:
             return "Authentication service unavailable."
 
     return "Authentication failed."
@@ -159,7 +159,7 @@ def user_facing_error(stage: str, rc: int) -> str:
 
 def failure_code(stage: str, rc: int) -> str:
     """Translate one PAM failure into a machine-readable worker error code."""
-    if stage == "auth" and rc == ffi.PAM_AUTH_ERR:
+    if stage == "auth" and rc == pam.PAM_AUTH_ERR:
         return "auth_retryable"
 
     return "auth_failed"
@@ -224,13 +224,13 @@ def _conversation_conv(n_messages: int,
 
     except ConversationError as e:
         logger.critical("PAM worker callback failed to resolve broker: %s", e)
-        return ffi.PAM_CONV_ERR
+        return pam.PAM_CONV_ERR
 
     resp_ptr = calloc(n_messages, sizeof(ffi.PamResponse))
 
     if not resp_ptr:
         logger.critical("PAM worker callback could not allocate response array")
-        return ffi.PAM_CONV_ERR
+        return pam.PAM_CONV_ERR
 
     arr = cast(resp_ptr, POINTER(ffi.PamResponse))
 
@@ -238,15 +238,15 @@ def _conversation_conv(n_messages: int,
         for index in range(n_messages):
             if not _process_conversation_message(arr, index, messages[index].contents, broker):
                 _free_response_array(arr, index)
-                return ffi.PAM_CONV_ERR
+                return pam.PAM_CONV_ERR
 
     except ConversationError as e:
         logger.critical("PAM worker callback failed: %s", e)
         _free_response_array(arr, n_messages)
-        return ffi.PAM_CONV_ERR
+        return pam.PAM_CONV_ERR
 
     response[0] = arr
-    return ffi.PAM_SUCCESS
+    return pam.PAM_SUCCESS
 
 
 def run_auth_session(sock: Any, service: str, username: str, tty: str) -> int:
@@ -260,29 +260,30 @@ def run_auth_session(sock: Any, service: str, username: str, tty: str) -> int:
     pamh = ffi.pam_handle_t()
 
     try:
-        rc = ffi.libpam.pam_start(service.encode(), username.encode(), byref(conv), byref(pamh))
+        libpam = ffi.libpam()
+        rc = libpam.pam_start(service.encode(), username.encode(), byref(conv), byref(pamh))
 
-        if rc != ffi.PAM_SUCCESS:
-            raise RuntimeError(f"pam_start failed: {rc} ({wldm.pam.pam_error_str(None, rc)})")
+        if rc != pam.PAM_SUCCESS:
+            raise RuntimeError(f"pam_start failed: {rc} ({pam.pam_error_str(None, rc)})")
 
         if tty:
-            wldm.pam.set_pam_item(pamh, ffi.PAM_TTY, tty)
+            pam.set_pam_item(pamh, pam.PAM_TTY, tty)
 
-        rc = ffi.libpam.pam_authenticate(pamh, 0)
+        rc = libpam.pam_authenticate(pamh, 0)
 
-        if rc != ffi.PAM_SUCCESS:
+        if rc != pam.PAM_SUCCESS:
             return _send_auth_failure(sock, service=service, username=username,
                                       tty=tty, code=failure_code("auth", rc),
                                       message=user_facing_error("auth", rc),
-                                      detail=f"pam_authenticate failed: {rc} ({wldm.pam.pam_error_str(pamh, rc)})")
+                                      detail=f"pam_authenticate failed: {rc} ({pam.pam_error_str(pamh, rc)})")
 
-        rc = ffi.libpam.pam_acct_mgmt(pamh, 0)
+        rc = libpam.pam_acct_mgmt(pamh, 0)
 
-        if rc != ffi.PAM_SUCCESS:
+        if rc != pam.PAM_SUCCESS:
             return _send_auth_failure(sock, service=service, username=username,
                                       tty=tty, code=failure_code("acct", rc),
                                       message=user_facing_error("acct", rc),
-                                      detail=f"pam_acct_mgmt failed: {rc} ({wldm.pam.pam_error_str(pamh, rc)})")
+                                      detail=f"pam_acct_mgmt failed: {rc} ({pam.pam_error_str(pamh, rc)})")
 
         logger.info("pam-worker authentication ready service=%s user=%s tty=%s",
                     service, username, tty or "<none>")
@@ -303,7 +304,7 @@ def run_auth_session(sock: Any, service: str, username: str, tty: str) -> int:
                                   detail=str(e))
 
     finally:
-        wldm.pam.end_pam(pamh)
+        pam.end_pam(pamh)
         _unregister_broker(broker_id)
 
 
