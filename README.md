@@ -82,12 +82,6 @@ For more logging:
 ./wldm.sh -vv
 ```
 
-or:
-
-```bash
-WLDM_VERBOSITY=2 ./wldm.sh greeter
-```
-
 The daemon exports `WLDM_VERBOSITY` to the greeter and session helpers it
 starts, so increasing verbosity on the main `wldm` command enables their debug
 logging too.

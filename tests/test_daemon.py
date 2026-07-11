@@ -377,11 +377,10 @@ def test_handle_request_async_starts_session_after_auth(monkeypatch):
         assert cmd == (
             "/usr/bin/python3",
             "/srv/wldm/src/wldm/command.py",
-            "user-session",
-            "--",
-            "alice",
         )
+        assert env["WLDM_ROLE"] == "user-session"
         assert env["WLDM_SEAT"] == "seat0"
+        assert env["WLDM_SESSION_USER"] == "alice"
         assert env["WLDM_SESSION_COMMAND"] == "startplasma-wayland --debug"
         assert env["WLDM_SESSION_DESKTOP_NAMES"] == "plasma:kde"
         assert env["WLDM_SESSION_NAME"] == "Plasma"
@@ -568,20 +567,18 @@ def test_start_greeter_passes_socket_env(monkeypatch):
 
     assert result is proc
     assert state.clients["greeter"].task is not None
-    assert calls["cmd"][:9] == (
+    assert calls["cmd"] == (
         "/usr/bin/python3",
         "/srv/wldm/src/wldm/command.py",
-        "greeter-session",
-        "--tty",
-        "7",
-        "--pam-service",
-        "system-login",
-        "gdm",
-        "gdm",
     )
+    assert calls["env"]["WLDM_ROLE"] == "greeter-session"
     assert calls["env"]["WLDM_SOCKET_FD"] == "11"
     assert calls["env"]["WLDM_SOURCE_TREE"] == "/srv/wldm"
     assert calls["env"]["WLDM_SEAT"] == "seat9"
+    assert calls["env"]["WLDM_GREETER_TTY"] == "7"
+    assert calls["env"]["WLDM_GREETER_PAM_SERVICE"] == "system-login"
+    assert calls["env"]["WLDM_GREETER_USER"] == "gdm"
+    assert calls["env"]["WLDM_GREETER_GROUP"] == "gdm"
     assert calls["env"]["WLDM_THEME"] == "retro"
     assert calls["env"]["WLDM_GREETER_COMMAND"] == "labwc --"
     assert calls["env"]["WLDM_GREETER_SESSION_DIRS"] == "/usr/share/wayland-sessions"
@@ -640,11 +637,11 @@ def test_start_dbus_adapter_starts_internal_client(monkeypatch):
     assert calls["argv"] == [
         "/usr/bin/python3",
         "/srv/wldm/src/wldm/command.py",
-        "dbus-adapter",
-        "adapter-user",
-        "org.example.DisplayManager",
     ]
     assert isinstance(calls["env"], dict)
+    assert calls["env"]["WLDM_ROLE"] == "dbus-adapter"
+    assert calls["env"]["WLDM_DBUS_USER"] == "adapter-user"
+    assert calls["env"]["WLDM_DBUS_SERVICE"] == "org.example.DisplayManager"
     assert calls["env"]["WLDM_DBUS_LOG_PATH"] == "/tmp/wldm/dbus.log"
     assert calls["env"]["WLDM_SOURCE_TREE"] == "/srv/wldm"
     assert "SECRET_TOKEN" not in calls["env"]

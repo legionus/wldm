@@ -140,7 +140,8 @@ def test_start_auth_session_starts_worker_and_sends_start_message(monkeypatch):
         )
     )
 
-    assert calls["cmd"] == ("/usr/bin/python3", "-m", "wldm.command", "pam-worker")
+    assert calls["cmd"] == ("/usr/bin/python3", "-m", "wldm.command")
+    assert calls["env"]["WLDM_ROLE"] == "pam-worker"
     assert calls["env"]["WLDM_SOCKET_FD"] == str(calls["pass_fds"][0])
     assert calls["env"]["WLDM_SOURCE_TREE"] == "/srv/wldm"
     assert "SECRET_TOKEN" not in calls["env"]

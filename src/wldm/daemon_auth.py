@@ -113,8 +113,10 @@ async def start_auth_session(internal_command: list[str],
 
     proc = await asyncio.create_subprocess_exec(
         *internal_command,
-        "pam-worker",
-        env=wldm.internal_helper_environ({"WLDM_SOCKET_FD": str(child_sock.fileno())}),
+        env=wldm.internal_helper_environ({
+            "WLDM_ROLE": "pam-worker",
+            "WLDM_SOCKET_FD": str(child_sock.fileno()),
+        }),
         pass_fds=(child_sock.fileno(),),
     )
     child_sock.close()

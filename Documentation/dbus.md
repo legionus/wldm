@@ -1,17 +1,18 @@
 # D-Bus Interface
 
-This document describes the currently implemented D-Bus API exported by
-`wldm dbus-adapter`.
+This document describes the currently implemented D-Bus API exported by the
+daemon-started D-Bus adapter helper.
 
 For the config options that control the adapter, see
 [`configuration.md`](configuration.md).
 
 ## Overview
 
-When `[dbus].enabled = yes`, the daemon starts `wldm dbus-adapter` as an
-unprivileged subprocess. The adapter connects back to the daemon over an
-inherited IPC fd, mirrors the daemon's read-only state snapshot, and exports a
-small `org.freedesktop.DisplayManager` service on the system bus.
+When `[dbus].enabled = yes`, the daemon starts an unprivileged adapter
+subprocess with `WLDM_ROLE=dbus-adapter`. The adapter connects back to the
+daemon over an inherited IPC fd, mirrors the daemon's read-only state
+snapshot, and exports a small `org.freedesktop.DisplayManager` service on the
+system bus.
 
 The adapter is intentionally read-only. It does not expose login control,
 session termination, or display-management methods.

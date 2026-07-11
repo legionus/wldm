@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (C) 2026  Alexey Gladkov <legion@kernel.org>
 
-import argparse
 import contextlib
 import grp
 import os
@@ -75,6 +74,7 @@ def _new_greeter_environ(pamh: Optional[Any],
     env["USER"] = pw.pw_name
     env["LOGNAME"] = pw.pw_name
     env["TERM"] = wldm.policy.DEFAULT_TERM
+    env["WLDM_ROLE"] = "greeter"
 
     env.setdefault("XDG_RUNTIME_DIR", f"/run/user/{pw.pw_uid}")
 
@@ -119,7 +119,7 @@ def build_greeter_argv() -> List[str]:
     if not argv:
         raise RuntimeError("invalid greeter command: empty command")
 
-    return [*argv, *modules.command.internal_command_prefix(), "greeter"]
+    return [*argv, *modules.command.internal_command_prefix()]
 
 
 def prepare_greeter_terminal(ttydev: wldm.tty.TTYdevice) -> None:
@@ -245,27 +245,50 @@ def run_greeter_session(pw: pwd.struct_passwd,
     return wldm.EX_FAILURE
 
 
-def cmd_main(parser: argparse.Namespace) -> int:
+def _required_env(name: str) -> str:
+    value = os.environ.get(name, "").strip()
+    if not value:
+        raise RuntimeError(f"{name} is required for greeter-session")
+    return value
+
+
+def _required_int_env(name: str) -> int:
+    value = _required_env(name)
     try:
-        pw = pwd.getpwnam(parser.username)
+        return int(value)
+    except ValueError as exc:
+        raise RuntimeError(f"{name} must be an integer: {value}") from exc
+
+
+def cmd_main() -> int:
+    try:
+        username = _required_env("WLDM_GREETER_USER")
+        group = _required_env("WLDM_GREETER_GROUP")
+        tty = _required_int_env("WLDM_GREETER_TTY")
+        pam_service = _required_env("WLDM_GREETER_PAM_SERVICE")
+        pw = pwd.getpwnam(username)
 
     except KeyError:
-        logger.critical("User '%s' not found.", parser.username)
+        logger.critical("User '%s' not found.", username)
+        return wldm.EX_FAILURE
+
+    except RuntimeError as e:
+        logger.critical("[!] %s", e)
         return wldm.EX_FAILURE
 
     try:
-        gid = grp.getgrnam(parser.group).gr_gid
+        gid = grp.getgrnam(group).gr_gid
 
     except KeyError:
-        logger.critical("Group '%s' not found.", parser.group)
+        logger.critical("Group '%s' not found.", group)
         return wldm.EX_FAILURE
 
     redirect_greeter_stderr()
 
     try:
-        return run_greeter_session(pw, gid, parser.pam_service, parser.tty)
+        return run_greeter_session(pw, gid, pam_service, tty)
 
     except Exception as e:
         logger.exception("unexpected greeter session failure for user=%s group=%s tty=%s pam-service=%s: %s",
-                         parser.username, parser.group, parser.tty, parser.pam_service, e)
+                         username, group, tty, pam_service, e)
         return wldm.EX_FAILURE

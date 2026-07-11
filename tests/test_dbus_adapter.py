@@ -404,6 +404,8 @@ def test_cmd_main_runs_adapter(monkeypatch):
     calls = {}
 
     monkeypatch.setenv("WLDM_DBUS_LOG_PATH", "/tmp/wldm/dbus.log")
+    monkeypatch.setenv("WLDM_DBUS_USER", "gdm")
+    monkeypatch.setenv("WLDM_DBUS_SERVICE", "org.freedesktop.DisplayManager")
     monkeypatch.setattr(wldm.dbus_adapter.pwd, "getpwnam", lambda username: pw)
     monkeypatch.setattr(
         wldm.dbus_adapter.wldm,
@@ -418,9 +420,7 @@ def test_cmd_main_runs_adapter(monkeypatch):
         ) or wldm.dbus_adapter.wldm.EX_SUCCESS,
     )
 
-    result = wldm.dbus_adapter.cmd_main(
-        SimpleNamespace(username="gdm", service="org.freedesktop.DisplayManager")
-    )
+    result = wldm.dbus_adapter.cmd_main()
 
     assert result == wldm.dbus_adapter.wldm.EX_SUCCESS
     assert calls["logger"][3] == "/tmp/wldm/dbus.log"

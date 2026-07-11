@@ -14,14 +14,19 @@ whole login flow in one privileged address space.
 The main pieces are:
 
 - `wldm` daemon: root-owned supervisor and source of truth
-- `wldm pam-worker`: blocking PAM authentication worker for one greeter
-  conversation
-- `wldm greeter-session`: PAM-backed launcher and supervisor for the greeter
-  compositor
-- `wldm greeter`: GTK login UI
-- `wldm user-session`: PAM-backed launcher for the selected user session
-- `wldm dbus-adapter`: optional unprivileged bridge from daemon state to
+- `wldm` (role: `pam-worker`): blocking PAM authentication worker for one
+  greeter conversation
+- `wldm` (role: `greeter-session`): PAM-backed launcher and supervisor for the
+  greeter compositor
+- `wldm` (role: `greeter`): GTK login UI
+- `wldm` (role: `user-session`): PAM-backed launcher for the selected user
+  session
+- `wldm` (role: `dbus-adapter`): optional unprivileged bridge from daemon state to
   `org.freedesktop.DisplayManager`
+
+Helper roles are selected through the internal `WLDM_ROLE` environment
+variable. The role labels below describe subprocess responsibilities; they are
+not public command-line subcommands.
 
 ## Process Model
 
@@ -30,10 +35,10 @@ Typical runtime layout:
 ```text
 systemd
 └─ wldm                 (root daemon)
-   ├─ wldm pam-worker
-   └─ wldm greeter-session
+   ├─ wldm (role: pam-worker)
+   └─ wldm (role: greeter-session)
       └─ cage
-         └─ wldm greeter
+         └─ wldm (role: greeter)
 ```
 
 When D-Bus integration is enabled, the daemon also starts the adapter:
@@ -41,11 +46,11 @@ When D-Bus integration is enabled, the daemon also starts the adapter:
 ```text
 systemd
 └─ wldm                 (root daemon)
-   ├─ wldm pam-worker
-   ├─ wldm greeter-session
+   ├─ wldm (role: pam-worker)
+   ├─ wldm (role: greeter-session)
    │  └─ cage
-   │     └─ wldm greeter
-   └─ wldm dbus-adapter
+   │     └─ wldm (role: greeter)
+   └─ wldm (role: dbus-adapter)
 ```
 
 After successful authentication, the daemon also starts a user session:
@@ -53,11 +58,11 @@ After successful authentication, the daemon also starts a user session:
 ```text
 systemd
 └─ wldm                 (root daemon)
-   ├─ wldm greeter-session
+   ├─ wldm (role: greeter-session)
    │  └─ cage
-   │     └─ wldm greeter
-   ├─ wldm dbus-adapter
-   └─ wldm user-session
+   │     └─ wldm (role: greeter)
+   ├─ wldm (role: dbus-adapter)
+   └─ wldm (role: user-session)
       └─ user program / shell / compositor
 ```
 

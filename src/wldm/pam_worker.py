@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (C) 2026  Alexey Gladkov <legion@kernel.org>
 
-import argparse
 import ctypes
 import socket
 
@@ -308,8 +307,8 @@ def run_auth_session(sock: Any, service: str, username: str, tty: str) -> int:
         _unregister_broker(broker_id)
 
 
-def cmd_main(_parser: argparse.Namespace) -> int:
-    """Run the PAM worker subcommand."""
+def cmd_main() -> int:
+    """Run the PAM worker role."""
     fd = wldm.inherited_socket_fd("WLDM_SOCKET_FD")
     sock = socket.socket(fileno=fd)
 

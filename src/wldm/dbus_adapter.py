@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (C) 2026  Alexey Gladkov <legion@kernel.org>
 
-import argparse
 import os
 import pwd
 
@@ -567,27 +566,33 @@ def run_adapter(username: str, uid: int, gid: int, workdir: str, service_name: s
         client.close()
 
 
-def cmd_main(parser: argparse.Namespace) -> int:
+def cmd_main() -> int:
     log_path = os.environ.get("WLDM_DBUS_LOG_PATH", "").strip()
     if log_path:
         wldm.setup_file_logger(logger, level=logger.level, fmt="[%(asctime)s] %(message)s", path=log_path)
 
-    try:
-        pw = pwd.getpwnam(parser.username)
-
-    except KeyError:
-        logger.critical("User '%s' not found.", parser.username)
+    username = os.environ.get("WLDM_DBUS_USER", "").strip()
+    service = os.environ.get("WLDM_DBUS_SERVICE", "").strip()
+    if not username or not service:
+        logger.critical("[!] WLDM_DBUS_USER and WLDM_DBUS_SERVICE are required for dbus-adapter")
         return wldm.EX_FAILURE
 
     try:
-        return run_adapter(parser.username, pw.pw_uid, pw.pw_gid, pw.pw_dir, parser.service)
+        pw = pwd.getpwnam(username)
+
+    except KeyError:
+        logger.critical("User '%s' not found.", username)
+        return wldm.EX_FAILURE
+
+    try:
+        return run_adapter(username, pw.pw_uid, pw.pw_gid, pw.pw_dir, service)
 
     except RuntimeError as e:
         logger.critical("dbus-adapter startup failed for user=%s service=%s: %s",
-                        parser.username, parser.service, e)
+                        username, service, e)
         return wldm.EX_FAILURE
 
     except Exception as e:
         logger.exception("unexpected dbus adapter failure for user=%s service=%s: %s",
-                         parser.username, parser.service, e)
+                         username, service, e)
         return wldm.EX_FAILURE

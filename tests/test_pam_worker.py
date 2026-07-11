@@ -300,7 +300,7 @@ def test_cmd_main_reads_start_message_and_calls_run_auth_session(monkeypatch):
 
         monkeypatch.setattr(pam_worker, "run_auth_session", fake_run_auth_session)
 
-        result = pam_worker.cmd_main(SimpleNamespace())
+        result = pam_worker.cmd_main()
     finally:
         left.close()
 
@@ -317,7 +317,7 @@ def test_cmd_main_rejects_non_start_message(monkeypatch):
         monkeypatch.setattr(pam_worker.wldm, "inherited_socket_fd", lambda env_name: right_fd)
 
         try:
-            pam_worker.cmd_main(SimpleNamespace())
+            pam_worker.cmd_main()
         except RuntimeError as exc:
             assert "expected start message" in str(exc)
         else:
@@ -335,7 +335,7 @@ def test_cmd_main_rejects_closed_channel_before_start(monkeypatch):
         monkeypatch.setattr(pam_worker.wldm, "inherited_socket_fd", lambda env_name: right_fd)
 
         try:
-            pam_worker.cmd_main(SimpleNamespace())
+            pam_worker.cmd_main()
         except RuntimeError as exc:
             assert "before start" in str(exc)
         else:

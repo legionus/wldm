@@ -63,39 +63,21 @@ def cmd_daemon(cmdargs: argparse.Namespace) -> int:
     return wldm_daemon.cmd_main(cmdargs)
 
 
-def cmd_greeter(cmdargs: argparse.Namespace) -> int:
-    set_process_title("greeter")
-    wldm.audit.setup_audit_hook("greeter")
-    import wldm.greeter as wldm_greeter
-    return wldm_greeter.cmd_main(cmdargs)
+def run_internal_role(role: str, module_name: str) -> int:
+    set_process_title(role)
+    wldm.audit.setup_audit_hook(role)
+    module = importlib.import_module(module_name)
+    ret: int = getattr(module, "cmd_main")()
+    return ret
 
 
-def cmd_user_session(cmdargs: argparse.Namespace) -> int:
-    set_process_title("user-session")
-    wldm.audit.setup_audit_hook("user-session")
-    import wldm.user_session as wldm_user_session
-    return wldm_user_session.cmd_main(cmdargs)
-
-
-def cmd_greeter_session(cmdargs: argparse.Namespace) -> int:
-    set_process_title("greeter-session")
-    wldm.audit.setup_audit_hook("greeter-session")
-    import wldm.greeter_session as wldm_greeter_session
-    return wldm_greeter_session.cmd_main(cmdargs)
-
-
-def cmd_dbus_adapter(cmdargs: argparse.Namespace) -> int:
-    set_process_title("dbus-adapter")
-    wldm.audit.setup_audit_hook("dbus-adapter")
-    import wldm.dbus_adapter as wldm_dbus_adapter
-    return wldm_dbus_adapter.cmd_main(cmdargs)
-
-
-def cmd_pam_worker(cmdargs: argparse.Namespace) -> int:
-    set_process_title("pam-worker")
-    wldm.audit.setup_audit_hook("pam-worker")
-    import wldm.pam_worker as wldm_pam_worker
-    return wldm_pam_worker.cmd_main(cmdargs)
+INTERNAL_ROLES = {
+    "greeter": "wldm.greeter",
+    "user-session": "wldm.user_session",
+    "greeter-session": "wldm.greeter_session",
+    "dbus-adapter": "wldm.dbus_adapter",
+    "pam-worker": "wldm.pam_worker",
+}
 
 
 def setup_parser() -> argparse.ArgumentParser:
@@ -119,83 +101,21 @@ The wldm is a display manager that implements all significant features.
                         default=None,
                         help="use tty device number.")
 
-    subparsers = parser.add_subparsers(dest="subcmd", help="")
-
-    # command: greeter
-    sp_description = """\
-allows selection of which application to start at login.
-
-"""
-    sp = subparsers.add_parser("greeter",
-                               formatter_class=argparse.RawTextHelpFormatter,
-                               description=sp_description, help=sp_description,
-                               epilog=epilog, add_help=False)
-    sp.set_defaults(func=cmd_greeter)
-    wldm.add_common_arguments(sp)
-
-    # command: user-session
-    sp_description = """\
-opens a session for the user.
-
-"""
-    sp = subparsers.add_parser("user-session",
-                               formatter_class=argparse.RawTextHelpFormatter,
-                               description=sp_description, help=sp_description,
-                               epilog=epilog, add_help=False)
-    sp.set_defaults(func=cmd_user_session)
-    wldm.add_common_arguments(sp)
-    sp.add_argument("username", help="user to login")
-
-    # command: greeter-session
-    sp_description = """\
-opens a PAM-backed session for the greeter.
-
-"""
-    sp = subparsers.add_parser("greeter-session",
-                               formatter_class=argparse.RawTextHelpFormatter,
-                               description=sp_description, help=sp_description,
-                               epilog=epilog, add_help=False)
-    sp.set_defaults(func=cmd_greeter_session)
-    wldm.add_common_arguments(sp)
-    sp.add_argument("--tty", dest="tty", metavar="NUM", action="store", type=int,
-                    required=True,
-                    help="use tty device number.")
-    sp.add_argument("--pam-service", dest="pam_service", action="store",
-                    default="system-login",
-                    help="PAM service used to create the greeter session.")
-    sp.add_argument("username", help="greeter user")
-    sp.add_argument("group", help="greeter group")
-
-    # command: dbus-adapter
-    sp_description = """\
-bridges daemon state to an external D-Bus adapter.
-
-"""
-    sp = subparsers.add_parser("dbus-adapter",
-                               formatter_class=argparse.RawTextHelpFormatter,
-                               description=sp_description, help=sp_description,
-                               epilog=epilog, add_help=False)
-    sp.set_defaults(func=cmd_dbus_adapter)
-    wldm.add_common_arguments(sp)
-    sp.add_argument("username", help="adapter user")
-    sp.add_argument("service", help="D-Bus service name")
-
-    # command: pam-worker
-    sp_description = """\
-runs a blocking PAM authentication worker for one greeter conversation.
-
-"""
-    sp = subparsers.add_parser("pam-worker",
-                               formatter_class=argparse.RawTextHelpFormatter,
-                               description=sp_description, help=sp_description,
-                               epilog=epilog, add_help=False)
-    sp.set_defaults(func=cmd_pam_worker)
-    wldm.add_common_arguments(sp)
-
     return parser
 
 
 def cmd() -> int:
+    role = os.environ.get("WLDM_ROLE", "").strip()
+    if role:
+        wldm.setup_verbosity(argparse.Namespace(verbose=0, quiet=False))
+        module_name = INTERNAL_ROLES.get(role)
+
+        if module_name is None:
+            logger.critical("unknown internal role: %s", role)
+            return wldm.EX_FAILURE
+
+        return run_internal_role(role, module_name)
+
     parser = setup_parser()
     cmdargs = parser.parse_args()
 

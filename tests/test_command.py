@@ -9,10 +9,6 @@ import types
 import wldm
 import wldm.command
 import wldm.daemon
-import wldm.dbus_adapter
-import wldm.pam_worker
-import wldm.greeter_session
-import wldm.user_session
 
 
 def patch_role_setup(monkeypatch):
@@ -28,49 +24,15 @@ def test_setup_parser_defaults_to_daemon():
     assert args.func is wldm.command.cmd_daemon
 
 
-def test_user_session_subcommand_parses_username():
+def test_setup_parser_rejects_internal_subcommands():
     parser = wldm.command.setup_parser()
 
-    args = parser.parse_args(["user-session", "alice"])
-
-    assert args.func is wldm.command.cmd_user_session
-    assert args.username == "alice"
-
-
-def test_greeter_session_subcommand_parses_arguments():
-    parser = wldm.command.setup_parser()
-
-    args = parser.parse_args([
-        "greeter-session",
-        "--tty", "7",
-        "--pam-service", "system-login",
-        "gdm",
-        "gdm",
-    ])
-
-    assert args.func is wldm.command.cmd_greeter_session
-    assert args.tty == 7
-    assert args.pam_service == "system-login"
-    assert args.username == "gdm"
-    assert args.group == "gdm"
-
-
-def test_dbus_adapter_subcommand_parses_arguments():
-    parser = wldm.command.setup_parser()
-
-    args = parser.parse_args(["dbus-adapter", "gdm", "org.freedesktop.DisplayManager"])
-
-    assert args.func is wldm.command.cmd_dbus_adapter
-    assert args.username == "gdm"
-    assert args.service == "org.freedesktop.DisplayManager"
-
-
-def test_pam_worker_subcommand_parses_arguments():
-    parser = wldm.command.setup_parser()
-
-    args = parser.parse_args(["pam-worker"])
-
-    assert args.func is wldm.command.cmd_pam_worker
+    try:
+        parser.parse_args(["greeter"])
+    except SystemExit as exc:
+        assert exc.code == 2
+    else:
+        raise AssertionError("internal subcommands should not be public CLI")
 
 
 def test_cmd_daemon_dispatches_to_module(monkeypatch):
@@ -82,25 +44,28 @@ def test_cmd_daemon_dispatches_to_module(monkeypatch):
     assert result == 17
 
 
-def test_cmd_greeter_dispatches_to_module(monkeypatch):
-    patch_role_setup(monkeypatch)
-    module = types.ModuleType("wldm.greeter")
-    module.cmd_main = lambda ns: 13
-    monkeypatch.setitem(sys.modules, "wldm.greeter", module)
-    monkeypatch.setattr(wldm, "greeter", module, raising=False)
+def test_run_internal_role_dispatches_to_module(monkeypatch):
+    calls = []
+    module = types.ModuleType("wldm.fake_role")
+    module.cmd_main = lambda: calls.append("cmd_main") or 13
 
-    result = wldm.command.cmd_greeter(SimpleNamespace())
+    monkeypatch.setattr(wldm.command, "set_process_title", lambda role: calls.append(("title", role)))
+    monkeypatch.setattr(wldm.command.wldm.audit, "setup_audit_hook", lambda role: calls.append(("audit", role)))
+    monkeypatch.setattr(
+        wldm.command.importlib,
+        "import_module",
+        lambda module_name: calls.append(("import", module_name)) or module,
+    )
+
+    result = wldm.command.run_internal_role("fake-role", "wldm.fake_role")
 
     assert result == 13
-
-
-def test_cmd_user_session_dispatches_to_module(monkeypatch):
-    patch_role_setup(monkeypatch)
-    monkeypatch.setattr(wldm.user_session, "cmd_main", lambda ns: 14)
-
-    result = wldm.command.cmd_user_session(SimpleNamespace())
-
-    assert result == 14
+    assert calls == [
+        ("title", "fake-role"),
+        ("audit", "fake-role"),
+        ("import", "wldm.fake_role"),
+        "cmd_main",
+    ]
 
 
 def test_set_process_title_is_noop_without_module(monkeypatch):
@@ -194,6 +159,28 @@ def test_cmd_dispatches_to_selected_handler(monkeypatch):
     assert wldm.command.cmd() == 23
 
 
+def test_cmd_dispatches_internal_role_from_environment(monkeypatch):
+    calls = []
+    monkeypatch.setenv("WLDM_ROLE", "pam-worker")
+    monkeypatch.setitem(wldm.command.INTERNAL_ROLES, "pam-worker", "wldm.fake_pam_worker")
+    monkeypatch.setattr(
+        wldm.command,
+        "run_internal_role",
+        lambda role, module_name: calls.append((role, module_name)) or 20,
+    )
+    monkeypatch.setattr(wldm.command.wldm, "setup_verbosity", lambda ns: calls.append(("verbosity", ns.verbose, ns.quiet)))
+
+    assert wldm.command.cmd() == 20
+    assert calls == [("verbosity", 0, False), ("pam-worker", "wldm.fake_pam_worker")]
+
+
+def test_cmd_rejects_unknown_internal_role(monkeypatch):
+    monkeypatch.setenv("WLDM_ROLE", "unknown")
+    monkeypatch.setattr(wldm.command.wldm, "setup_verbosity", lambda ns: None)
+
+    assert wldm.command.cmd() == wldm.command.wldm.EX_FAILURE
+
+
 def test_cmd_prints_help_and_fails_without_handler(monkeypatch):
     output = io.StringIO()
     args = SimpleNamespace(verbose=0, quiet=False)
@@ -207,30 +194,3 @@ def test_cmd_prints_help_and_fails_without_handler(monkeypatch):
 
     assert wldm.command.cmd() == wldm.command.wldm.EX_FAILURE
     assert output.getvalue() == "help\n"
-
-
-def test_cmd_greeter_session_dispatches_to_module(monkeypatch):
-    patch_role_setup(monkeypatch)
-    monkeypatch.setattr(wldm.greeter_session, "cmd_main", lambda ns: 18)
-
-    result = wldm.command.cmd_greeter_session(SimpleNamespace())
-
-    assert result == 18
-
-
-def test_cmd_dbus_adapter_dispatches_to_module(monkeypatch):
-    patch_role_setup(monkeypatch)
-    monkeypatch.setattr(wldm.dbus_adapter, "cmd_main", lambda ns: 19)
-
-    result = wldm.command.cmd_dbus_adapter(SimpleNamespace())
-
-    assert result == 19
-
-
-def test_cmd_pam_worker_dispatches_to_module(monkeypatch):
-    patch_role_setup(monkeypatch)
-    monkeypatch.setattr(wldm.pam_worker, "cmd_main", lambda ns: 20)
-
-    result = wldm.command.cmd_pam_worker(SimpleNamespace())
-
-    assert result == 20

@@ -550,10 +550,11 @@ async def handle_request_async(state: DaemonState,
         # Sessions are tracked independently from the greeter so the daemon can
         # notify the UI when they finish and clean them up during shutdown.
         proc = await asyncio.create_subprocess_exec(
-            *state.internal_command, "user-session", "--",
-            outcome.session_username,
+            *state.internal_command,
             env=wldm.internal_helper_environ({
+                "WLDM_ROLE": "user-session",
                 "WLDM_SEAT": state.seat,
+                "WLDM_SESSION_USER": outcome.session_username,
                 "WLDM_SESSION_COMMAND": outcome.session_command,
                 "WLDM_SESSION_DESKTOP_NAMES": ":".join(outcome.session_desktop_names or []),
                 "WLDM_SESSION_NAME": outcome.session_name,
@@ -695,11 +696,16 @@ async def start_greeter(state: DaemonState,
     greeter_user = cfg.get_str("greeter", "user")
     greeter_group = cfg.get_str("greeter", "group")
     env = wldm.internal_helper_environ({
+        "WLDM_ROLE": "greeter-session",
         "WLDM_SEAT": state.seat,
         "WLDM_DATA_DIR": cfg.get_str("greeter", "data-dir"),
         "WLDM_LOCALE_DIR": cfg.get_str("greeter", "locale-dir"),
         "WLDM_THEME": cfg.get_str("greeter", "theme"),
         "WLDM_GREETER_COMMAND": cfg.get_str("greeter", "command"),
+        "WLDM_GREETER_TTY": str(greeter_tty),
+        "WLDM_GREETER_PAM_SERVICE": greeter_pam_service,
+        "WLDM_GREETER_USER": greeter_user,
+        "WLDM_GREETER_GROUP": greeter_group,
         "WLDM_GREETER_SESSION_DIRS": cfg.get_str("greeter", "session-dirs"),
         "WLDM_GREETER_USER_SESSION_DIR": cfg.get_str("greeter", "user-session-dir"),
         "WLDM_ACTIONS": ":".join(configured_power_actions(cfg)),
@@ -716,12 +722,7 @@ async def start_greeter(state: DaemonState,
     env.update(keyboard_environment(cfg))
 
     return await start_client(state, "greeter", cfg,
-        [
-            *state.internal_command, "greeter-session",
-            "--tty", str(greeter_tty),
-            "--pam-service", greeter_pam_service,
-            greeter_user, greeter_group,
-        ],
+        [*state.internal_command],
         env,
     )
 
@@ -747,8 +748,13 @@ async def start_dbus_adapter(state: DaemonState,
 
     try:
         return await start_client(state, "dbus-adapter", cfg,
-            [*state.internal_command, "dbus-adapter", user, service],
-            wldm.internal_helper_environ({"WLDM_DBUS_LOG_PATH": log_path}),
+            [*state.internal_command],
+            wldm.internal_helper_environ({
+                "WLDM_ROLE": "dbus-adapter",
+                "WLDM_DBUS_USER": user,
+                "WLDM_DBUS_SERVICE": service,
+                "WLDM_DBUS_LOG_PATH": log_path,
+            }),
         )
 
     except Exception as e:

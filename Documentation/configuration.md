@@ -75,7 +75,9 @@ baking those paths into the main config.
 - `command`
   Greeter compositor launcher prefix. Default: `cage -s -m last --`.
   `greeter-session` reads this string from the daemon environment and appends
-  `wldm greeter` automatically.
+  the hardened internal `wldm` command prefix. The final greeter role is
+  selected through daemon-provided `WLDM_ROLE=greeter`, not through a public
+  CLI subcommand.
 - `pam-service`
   PAM service used for the greeter session. Default: `system-login`.
 - `max-restarts`
@@ -132,7 +134,7 @@ Relative paths are resolved against the directory that contains the loaded
 ## `[dbus]`
 
 - `enabled`
-  Enable the optional `wldm dbus-adapter` subprocess. Default: `no`.
+  Enable the optional D-Bus adapter subprocess. Default: `no`.
 - `user`
   User account used to run the adapter process. This must stay aligned with the
   installed system bus policy file. If you change it in `/etc/wldm.ini`, update
@@ -181,8 +183,7 @@ Instead, it exposes the configured values to `greeter.command`, which lets
 
 ## Verbosity
 
-`wldm`, `wldm greeter`, `wldm user-session`, `wldm greeter-session`, and
-`wldm dbus-adapter` all accept the common CLI flags:
+The public `wldm` daemon command accepts these common CLI flags:
 
 - `-v`
   Set log level to `INFO`.
@@ -201,9 +202,8 @@ Examples:
 wldm -vv
 ```
 
-```bash
-WLDM_VERBOSITY=2 ./wldm.sh greeter
-```
+Internal helpers are daemon entrypoints selected through `WLDM_ROLE`; they are
+not intended to be started directly from a shell.
 
 ## Example
 

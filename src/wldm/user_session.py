@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (C) 2026  Alexey Gladkov <legion@kernel.org>
 
-import argparse
 import contextlib
 import os
 import pwd
@@ -361,12 +360,17 @@ def finish_user_session(pamh: Optional[Any]) -> None:
         wldm.pam.end_pam(pamh)
 
 
-def cmd_main(parser: argparse.Namespace) -> int:
+def cmd_main() -> int:
     cfg = wldm.config.read_config()
+    username = os.environ.get("WLDM_SESSION_USER", "").strip()
+    if not username:
+        logger.critical("[!] WLDM_SESSION_USER is required for user-session")
+        return wldm.EX_FAILURE
+
     try:
-        pw = pwd.getpwnam(parser.username)
+        pw = pwd.getpwnam(username)
     except KeyError:
-        logger.critical("User '%s' not found.", parser.username)
+        logger.critical("User '%s' not found.", username)
         return wldm.EX_FAILURE
 
     wrapper = cfg.get_str("session", "execute")

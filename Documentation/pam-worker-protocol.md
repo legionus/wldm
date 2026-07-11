@@ -1,7 +1,7 @@
 # PAM Worker Protocol
 
 This document describes the private IPC protocol between the `wldm` daemon and
-the `wldm pam-worker` helper.
+the daemon-started PAM worker helper.
 
 This is an internal protocol, not a public compatibility promise.
 
@@ -19,6 +19,7 @@ For the daemon/greeter protocol, see
 
 - The daemon creates one private connected `socketpair()` for each worker.
 - The worker end is inherited through `WLDM_SOCKET_FD`.
+- The worker role is selected through `WLDM_ROLE=pam-worker`.
 - There is no pathname listener.
 
 The implementation lives in

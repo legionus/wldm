@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (C) 2026  Alexey Gladkov <legion@kernel.org>
 
-import argparse
 import gettext
 import locale
 import os
@@ -447,7 +446,7 @@ class GreeterApp(greeter_ui.GreeterUI):
         self.request_system_action(greeter_protocol.ACTION_HIBERNATE, _("Hibernating..."))
 
 
-def cmd_main(_parser: argparse.Namespace) -> int:
+def cmd_main() -> int:
     global resource_path
 
     _setup_greeter_logging()

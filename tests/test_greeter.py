@@ -1638,7 +1638,7 @@ def test_cmd_main_validates_resources_path(monkeypatch, tmp_path):
     greeter = load_greeter_module(monkeypatch)
 
     monkeypatch.delenv("WLDM_DATA_DIR", raising=False)
-    assert greeter.cmd_main(types.SimpleNamespace()) == greeter.wldm.EX_FAILURE
+    assert greeter.cmd_main() == greeter.wldm.EX_FAILURE
 
     data_dir = tmp_path
     (data_dir / "resources").mkdir()
@@ -1657,7 +1657,7 @@ def test_cmd_main_validates_resources_path(monkeypatch, tmp_path):
 
     monkeypatch.setattr(greeter, "GreeterApp", FakeGreeterApp)
 
-    assert greeter.cmd_main(types.SimpleNamespace()) == greeter.wldm.EX_SUCCESS
+    assert greeter.cmd_main() == greeter.wldm.EX_SUCCESS
     assert run_calls == [("init",), ("run",)]
 
 
@@ -1963,7 +1963,7 @@ def test_cmd_main_loads_css_when_present(monkeypatch, tmp_path):
 
     monkeypatch.setattr(greeter, "GreeterApp", FakeGreeterApp)
 
-    assert greeter.cmd_main(types.SimpleNamespace()) == greeter.wldm.EX_SUCCESS
+    assert greeter.cmd_main() == greeter.wldm.EX_SUCCESS
     assert css_loaded == [str(css_path)]
     assert len(provider_calls) == 1
     assert run_calls == [("init",), ("run",)]

@@ -39,6 +39,8 @@ def patch_parent_session_runtime(monkeypatch, *, tty_class, wait_status, critica
     monkeypatch.setattr(wldm.user_session.os, "WIFEXITED", lambda status: True)
     monkeypatch.setattr(wldm.user_session.os, "WEXITSTATUS", lambda status: wait_status)
     monkeypatch.setattr(wldm.user_session.os, "close", lambda fd: None)
+    monkeypatch.setattr(wldm.wtmp, "login", lambda tty_path, username, host="": None)
+    monkeypatch.setattr(wldm.wtmp, "logout", lambda tty_path, host="": None)
     monkeypatch.setattr(wldm.user_session, "finish_user_session", lambda pamh: None)
     if criticals is not None:
         monkeypatch.setattr(
@@ -164,7 +166,9 @@ def test_cmd_main_fails_without_session_command(monkeypatch):
         "run_user_session",
         lambda *args: calls.append(args) or wldm.EX_FAILURE,
     )
-    result = wldm.user_session.cmd_main(SimpleNamespace(username="alice"))
+    monkeypatch.setenv("WLDM_SESSION_USER", "alice")
+
+    result = wldm.user_session.cmd_main()
 
     assert result == wldm.EX_FAILURE
     assert calls == [(pw, "custom-login", "", "", "")]
@@ -270,7 +274,9 @@ def test_cmd_main_passes_wrapper_paths_to_run_user_session(monkeypatch):
 
     monkeypatch.setattr(wldm.user_session, "run_user_session", fake_run_user_session)
 
-    result = wldm.user_session.cmd_main(SimpleNamespace(username="alice"))
+    monkeypatch.setenv("WLDM_SESSION_USER", "alice")
+
+    result = wldm.user_session.cmd_main()
 
     assert result is None
     assert calls["pw"] == pw
@@ -330,7 +336,9 @@ def test_cmd_main_fails_for_unknown_user(monkeypatch):
         lambda username: (_ for _ in ()).throw(KeyError(username)),
     )
 
-    result = wldm.user_session.cmd_main(SimpleNamespace(username="missing"))
+    monkeypatch.setenv("WLDM_SESSION_USER", "missing")
+
+    result = wldm.user_session.cmd_main()
 
     assert result == wldm.EX_FAILURE
 

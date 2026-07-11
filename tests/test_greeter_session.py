@@ -18,6 +18,13 @@ def patch_cmd_main_runtime(monkeypatch, *, pw=None, gid=1001, run_result=wldm.gr
     monkeypatch.setattr(wldm.greeter_session, "run_greeter_session", run_result)
 
 
+def set_greeter_session_env(monkeypatch, *, username="gdm", group="gdm", tty="7", pam_service="system-login"):
+    monkeypatch.setenv("WLDM_GREETER_USER", username)
+    monkeypatch.setenv("WLDM_GREETER_GROUP", group)
+    monkeypatch.setenv("WLDM_GREETER_TTY", tty)
+    monkeypatch.setenv("WLDM_GREETER_PAM_SERVICE", pam_service)
+
+
 class DummyContext:
     def __init__(self, value):
         self.value = value
@@ -80,6 +87,7 @@ def test_new_greeter_environ_preserves_safe_base_env_and_adds_runtime_dir(monkey
     assert env["XKB_DEFAULT_OPTIONS"] == "grp:alt_shift_toggle"
     assert env["HOME"] == "/var/lib/gdm"
     assert env["USER"] == "gdm"
+    assert env["WLDM_ROLE"] == "greeter"
     assert env["XDG_RUNTIME_DIR"] == "/run/user/1001"
     assert env["LANG"] == "C.UTF-8"
     assert "XDG_SESSION_ID" not in env
@@ -98,6 +106,7 @@ def test_new_greeter_environ_falls_back_to_user_runtime_dir(monkeypatch):
 def test_cmd_main_runs_greeter_session(monkeypatch):
     pw = pwd.struct_passwd(("gdm", "x", 1001, 1001, "", "/var/lib/gdm", "/bin/false"))
     calls = {}
+    set_greeter_session_env(monkeypatch)
 
     patch_cmd_main_runtime(
         monkeypatch,
@@ -111,14 +120,7 @@ def test_cmd_main_runs_greeter_session(monkeypatch):
         }) or wldm.greeter_session.wldm.EX_SUCCESS,
     )
 
-    result = wldm.greeter_session.cmd_main(
-        SimpleNamespace(
-            username="gdm",
-            group="gdm",
-            tty=7,
-            pam_service="system-login",
-        )
-    )
+    result = wldm.greeter_session.cmd_main()
 
     assert result == wldm.greeter_session.wldm.EX_SUCCESS
     assert calls["redirected"] is True
@@ -144,7 +146,6 @@ def test_build_greeter_argv_uses_daemon_command(monkeypatch):
         "--",
         "/usr/bin/python3",
         "/srv/wldm/src/wldm/command.py",
-        "greeter",
     ]
 
 
@@ -297,38 +298,35 @@ def test_finish_greeter_session_handles_close_errors(monkeypatch):
 
 
 def test_cmd_main_returns_failure_for_unknown_user(monkeypatch):
+    set_greeter_session_env(monkeypatch, username="missing")
     monkeypatch.setattr(wldm.greeter_session.pwd, "getpwnam", lambda username: (_ for _ in ()).throw(KeyError(username)))
 
-    result = wldm.greeter_session.cmd_main(
-        SimpleNamespace(username="missing", group="gdm", tty=7, pam_service="system-login")
-    )
+    result = wldm.greeter_session.cmd_main()
 
     assert result == wldm.greeter_session.wldm.EX_FAILURE
 
 
 def test_cmd_main_returns_failure_for_unknown_group(monkeypatch):
+    set_greeter_session_env(monkeypatch, group="missing")
     pw = pwd.struct_passwd(("gdm", "x", 1001, 1001, "", "/var/lib/gdm", "/bin/false"))
     monkeypatch.setattr(wldm.greeter_session.pwd, "getpwnam", lambda username: pw)
     monkeypatch.setattr(wldm.greeter_session.grp, "getgrnam", lambda group: (_ for _ in ()).throw(KeyError(group)))
 
-    result = wldm.greeter_session.cmd_main(
-        SimpleNamespace(username="gdm", group="missing", tty=7, pam_service="system-login")
-    )
+    result = wldm.greeter_session.cmd_main()
 
     assert result == wldm.greeter_session.wldm.EX_FAILURE
 
 
 def test_cmd_main_returns_failure_on_unexpected_exception(monkeypatch):
     pw = pwd.struct_passwd(("gdm", "x", 1001, 1001, "", "/var/lib/gdm", "/bin/false"))
+    set_greeter_session_env(monkeypatch)
     patch_cmd_main_runtime(
         monkeypatch,
         pw=pw,
         run_result=lambda *args: (_ for _ in ()).throw(RuntimeError("boom")),
     )
 
-    result = wldm.greeter_session.cmd_main(
-        SimpleNamespace(username="gdm", group="gdm", tty=7, pam_service="system-login")
-    )
+    result = wldm.greeter_session.cmd_main()
 
     assert result == wldm.greeter_session.wldm.EX_FAILURE
 
@@ -394,5 +392,9 @@ def test_run_greeter_session_child_exec_preserves_passed_socket_fd(monkeypatch):
     assert calls["drop_privileges"] == ("gdm", 32, 32, "/var/lib/gdm")
     assert calls["argv_after_drop"] is True
     assert calls["keep_fds"] == (13,)
-    assert calls["execvpe"] == ("cage", ["cage", "--", "greeter"], {"PATH": "/usr/bin", "WLDM_SOCKET_FD": "13"})
+    assert calls["execvpe"] == (
+        "cage",
+        ["cage", "--", "greeter"],
+        {"PATH": "/usr/bin", "WLDM_SOCKET_FD": "13"},
+    )
     assert calls["closed_fds"] == [13]

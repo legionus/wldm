@@ -9,9 +9,9 @@ The current greeter path is graphical:
 
 ```text
 wldm daemon
-└─ wldm greeter-session
+└─ wldm (role: greeter-session)
    └─ cage
-      └─ wldm greeter
+      └─ wldm (role: greeter)
 ```
 
 That keeps the GTK greeter out of the root daemon and gives the greeter a real
