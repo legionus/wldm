@@ -22,11 +22,11 @@ from gi.repository import Gtk, Gdk, GLib  # type: ignore[import-untyped]
 # pylint: disable-next=wrong-import-position
 import wldm
 # pylint: disable-next=wrong-import-position
-import wldm.greeter_auth as greeter_auth
+import wldm.greeter.auth as greeter_auth
 # pylint: disable-next=wrong-import-position
-import wldm.greeter_client as greeter_client
+import wldm.greeter.client as greeter_client
 # pylint: disable-next=wrong-import-position
-import wldm.greeter_ui as greeter_ui
+import wldm.greeter.gtk.ui as greeter_ui
 # pylint: disable-next=wrong-import-position
 import wldm.ipc_client
 # pylint: disable-next=wrong-import-position

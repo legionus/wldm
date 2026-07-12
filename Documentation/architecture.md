@@ -120,9 +120,9 @@ It is responsible for:
 
 ### Greeter UI
 
-[`src/wldm/greeter.py`](../src/wldm/greeter.py) is an unprivileged GTK
-application running inside the greeter compositor. It does not perform
-authentication itself.
+[`src/wldm/greeter/gtk/app.py`](../src/wldm/greeter/gtk/app.py) is an
+unprivileged GTK application running inside the greeter compositor. It does not
+perform authentication itself.
 
 It is responsible for:
 

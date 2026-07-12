@@ -114,7 +114,7 @@ def test_available_actions_reads_environment(monkeypatch):
 
 def test_keyboard_state_reads_active_layout(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
-    greeter_keyboard = importlib.import_module("wldm.greeter_keyboard")
+    greeter_keyboard = importlib.import_module("wldm.greeter.gtk.keyboard")
 
     class FakeKeyboard:
         def get_layout_names(self):
@@ -145,7 +145,7 @@ def test_keyboard_state_reads_active_layout(monkeypatch):
 
 def test_keyboard_state_returns_empty_without_gtk418_api(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
-    greeter_keyboard = importlib.import_module("wldm.greeter_keyboard")
+    greeter_keyboard = importlib.import_module("wldm.greeter.gtk.keyboard")
 
     class FakeKeyboard:
         pass
@@ -165,7 +165,7 @@ def test_keyboard_state_returns_empty_without_gtk418_api(monkeypatch):
 
 def test_update_keyboard_indicator_sets_visibility_from_active_layout(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
-    greeter_keyboard = importlib.import_module("wldm.greeter_keyboard")
+    greeter_keyboard = importlib.import_module("wldm.greeter.gtk.keyboard")
     app = new_greeter_app(greeter, keyboard_label=DummyLabel())
 
     monkeypatch.setattr(
@@ -406,7 +406,7 @@ def test_get_session_command_handles_missing_selection(monkeypatch):
 
 def test_account_service_profile_reads_real_name(monkeypatch, tmp_path):
     greeter = load_greeter_module(monkeypatch)
-    greeter_account = importlib.import_module("wldm.greeter_account")
+    greeter_account = importlib.import_module("wldm.greeter.account")
     profile_dir = tmp_path / "AccountsService" / "users"
     profile_dir.mkdir(parents=True)
     profile_file = profile_dir / "alice"
@@ -423,7 +423,7 @@ def test_account_service_profile_reads_real_name(monkeypatch, tmp_path):
 
 def test_account_service_profile_ignores_parse_errors(monkeypatch, tmp_path):
     greeter = load_greeter_module(monkeypatch)
-    greeter_account = importlib.import_module("wldm.greeter_account")
+    greeter_account = importlib.import_module("wldm.greeter.account")
     profile_dir = tmp_path / "AccountsService" / "users"
     profile_dir.mkdir(parents=True)
     profile_file = profile_dir / "alice"
@@ -438,7 +438,7 @@ def test_account_service_profile_ignores_parse_errors(monkeypatch, tmp_path):
 
 def test_account_service_profile_ignores_oversized_files(monkeypatch, tmp_path):
     greeter = load_greeter_module(monkeypatch)
-    greeter_account = importlib.import_module("wldm.greeter_account")
+    greeter_account = importlib.import_module("wldm.greeter.account")
     profile_dir = tmp_path / "AccountsService" / "users"
     profile_dir.mkdir(parents=True)
     profile_file = profile_dir / "alice"
@@ -2041,7 +2041,7 @@ def test_system_action_buttons_send_requests(monkeypatch):
 
 def test_username_change_updates_identity_preview(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
-    greeter_account = importlib.import_module("wldm.greeter_account")
+    greeter_account = importlib.import_module("wldm.greeter.account")
     calls = []
     monkeypatch.setattr(greeter_account, "account_service_profile",
                         lambda username: {"display_name": "Alice Doe", "avatar_path": ""})
@@ -2068,7 +2068,7 @@ def test_username_change_updates_identity_preview(monkeypatch):
 
 def test_username_change_hides_identity_preview_without_accountsservice_profile(monkeypatch):
     greeter = load_greeter_module(monkeypatch)
-    greeter_account = importlib.import_module("wldm.greeter_account")
+    greeter_account = importlib.import_module("wldm.greeter.account")
     monkeypatch.setattr(greeter_account, "account_service_profile", lambda username: None)
     monkeypatch.setattr(greeter.wldm.sessions, "desktop_sessions", lambda username="": [])
 

@@ -80,9 +80,9 @@ def load_greeter_module(monkeypatch):
 
     monkeypatch.setitem(sys.modules, "gi", fake_gi)
     monkeypatch.setitem(sys.modules, "gi.repository", fake_repository)
-    sys.modules.pop("wldm.greeter", None)
+    sys.modules.pop("wldm.greeter.gtk.app", None)
 
-    module = importlib.import_module("wldm.greeter")
+    module = importlib.import_module("wldm.greeter.gtk.app")
     module._test_timeout_calls = timeout_calls  # type: ignore[attr-defined]
     return module
 

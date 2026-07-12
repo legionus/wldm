@@ -72,7 +72,7 @@ def run_internal_role(role: str, module_name: str) -> int:
 
 
 INTERNAL_ROLES = {
-    "greeter": "wldm.greeter",
+    "greeter": "wldm.greeter.gtk.app",
     "user-session": "wldm.user_session",
     "greeter-session": "wldm.greeter_session",
     "dbus-adapter": "wldm.dbus_adapter",

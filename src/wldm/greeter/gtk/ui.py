@@ -6,9 +6,9 @@ import gettext
 import time
 from typing import Any, Optional
 
-import wldm.greeter_account as greeter_account
+import wldm.greeter.account as greeter_account
 import wldm
-import wldm.greeter_keyboard as greeter_keyboard
+import wldm.greeter.gtk.keyboard as greeter_keyboard
 import wldm.sessions
 import wldm.state
 
