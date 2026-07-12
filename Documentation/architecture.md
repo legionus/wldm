@@ -120,7 +120,9 @@ It is responsible for:
 
 ### Greeter UI
 
-[`src/wldm/greeter/gtk/app.py`](../src/wldm/greeter/gtk/app.py) is an
+[`src/wldm/greeter/launcher.py`](../src/wldm/greeter/launcher.py) selects the
+greeter frontend backend. The current backend is
+[`src/wldm/greeter/gtk/app.py`](../src/wldm/greeter/gtk/app.py), an
 unprivileged GTK application running inside the greeter compositor. It does not
 perform authentication itself.
 
