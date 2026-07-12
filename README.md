@@ -19,6 +19,19 @@ options and examples, see
 - separate daemon and greeter logs
 - packaged `systemd` unit
 
+## Greeter Backends
+
+The default graphical greeter uses GTK 4. A curses backend is also available as
+a text-mode fallback when the graphical greeter cannot start.
+
+<p>
+  <img src="Documentation/greeter-gtk.png" alt="GTK greeter" width="720">
+</p>
+
+<p>
+  <img src="Documentation/greeter-curses.png" alt="curses greeter" width="720">
+</p>
+
 ## Runtime Requirements
 
 At minimum you need:
