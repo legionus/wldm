@@ -6,6 +6,7 @@ import gettext
 from typing import Any
 
 import wldm
+import wldm.greeter.contracts as greeter_contracts
 import wldm.protocol.greeter as greeter_protocol
 from wldm.gtk import read_password_secret
 
@@ -13,7 +14,7 @@ _ = gettext.gettext
 logger = wldm.logger
 
 
-def create_session_for_username(app: Any, username: str) -> str:
+def create_session_for_username(app: greeter_contracts.GreeterAuthApp, username: str) -> str:
     """Start one greeter-side auth conversation for the provided username."""
     app.set_auth_state(True)
     app.auth_username = username
@@ -28,7 +29,7 @@ def create_session_for_username(app: Any, username: str) -> str:
     return str(app.handle_conversation_answer(create_answer))
 
 
-def read_prompt_response(app: Any) -> wldm.secret.SecretBytes | None:
+def read_prompt_response(app: greeter_contracts.GreeterAuthApp) -> wldm.secret.SecretBytes | None:
     """Read one reply for the current pending auth prompt."""
     if app.password_entry is None:
         return None
@@ -66,7 +67,7 @@ def read_prompt_response(app: Any) -> wldm.secret.SecretBytes | None:
     return response
 
 
-def start_selected_session(app: Any,
+def start_selected_session(app: greeter_contracts.GreeterAuthApp,
                            command: str,
                            desktop_names: list[str],
                            name: str = "",
@@ -88,7 +89,7 @@ def start_selected_session(app: Any,
     return bool(start_answer.get("ok"))
 
 
-def handle_conversation_answer(app: Any, answer: dict[str, Any]) -> str:
+def handle_conversation_answer(app: greeter_contracts.GreeterAuthApp, answer: dict[str, Any]) -> str:
     """Advance the current greeter-side conversation state from one reply."""
     if not answer.get("ok"):
         error_message = str(answer.get("error", {}).get("message", "")) or _("Authentication failed.")
@@ -123,7 +124,7 @@ def handle_conversation_answer(app: Any, answer: dict[str, Any]) -> str:
     return "failed"
 
 
-def on_cancel_clicked(app: Any) -> None:
+def on_cancel_clicked(app: greeter_contracts.GreeterAuthApp) -> None:
     """Cancel the current staged auth flow and return to username entry."""
     if not (app.conversation_pending or app.session_ready or app.auth_username):
         return
@@ -136,7 +137,7 @@ def on_cancel_clicked(app: Any) -> None:
         app.reset_auth_flow()
 
 
-def on_login_clicked(app: Any) -> None:
+def on_login_clicked(app: greeter_contracts.GreeterAuthApp) -> None:
     """Advance or start the greeter-side staged login flow."""
     if app.username_entry is None or app.password_entry is None:
         return

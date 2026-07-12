@@ -6,24 +6,25 @@ import gettext
 from typing import Any
 
 import wldm
+import wldm.greeter.contracts as greeter_contracts
 import wldm.protocol.greeter as greeter_protocol
 
 _ = gettext.gettext
 logger = wldm.logger
 
 
-def log_protocol_error(_app: Any, context: str, raw: bytes, error: Exception) -> None:
+def log_protocol_error(_app: greeter_contracts.GreeterClientApp, context: str, raw: bytes, error: Exception) -> None:
     """Log one malformed greeter protocol message."""
     logger.critical("%s: %s; raw=%r", context, error, raw)
 
 
-def handle_connection_lost(app: Any) -> None:
+def handle_connection_lost(app: greeter_contracts.GreeterClientApp) -> None:
     """Handle loss of the daemon IPC channel."""
     app.set_status(_("Connection to daemon lost."), error=True)
     app.on_quit()
 
 
-def poll_events(app: Any, lock: Any) -> None:
+def poll_events(app: greeter_contracts.GreeterClientApp, lock: Any) -> None:
     """Poll and dispatch pending daemon events from the IPC channel."""
     connection_lost = False
     acquired = False
@@ -33,7 +34,7 @@ def poll_events(app: Any, lock: Any) -> None:
         if not acquired:
             return
 
-        while hasattr(app.client, "can_read") and app.client.can_read():
+        while app.client.can_read():
             try:
                 message = app.client.read_message()
 
@@ -64,7 +65,7 @@ def poll_events(app: Any, lock: Any) -> None:
         app.handle_connection_lost()
 
 
-def handle_event(app: Any, event: dict[str, Any]) -> None:
+def handle_event(app: greeter_contracts.GreeterClientApp, event: dict[str, Any]) -> None:
     """Handle one asynchronous daemon event."""
     if not greeter_protocol.is_event(event):
         return
@@ -112,7 +113,9 @@ def handle_event(app: Any, event: dict[str, Any]) -> None:
         app.set_status(status_message, error=bool(payload.get("failed", False)))
 
 
-def send_recv_answer(app: Any, data: dict[str, Any], lock: Any) -> dict[str, Any]:
+def send_recv_answer(app: greeter_contracts.GreeterClientApp,
+                     data: dict[str, Any],
+                     lock: Any) -> dict[str, Any]:
     """Send one request and wait for the matching daemon response."""
     answer: dict[str, Any] = {}
     connection_lost = False
