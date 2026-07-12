@@ -99,6 +99,32 @@ def _setup_greeter_i18n() -> None:
     gettext.textdomain(GETTEXT_DOMAIN)
 
 
+def _reexec_argv() -> list[str]:
+    orig_argv = getattr(sys, "orig_argv", None)
+    if isinstance(orig_argv, list) and orig_argv:
+        return [str(item) for item in orig_argv]
+
+    argv = [sys.executable]
+
+    if getattr(sys.flags, "isolated", 0):
+        argv.append("-I")
+
+    if getattr(sys.flags, "safe_path", False):
+        argv.append("-P")
+
+    argv.extend(sys.argv)
+    return argv
+
+
+def reexec_self(client: Any) -> None:
+    sock = getattr(client, "sock", None)
+    if sock is not None and hasattr(sock, "fileno"):
+        os.set_inheritable(sock.fileno(), True)
+
+    argv = _reexec_argv()
+    os.execvpe(argv[0], argv, os.environ)
+
+
 def _default_resource_path() -> str:
     data_dir = os.environ.get("WLDM_DATA_DIR", "").strip()
 
@@ -294,6 +320,9 @@ class GreeterApp(greeter_ui.GreeterUI):
 
     def handle_event(self, event: Dict[str, Any]) -> None:
         greeter_client.handle_event(self, event)
+
+    def reexec_self(self) -> None:
+        reexec_self(self.client)
 
     def run(self) -> None:
         self.app.run()

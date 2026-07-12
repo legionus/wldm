@@ -79,6 +79,10 @@ def handle_event(app: Any, event: dict[str, Any]) -> None:
         app.set_status(_("Starting session..."))
         return
 
+    if event_name == greeter_protocol.EVENT_REEXEC:
+        app.reexec_self()
+        return
+
     if event_name == greeter_protocol.EVENT_SESSION_FINISHED:
         app.set_auth_state(False)
         app.clear_conversation_state()

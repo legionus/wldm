@@ -266,6 +266,14 @@ def test_new_event_and_validators():
     assert greeter_protocol.is_event(event, name=greeter_protocol.EVENT_SESSION_FINISHED) is False
 
 
+def test_encode_and_decode_reexec_event():
+    msg = greeter_protocol.new_event(greeter_protocol.EVENT_REEXEC, {})
+
+    decoded = greeter_protocol.decode_message(greeter_protocol.encode_message(msg))
+
+    assert decoded == msg
+
+
 def test_new_request_supports_control_actions():
     poweroff = greeter_protocol.new_request(greeter_protocol.ACTION_POWEROFF, {})
     reboot = greeter_protocol.new_request(greeter_protocol.ACTION_REBOOT, {})

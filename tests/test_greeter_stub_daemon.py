@@ -22,6 +22,7 @@ def make_args(**overrides):
         "password": "secret",
         "prompt": "Password:",
         "prompt_style": "secret",
+        "reexec_after_start": False,
         "role": "greeter",
         "seat": "seat0",
         "session_result": "success",
@@ -131,6 +132,30 @@ def test_stub_daemon_sends_session_events():
         finished = read_message(right)
         assert finished["event"] == greeter_protocol.EVENT_SESSION_FINISHED
         assert finished["payload"]["failed"] is False
+    finally:
+        left.close()
+        right.close()
+
+
+def test_stub_daemon_can_send_reexec_after_start():
+    left, right = socket.socketpair()
+    try:
+        daemon = stub.StubDaemon(make_args(reexec_after_start=True, session_result="hang"), left)
+        start = greeter_protocol.new_request(
+            greeter_protocol.ACTION_START_SESSION,
+            {
+                "command": "sway",
+                "desktop_names": ["sway"],
+                "name": "Sway",
+                "icon": "",
+                "desktop_file": "",
+            },
+        )
+        daemon.handle_request(start)
+
+        assert read_message(right)["ok"] is True
+        assert read_message(right)["event"] == greeter_protocol.EVENT_SESSION_STARTING
+        assert read_message(right)["event"] == greeter_protocol.EVENT_REEXEC
     finally:
         left.close()
         right.close()

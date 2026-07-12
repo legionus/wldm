@@ -297,6 +297,14 @@ async def broadcast_state_changed(state: DaemonState) -> None:
     )
 
 
+async def send_greeter_reexec(state: DaemonState) -> None:
+    """Ask the current greeter UI process to replace its address space."""
+    await send_message(
+        client_state(state, "greeter").writer,
+        greeter_protocol.new_event(greeter_protocol.EVENT_REEXEC, {}),
+    )
+
+
 async def send_session_finished(state: DaemonState,
                                 session: SessionState) -> None:
     proc = session.proc
@@ -569,6 +577,7 @@ async def handle_request_async(state: DaemonState,
 
         track_session_task(state, asyncio.create_task(monitor_session(state, session)))
         await broadcast_state_changed(state)
+        await send_greeter_reexec(state)
 
     if outcome.control_action:
         command = control_command(cfg, outcome.control_action)

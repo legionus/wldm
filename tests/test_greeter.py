@@ -583,6 +583,44 @@ def test_handle_event_updates_status_label(monkeypatch):
     assert app.status_label.text == "Session failed with exit status 7."
 
 
+def test_handle_event_reexecs_self(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+    calls = []
+    app = new_greeter_app(greeter, reexec_self=lambda: calls.append("reexec"))
+
+    greeter.GreeterApp.handle_event(
+        app,
+        {"v": 1, "type": "event", "event": greeter.greeter_protocol.EVENT_REEXEC, "payload": {}},
+    )
+
+    assert calls == ["reexec"]
+
+
+def test_reexec_self_preserves_socket_fd_and_original_argv(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+    calls = {}
+
+    class FakeSocket:
+        @staticmethod
+        def fileno():
+            return 9
+
+    monkeypatch.setattr(greeter.sys, "orig_argv", ["/usr/bin/python3", "-I", "-P", "wldm.command"], raising=False)
+    monkeypatch.setattr(greeter.os, "set_inheritable", lambda fd, value: calls.update({"fd": (fd, value)}))
+    monkeypatch.setattr(
+        greeter.os,
+        "execvpe",
+        lambda prog, argv, env: calls.update({"exec": (prog, argv, env)}),
+    )
+
+    greeter.reexec_self(types.SimpleNamespace(sock=FakeSocket()))
+
+    assert calls["fd"] == (9, True)
+    assert calls["exec"][0] == "/usr/bin/python3"
+    assert calls["exec"][1] == ["/usr/bin/python3", "-I", "-P", "wldm.command"]
+    assert calls["exec"][2] is greeter.os.environ
+
+
 def test_login_app_loads_last_session_from_state_file(monkeypatch, tmp_path):
     greeter = load_greeter_module(monkeypatch)
     state_file = tmp_path / "last-session"

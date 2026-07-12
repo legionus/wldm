@@ -405,6 +405,10 @@ def test_handle_request_async_starts_session_after_auth(monkeypatch):
         greeter_protocol.decode_message(line).get("event") == greeter_protocol.EVENT_SESSION_STARTING
         for line in state.clients["greeter"].writer.lines
     )
+    assert any(
+        greeter_protocol.decode_message(line).get("event") == greeter_protocol.EVENT_REEXEC
+        for line in state.clients["greeter"].writer.lines
+    )
 
 
 def test_handle_request_async_runs_control_command(monkeypatch):

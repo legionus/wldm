@@ -33,6 +33,7 @@ CONTROL_ACTIONS = {
 EVENT_SESSION_STARTING = "session-starting"
 EVENT_SESSION_FINISHED = "session-finished"
 EVENT_STATE_CHANGED = "state-changed"
+EVENT_REEXEC = "re-exec"
 
 TYPE_REQUEST = 1
 TYPE_RESPONSE = 2

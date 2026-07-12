@@ -76,6 +76,15 @@ Delay the `session-finished` event:
 tests/greeter_stub_daemon.py --delay 3
 ```
 
+Ask the greeter to re-exec itself after accepting `start-session`:
+
+```bash
+tests/greeter_stub_daemon.py --reexec-after-start --session-result hang
+```
+
+This is useful when checking whether the greeter can clear its process memory
+after login without restarting the whole greeter session wrapper or compositor.
+
 ## Session Entries
 
 If `--session-dir` is not specified, the utility creates a temporary Wayland

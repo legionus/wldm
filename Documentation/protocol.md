@@ -133,6 +133,7 @@ start-session(command,
                              <-------  response(ok=true)
                              <-------  event(session-starting)
                              <-------  event(state-changed)
+                             <-------  event(re-exec)
                              <-------  event(session-finished)
 ```
 
@@ -423,6 +424,23 @@ Fields:
 Meaning:
 
 - Broadcast whenever the daemon's observer-facing state snapshot changes.
+
+### `re-exec`
+
+Wire layout:
+
+```text
+event(re-exec) = event("re-exec")
+```
+
+Meaning:
+
+- Sent to the greeter after a user session has been accepted and started.
+- Instructs the greeter UI process to replace its process image while
+  preserving the inherited daemon IPC socket.
+- Allows the greeter to clear Python, GTK, and UI memory that may have held
+  authentication data without restarting the greeter session wrapper or
+  compositor.
 
 ## Notes
 

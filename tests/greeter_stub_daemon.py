@@ -111,6 +111,9 @@ class StubDaemon:
             )
         )
 
+        if self.args.reexec_after_start:
+            self.write_message(greeter_protocol.new_event(greeter_protocol.EVENT_REEXEC, {}))
+
         if self.args.session_result == "hang":
             self.active_sessions = [
                 {"pid": self.session_pid, "username": self.username, "command": command},
@@ -247,6 +250,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--prompt", default="Password:", help="authentication prompt text")
     parser.add_argument("--prompt-style", choices=("secret", "visible", "info", "error"), default="secret")
     parser.add_argument("--session-result", choices=("success", "failure", "hang"), default="success")
+    parser.add_argument("--reexec-after-start", action="store_true", help="send re-exec after accepting start-session")
     parser.add_argument("--delay", type=float, default=0.5, help="delay before session-finished event")
 
     args = parser.parse_args(argv)
