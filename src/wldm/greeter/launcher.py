@@ -12,6 +12,7 @@ logger = wldm.logger
 
 DEFAULT_BACKEND: Final = "gtk"
 BACKENDS: Final = {
+    "curses": "wldm.greeter.curses.app",
     "gtk": "wldm.greeter.gtk.app",
 }
 

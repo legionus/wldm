@@ -14,9 +14,9 @@ def test_selected_backend_defaults_to_gtk(monkeypatch):
 
 
 def test_selected_backend_uses_environment(monkeypatch):
-    monkeypatch.setenv("WLDM_GREETER_BACKEND", "gtk")
+    monkeypatch.setenv("WLDM_GREETER_BACKEND", "curses")
 
-    assert greeter_launcher.selected_backend() == "gtk"
+    assert greeter_launcher.selected_backend() == "curses"
 
 
 def test_cmd_main_runs_selected_backend(monkeypatch):
@@ -32,6 +32,21 @@ def test_cmd_main_runs_selected_backend(monkeypatch):
 
     assert greeter_launcher.cmd_main() == 17
     assert calls == [("import", "wldm.greeter.gtk.app"), "cmd_main"]
+
+
+def test_cmd_main_can_run_curses_backend(monkeypatch):
+    calls = []
+    module = types.SimpleNamespace(cmd_main=lambda: calls.append("cmd_main") or 23)
+
+    monkeypatch.setenv("WLDM_GREETER_BACKEND", "curses")
+    monkeypatch.setattr(
+        greeter_launcher.importlib,
+        "import_module",
+        lambda module_name: calls.append(("import", module_name)) or module,
+    )
+
+    assert greeter_launcher.cmd_main() == 23
+    assert calls == [("import", "wldm.greeter.curses.app"), "cmd_main"]
 
 
 def test_cmd_main_rejects_unknown_backend(monkeypatch):

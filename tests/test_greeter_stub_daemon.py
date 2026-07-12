@@ -14,6 +14,7 @@ def make_args(**overrides):
     values = {
         "actions": ["poweroff", "reboot"],
         "auth": "accept",
+        "backend": "gtk",
         "data_dir": "/srv/wldm/data",
         "delay": 0.0,
         "greeter_command": "",
@@ -49,11 +50,20 @@ def test_greeter_env_sets_daemon_contract():
     env = stub.greeter_env(args, 7, ["/tmp/sessions"])
 
     assert env["WLDM_ROLE"] == "greeter"
+    assert env["WLDM_GREETER_BACKEND"] == "gtk"
     assert env["WLDM_SOCKET_FD"] == "7"
     assert env["WLDM_DATA_DIR"] == "/srv/wldm/data"
     assert env["WLDM_GREETER_SESSION_DIRS"] == "/tmp/sessions"
     assert env["WLDM_ACTIONS"] == "poweroff:reboot"
     assert "WLDM_STATE_FILE" not in env
+
+
+def test_greeter_env_can_select_curses_backend():
+    args = make_args(backend="curses")
+
+    env = stub.greeter_env(args, 7, ["/tmp/sessions"])
+
+    assert env["WLDM_GREETER_BACKEND"] == "curses"
 
 
 def test_greeter_env_sets_explicit_state_file():
@@ -156,6 +166,25 @@ def test_stub_daemon_can_send_reexec_after_start():
         assert read_message(right)["ok"] is True
         assert read_message(right)["event"] == greeter_protocol.EVENT_SESSION_STARTING
         assert read_message(right)["event"] == greeter_protocol.EVENT_REEXEC
+    finally:
+        left.close()
+        right.close()
+
+
+def test_stub_daemon_protocol_trace_uses_stderr(capsys):
+    left, right = socket.socketpair()
+    try:
+        daemon = stub.StubDaemon(make_args(), left)
+        request = greeter_protocol.new_request(greeter_protocol.ACTION_GET_STATE, {})
+
+        right.sendall(greeter_protocol.encode_message(request))
+        right.shutdown(socket.SHUT_WR)
+
+        daemon.run()
+
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert f"<- {request}" in captured.err
     finally:
         left.close()
         right.close()

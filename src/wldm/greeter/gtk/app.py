@@ -37,6 +37,8 @@ import wldm.policy
 import wldm.sessions
 # pylint: disable-next=wrong-import-position
 import wldm.state
+# pylint: disable-next=wrong-import-position
+from wldm.gtk import read_password_secret as read_gtk_password_secret
 
 logger = wldm.logger
 resource_path: str
@@ -420,6 +422,10 @@ class GreeterApp(greeter_ui.GreeterUI):
 
     def send_recv_answer(self, data: Dict[str, Any]) -> Dict[str, Any]:
         return greeter_client.send_recv_answer(self, data, lock)
+
+    def read_password_secret(self, entry: Any) -> wldm.secret.SecretBytes:
+        """Read one GTK password entry into erasable secret storage."""
+        return read_gtk_password_secret(entry)
 
     def read_prompt_response(self) -> wldm.secret.SecretBytes | None:
         """Read one reply for the current pending auth prompt."""

@@ -30,6 +30,7 @@ def test_read_config_uses_explicit_repo_config(monkeypatch):
     assert cfg["greeter"]["data-dir"] == "/usr/share/wldm"
     assert cfg["greeter"]["locale-dir"] == "/usr/share/locale"
     assert cfg["greeter"]["state-dir"] == ""
+    assert cfg["greeter"]["backend"] == "gtk"
     assert cfg["greeter"]["theme"] == "default"
     assert cfg["greeter"]["session-dirs"] == "/usr/share/wayland-sessions"
     assert cfg["greeter"]["user-session-dir"] == ".local/share/wayland-sessions"
@@ -86,6 +87,7 @@ def test_read_config_sets_default_runtime_greeter_values(monkeypatch):
     assert cfg["greeter"]["data-dir"] == ""
     assert cfg["greeter"]["locale-dir"] == ""
     assert cfg["greeter"]["state-dir"] == ""
+    assert cfg["greeter"]["backend"] == "gtk"
     assert cfg["greeter"]["theme"] == "default"
     assert cfg["greeter"]["session-dirs"] == "/usr/share/wayland-sessions"
     assert cfg["greeter"]["user-session-dir"] == ".local/share/wayland-sessions"
@@ -132,6 +134,7 @@ def test_read_config_loads_devel_overrides_when_selected_explicitly(monkeypatch)
 
     assert cfg["daemon"]["log-path"] == "/tmp/wldm/daemon.log"
     assert cfg["greeter"]["state-dir"] == "/tmp/wldm-state"
+    assert cfg["greeter"]["backend"] == "gtk"
     assert cfg["greeter"]["log-path"] == "/tmp/wldm/greeter.log"
     assert cfg["dbus"]["log-path"] == "/tmp/wldm/dbus-adapter.log"
     assert cfg["greeter"]["data-dir"] == str(repo_root / "data")

@@ -171,7 +171,7 @@ class StubDaemon:
             if message is None:
                 return
 
-            print(f"<- {message}", flush=True)
+            print(f"<- {message}", file=sys.stderr, flush=True)
 
             if not greeter_protocol.is_request(message):
                 print(f"ignoring non-request message: {message}", file=sys.stderr, flush=True)
@@ -182,7 +182,7 @@ class StubDaemon:
 
 def secret_to_text(value: object) -> str:
     if hasattr(value, "as_bytes"):
-        data = value.as_bytes()
+        data = bytes(value.as_bytes())
     elif isinstance(value, (bytes, bytearray, memoryview)):
         data = bytes(value)
     else:
@@ -214,6 +214,7 @@ def greeter_env(args: argparse.Namespace, socket_fd: int, session_dirs: list[str
     env.update({
         "WLDM_SOURCE_TREE": str(REPO_ROOT),
         "WLDM_ROLE": args.role,
+        "WLDM_GREETER_BACKEND": args.backend,
         "WLDM_SOCKET_FD": str(socket_fd),
         "WLDM_DATA_DIR": args.data_dir,
         "WLDM_THEME": args.theme,
@@ -236,6 +237,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         description="Run a WLDM greeter against a fake daemon protocol peer.",
     )
     parser.add_argument("--role", default="greeter", help="internal greeter role to pass through WLDM_ROLE")
+    parser.add_argument("--backend", choices=("gtk", "curses"), default="gtk", help="greeter backend selected by WLDM_GREETER_BACKEND")
     parser.add_argument("--greeter-command", default="", help="override greeter command; parsed with shell syntax")
     parser.add_argument("--data-dir", default=str(REPO_ROOT / "data"), help="directory that contains greeter resources")
     parser.add_argument("--locale-dir", default="", help="optional locale directory for the greeter")

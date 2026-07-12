@@ -118,6 +118,9 @@ class GreeterAuthApp(Protocol):
     def send_recv_answer(self, data: dict[str, Any]) -> dict[str, Any]:
         """Send one daemon request and return the matching response."""
 
+    def read_password_secret(self, entry: GreeterEntry) -> wldm.secret.SecretBytes:
+        """Read a password entry into erasable secret storage."""
+
     def read_prompt_response(self) -> wldm.secret.SecretBytes | None:
         """Read one answer for the current pending authentication prompt."""
 

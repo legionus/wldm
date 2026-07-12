@@ -41,6 +41,10 @@ locale-dir = @localedir@
 # username/session choice. Leave empty to disable persistent greeter state.
 state-dir =
 
+# Greeter frontend backend. "gtk" runs inside greeter.command; "curses" runs
+# directly on the greeter TTY.
+backend = gtk
+
 # Theme name. "default" uses the built-in resources directory.
 theme = default
 

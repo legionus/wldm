@@ -42,6 +42,7 @@ def read_config() -> wldm.inifile.IniFile:
             "data-dir": "",
             "locale-dir": "",
             "state-dir": "",
+            "backend": "gtk",
             "theme": "default",
             "session-dirs": ":".join(wldm.policy.SYSTEM_WAYLAND_SESSION_DIRS),
             "user-session-dir": wldm.policy.USER_WAYLAND_SESSION_DIR,

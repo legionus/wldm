@@ -132,6 +132,7 @@ def test_cmd_main_runs_greeter_session(monkeypatch):
 
 def test_build_greeter_argv_uses_daemon_command(monkeypatch):
     mark_unprivileged(monkeypatch)
+    monkeypatch.setenv("WLDM_GREETER_BACKEND", "gtk")
     monkeypatch.setenv("WLDM_GREETER_COMMAND", "cage -s -m last --")
     monkeypatch.setattr(wldm.command, "internal_command_prefix",
                         lambda: ["/usr/bin/python3", "/srv/wldm/src/wldm/command.py"])
@@ -144,6 +145,19 @@ def test_build_greeter_argv_uses_daemon_command(monkeypatch):
         "-m",
         "last",
         "--",
+        "/usr/bin/python3",
+        "/srv/wldm/src/wldm/command.py",
+    ]
+
+
+def test_build_greeter_argv_runs_curses_backend_directly(monkeypatch):
+    mark_unprivileged(monkeypatch)
+    monkeypatch.setenv("WLDM_GREETER_BACKEND", "curses")
+    monkeypatch.setenv("WLDM_GREETER_COMMAND", "cage -s -m last --")
+    monkeypatch.setattr(wldm.command, "internal_command_prefix",
+                        lambda: ["/usr/bin/python3", "/srv/wldm/src/wldm/command.py"])
+
+    assert wldm.greeter_session.build_greeter_argv() == [
         "/usr/bin/python3",
         "/srv/wldm/src/wldm/command.py",
     ]
@@ -241,6 +255,7 @@ def test_redirect_greeter_stderr_ignores_empty_path(monkeypatch):
 
 def test_build_greeter_argv_requires_command(monkeypatch):
     mark_unprivileged(monkeypatch)
+    monkeypatch.setenv("WLDM_GREETER_BACKEND", "gtk")
     monkeypatch.delenv("WLDM_GREETER_COMMAND", raising=False)
 
     try:
@@ -253,6 +268,7 @@ def test_build_greeter_argv_requires_command(monkeypatch):
 
 def test_build_greeter_argv_rejects_invalid_shell_syntax(monkeypatch):
     mark_unprivileged(monkeypatch)
+    monkeypatch.setenv("WLDM_GREETER_BACKEND", "gtk")
     monkeypatch.setenv("WLDM_GREETER_COMMAND", "cage '")
 
     try:
@@ -261,6 +277,18 @@ def test_build_greeter_argv_rejects_invalid_shell_syntax(monkeypatch):
         assert "invalid greeter command" in str(exc)
     else:
         raise AssertionError("build_greeter_argv() should reject invalid shell syntax")
+
+
+def test_build_greeter_argv_rejects_unknown_backend(monkeypatch):
+    mark_unprivileged(monkeypatch)
+    monkeypatch.setenv("WLDM_GREETER_BACKEND", "missing")
+
+    try:
+        wldm.greeter_session.build_greeter_argv()
+    except RuntimeError as exc:
+        assert "unknown greeter backend: missing" in str(exc)
+    else:
+        raise AssertionError("build_greeter_argv() should reject unknown backends")
 
 
 def test_build_greeter_argv_requires_unprivileged_context(monkeypatch):

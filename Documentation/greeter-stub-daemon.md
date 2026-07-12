@@ -106,6 +106,12 @@ tests/greeter_stub_daemon.py \
 
 ## Testing Other Greeters
 
+Select the built-in curses backend without running the full daemon:
+
+```bash
+tests/greeter_stub_daemon.py --backend curses
+```
+
 Use `--greeter-command` to run another greeter implementation against the same
 fake daemon:
 

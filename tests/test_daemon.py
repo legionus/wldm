@@ -27,6 +27,7 @@ from tests.helpers_daemon import (
 def make_config(user="gdm",
                 group="gdm",
                 tty="7",
+                backend="gtk",
                 theme="default",
                 session_dirs="/usr/share/wayland-sessions",
                 user_session_dir=".local/share/wayland-sessions",
@@ -51,6 +52,7 @@ def make_config(user="gdm",
             "user": user,
             "group": group,
             "tty": tty,
+            "backend": backend,
             "theme": theme,
             "session-dirs": session_dirs,
             "user-session-dir": user_session_dir,
@@ -583,6 +585,7 @@ def test_start_greeter_passes_socket_env(monkeypatch):
     assert calls["env"]["WLDM_GREETER_PAM_SERVICE"] == "system-login"
     assert calls["env"]["WLDM_GREETER_USER"] == "gdm"
     assert calls["env"]["WLDM_GREETER_GROUP"] == "gdm"
+    assert calls["env"]["WLDM_GREETER_BACKEND"] == "gtk"
     assert calls["env"]["WLDM_THEME"] == "retro"
     assert calls["env"]["WLDM_GREETER_COMMAND"] == "labwc --"
     assert calls["env"]["WLDM_GREETER_SESSION_DIRS"] == "/usr/share/wayland-sessions"

@@ -105,11 +105,18 @@ def build_greeter_argv() -> List[str]:
     Returns:
         Final argv used to start the compositor wrapper and greeter process.
     """
+    backend = os.environ.get("WLDM_GREETER_BACKEND", "gtk").strip() or "gtk"
+    modules = _load_unprivileged_modules()
+
+    if backend == "curses":
+        return modules.command.internal_command_prefix()
+
+    if backend != "gtk":
+        raise RuntimeError(f"unknown greeter backend: {backend}")
+
     command = os.environ.get("WLDM_GREETER_COMMAND", "").strip()
     if not command:
         raise RuntimeError("environ variable `WLDM_GREETER_COMMAND' not specified")
-
-    modules = _load_unprivileged_modules()
 
     try:
         argv = modules.shlex.split(command)
