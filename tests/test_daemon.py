@@ -517,7 +517,12 @@ def test_handle_client_marks_client_ready(monkeypatch):
 
 
 def test_start_greeter_passes_socket_env(monkeypatch):
-    state = wldm.daemon.DaemonState(["/usr/bin/python3", "/srv/wldm/src/wldm/command.py"], 3, seat="seat9")
+    state = wldm.daemon.DaemonState(
+        ["/usr/bin/python3", "/srv/wldm/src/wldm/command.py"],
+        3,
+        seat="seat9",
+        greeter_backend="curses",
+    )
     cfg = make_config(
         command="labwc --",
         greeter_log="/tmp/custom-greeter.log",
@@ -585,7 +590,7 @@ def test_start_greeter_passes_socket_env(monkeypatch):
     assert calls["env"]["WLDM_GREETER_PAM_SERVICE"] == "system-login"
     assert calls["env"]["WLDM_GREETER_USER"] == "gdm"
     assert calls["env"]["WLDM_GREETER_GROUP"] == "gdm"
-    assert calls["env"]["WLDM_GREETER_BACKEND"] == "gtk"
+    assert calls["env"]["WLDM_GREETER_BACKEND"] == "curses"
     assert calls["env"]["WLDM_THEME"] == "retro"
     assert calls["env"]["WLDM_GREETER_COMMAND"] == "labwc --"
     assert calls["env"]["WLDM_GREETER_SESSION_DIRS"] == "/usr/share/wayland-sessions"
@@ -801,8 +806,46 @@ def test_run_daemon_async_fails_when_auto_tty_is_unavailable(monkeypatch):
 def test_run_daemon_async_stops_after_configured_failed_greeter_starts(monkeypatch):
     greeters = [DummyAsyncProc(pid=1, returncode=5), DummyAsyncProc(pid=2, returncode=6)]
     sleeps = []
+    backends = []
 
     async def fake_start_greeter(state, cfg, greeter_tty):
+        backends.append(state.greeter_backend)
+        return greeters.pop(0)
+
+    async def fake_cleanup_async(state):
+        return None
+
+    async def fake_sleep(seconds):
+        sleeps.append(seconds)
+
+    monkeypatch.setattr(wldm.tty, "open_console", lambda: 88)
+    monkeypatch.setattr(wldm.tty, "change", lambda console, tty: True)
+    monkeypatch.setattr(wldm.daemon, "start_greeter", fake_start_greeter)
+    monkeypatch.setattr(wldm.daemon, "cleanup_async", fake_cleanup_async)
+    monkeypatch.setattr(wldm.daemon.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(wldm.daemon, "_close_fd", lambda fd: None)
+
+    result = asyncio.run(
+        wldm.daemon.run_daemon_async(SimpleNamespace(tty=None), make_config(backend="curses", max_restarts="2"))
+    )
+
+    assert result == wldm.daemon.wldm.EX_FAILURE
+    assert backends == ["curses", "curses"]
+    assert sleeps == [1]
+
+
+def test_run_daemon_async_falls_back_to_curses_after_failed_greeter_starts(monkeypatch):
+    greeters = [
+        DummyAsyncProc(pid=1, returncode=5),
+        DummyAsyncProc(pid=2, returncode=6),
+        DummyAsyncProc(pid=3, returncode=7),
+        DummyAsyncProc(pid=4, returncode=8),
+    ]
+    sleeps = []
+    backends = []
+
+    async def fake_start_greeter(state, cfg, greeter_tty):
+        backends.append(state.greeter_backend)
         return greeters.pop(0)
 
     async def fake_cleanup_async(state):
@@ -823,7 +866,8 @@ def test_run_daemon_async_stops_after_configured_failed_greeter_starts(monkeypat
     )
 
     assert result == wldm.daemon.wldm.EX_FAILURE
-    assert sleeps == [1]
+    assert backends == ["gtk", "gtk", "curses", "curses"]
+    assert sleeps == [1, 1, 1]
 
 
 def test_run_daemon_async_restarts_dbus_adapter_without_stopping(monkeypatch):

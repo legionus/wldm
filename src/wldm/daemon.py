@@ -31,13 +31,15 @@ class DaemonState:
     def __init__(self,
                  internal_command: str | list[str],
                  greeter_max_restarts: int,
-                 seat: str = wldm.policy.DEFAULT_SEAT) -> None:
+                 seat: str = wldm.policy.DEFAULT_SEAT,
+                 greeter_backend: str = "gtk") -> None:
         if isinstance(internal_command, str):
             self.internal_command = [internal_command]
         else:
             self.internal_command = list(internal_command)
 
         self.greeter_max_restarts = greeter_max_restarts
+        self.greeter_backend = greeter_backend
         self.seat = seat
         self.clients: dict[str, "ClientState"] = {"greeter": ClientState()}
         self.console: int = -1
@@ -710,7 +712,7 @@ async def start_greeter(state: DaemonState,
         "WLDM_DATA_DIR": cfg.get_str("greeter", "data-dir"),
         "WLDM_LOCALE_DIR": cfg.get_str("greeter", "locale-dir"),
         "WLDM_THEME": cfg.get_str("greeter", "theme"),
-        "WLDM_GREETER_BACKEND": cfg.get_str("greeter", "backend"),
+        "WLDM_GREETER_BACKEND": state.greeter_backend,
         "WLDM_GREETER_COMMAND": cfg.get_str("greeter", "command"),
         "WLDM_GREETER_TTY": str(greeter_tty),
         "WLDM_GREETER_PAM_SERVICE": greeter_pam_service,
@@ -896,6 +898,7 @@ async def run_daemon_async(parser: argparse.Namespace, cfg: wldm.inifile.IniFile
         wldm.command.internal_command_prefix(),
         greeter_max_restarts,
         seat=cfg.get_str("daemon", "seat"),
+        greeter_backend=cfg.get_str("greeter", "backend"),
     )
     state.console = console
     state.greeter_tty = greeter_tty
@@ -940,11 +943,17 @@ async def run_daemon_async(parser: argparse.Namespace, cfg: wldm.inifile.IniFile
                     greeter.failures += 1
 
                     if greeter.failures >= state.greeter_max_restarts:
-                        logger.critical("greeter failed %d times in a row, stopping daemon",
-                                        greeter.failures)
+                        if state.greeter_backend != "curses":
+                            logger.critical("greeter backend %s failed %d times in a row, falling back to curses",
+                                            state.greeter_backend, greeter.failures)
+                            state.greeter_backend = "curses"
+                            greeter.failures = 0
+                        else:
+                            logger.critical("greeter backend curses failed %d times in a row, no greeter backend is usable",
+                                            greeter.failures)
 
-                        exit_code = wldm.EX_FAILURE
-                        break
+                            exit_code = wldm.EX_FAILURE
+                            break
 
                 await asyncio.sleep(1)
                 continue
