@@ -11,7 +11,7 @@ import stat
 from typing import Callable, Dict, Iterator, Mapping, ParamSpec, TextIO, TypeVar
 
 
-__VERSION__ = '1'
+__VERSION__ = '2'
 
 EX_SUCCESS = 0  # Successful exit status.
 EX_FAILURE = 1  # Failing exit status.
