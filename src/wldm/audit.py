@@ -13,10 +13,10 @@ logger = wldm.logger
 
 ROLE_ALLOWED_CTYPES = {
     "daemon": (None,),
-    "greeter": (None, "gtk-4", "libgtk-4.so", "libgtk-4.so.", "c", "libc.so", "libc.so."),
-    "greeter-session": (None, "pam", "libpam.so", "libpam.so.", "c", "libc.so", "libc.so."),
-    "user-session": (None, "pam", "libpam.so", "libpam.so.", "c", "libc.so", "libc.so."),
-    "pam-worker": (None, "pam", "libpam.so", "libpam.so.", "c", "libc.so", "libc.so."),
+    "greeter": (None, "gtk-4", "libgtk-4.so", "c", "libc.so"),
+    "greeter-session": (None, "pam", "libpam.so", "c", "libc.so"),
+    "user-session": (None, "pam", "libpam.so", "c", "libc.so"),
+    "pam-worker": (None, "pam", "libpam.so", "c", "libc.so"),
     "dbus-adapter": (None,),
 }
 
@@ -59,6 +59,11 @@ def _is_trusted_system_library_path(path: str) -> bool:
     return True
 
 
+def _library_name_matches(normalized: str, allowed: str) -> bool:
+    """Return whether one basename matches an allowlist entry."""
+    return normalized == allowed or normalized.startswith(f"{allowed}.")
+
+
 def _is_allowed_ctypes_target(role: str, target: Any) -> bool:
     """Check whether a ctypes library load is expected for one process role.
 
@@ -85,7 +90,7 @@ def _is_allowed_ctypes_target(role: str, target: Any) -> bool:
         if allowed is None:
             continue
 
-        if normalized != allowed and not normalized.startswith(allowed):
+        if not _library_name_matches(normalized, allowed):
             continue
 
         if os.path.isabs(target):

@@ -16,6 +16,23 @@ def test_is_allowed_ctypes_target_accepts_daemon_null_target_only():
 
 def test_is_allowed_ctypes_target_rejects_unexpected_library():
     assert wldm.audit._is_allowed_ctypes_target("daemon", "/tmp/libevil.so") is False
+    assert wldm.audit._is_allowed_ctypes_target("greeter", "crypto") is False
+    assert wldm.audit._is_allowed_ctypes_target("greeter", "libcap.so.2") is False
+    assert wldm.audit._is_allowed_ctypes_target("pam-worker", "pambase") is False
+    assert wldm.audit._is_allowed_ctypes_target("pam-worker", "libpam_misc.so.0") is False
+    assert wldm.audit._is_allowed_ctypes_target("greeter", "libgtk-4-helper.so") is False
+
+
+def test_is_allowed_ctypes_target_accepts_exact_aliases_and_versioned_sonames():
+    assert wldm.audit._is_allowed_ctypes_target("greeter", "c") is True
+    assert wldm.audit._is_allowed_ctypes_target("greeter", "libc.so") is True
+    assert wldm.audit._is_allowed_ctypes_target("greeter", "libc.so.6") is True
+    assert wldm.audit._is_allowed_ctypes_target("pam-worker", "pam") is True
+    assert wldm.audit._is_allowed_ctypes_target("pam-worker", "libpam.so") is True
+    assert wldm.audit._is_allowed_ctypes_target("pam-worker", "libpam.so.0") is True
+    assert wldm.audit._is_allowed_ctypes_target("greeter", "gtk-4") is True
+    assert wldm.audit._is_allowed_ctypes_target("greeter", "libgtk-4.so") is True
+    assert wldm.audit._is_allowed_ctypes_target("greeter", "libgtk-4.so.1") is True
 
 
 def test_is_trusted_system_library_path_accepts_root_owned_system_library(tmp_path, monkeypatch):
