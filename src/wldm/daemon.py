@@ -174,6 +174,10 @@ POWER_ACTION_COMMANDS = {
     greeter_protocol.ACTION_HIBERNATE: "hibernate-command",
 }
 
+CONTROL_COMMAND_ENV = {
+    "PATH": "/usr/sbin:/usr/bin:/sbin:/bin",
+}
+
 KEYBOARD_ENV_OPTIONS = {
     "rules": "XKB_DEFAULT_RULES",
     "model": "XKB_DEFAULT_MODEL",
@@ -645,7 +649,10 @@ async def handle_request_async(state: DaemonState,
 
         logger.info("execute %s command: %s", outcome.control_action, command)
 
-        await asyncio.create_subprocess_exec("/bin/sh", "-c", command)
+        # Keep the config value as a shell command instead of reparsing it with
+        # shlex. Admins may rely on shell assignment and quoting syntax, while
+        # the daemon still avoids inheriting an uncontrolled privileged PATH.
+        await asyncio.create_subprocess_exec("/bin/sh", "-c", command, env=CONTROL_COMMAND_ENV)
 
 
 async def handle_client(state: DaemonState,

@@ -26,7 +26,8 @@ baking those paths into the main config.
   Daemon log file. Default: empty, which keeps logging on stderr/journal.
 - `poweroff-command`
   Shell command executed for greeter poweroff requests. Default:
-  `systemctl poweroff`.
+  `systemctl poweroff`. Power commands run with a daemon-controlled `PATH`
+  of `/usr/sbin:/usr/bin:/sbin:/bin`.
 - `reboot-command`
   Shell command executed for greeter reboot requests. Default:
   `systemctl reboot`.

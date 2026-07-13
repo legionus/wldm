@@ -484,6 +484,7 @@ def test_handle_request_async_runs_control_command(monkeypatch):
     asyncio.run(wldm.daemon.handle_request_async(state, "greeter", req, cfg))
 
     assert calls["cmd"] == ("/bin/sh", "-c", "do-poweroff --now")
+    assert calls["env"] == {"PATH": "/usr/sbin:/usr/bin:/sbin:/bin"}
     assert decode_last_client_message(greeter_protocol, state)["payload"] == {"accepted": True}
 
 
