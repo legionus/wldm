@@ -14,6 +14,7 @@ import wldm.lazy_imports
 import wldm.pam
 import wldm.policy
 import wldm.process
+import wldm.session.common
 import wldm.tty
 
 logger = wldm.logger
@@ -64,11 +65,7 @@ def _base_greeter_environ() -> Dict[str, str]:
 def _new_greeter_environ(pamh: Optional[Any],
                          pw: pwd.struct_passwd) -> Dict[str, str]:
     env = _base_greeter_environ()
-
-    if pamh is not None:
-        for name, value in wldm.pam.getenvlist(pamh).items():
-            logger.debug("[+] PAM env %s = %s", name, value)
-            env[name] = value
+    env.update(wldm.session.common.pam_environment(pamh))
 
     env["HOME"] = pw.pw_dir
     env["USER"] = pw.pw_name
@@ -129,27 +126,6 @@ def build_greeter_argv() -> List[str]:
     return [*argv, *modules.command.internal_command_prefix()]
 
 
-def prepare_greeter_terminal(ttydev: wldm.tty.TTYdevice) -> None:
-    ttydev.switch()
-    os.setsid()
-
-    if not wldm.tty.make_control_tty(ttydev.fd):
-        raise RuntimeError(f"unable to make {ttydev.filename} the controlling tty")
-
-
-@contextlib.contextmanager
-def open_console_fd() -> Iterator[int]:
-    console = wldm.tty.open_console()
-
-    if console is None:
-        raise RuntimeError("Unable to open console")
-
-    try:
-        yield console
-    finally:
-        os.close(console)
-
-
 @contextlib.contextmanager
 def open_greeter_pam_session(pam_service: str,
                              pw: pwd.struct_passwd,
@@ -175,24 +151,7 @@ def open_greeter_pam_session(pam_service: str,
         yield pamh
 
     finally:
-        finish_greeter_session(pamh)
-
-
-def finish_greeter_session(pamh: Optional[Any]) -> None:
-    if pamh is None:
-        return
-
-    try:
-        logger.debug("[+] Closing greeter PAM session...")
-        wldm.pam.close_pam_session(pamh)
-
-        logger.debug("[+] Greeter PAM session closed")
-
-    except Exception as e:
-        logger.critical("[!] Error closing greeter PAM session: %s", e)
-
-    finally:
-        wldm.pam.end_pam(pamh)
+        wldm.session.common.close_pam_session(pamh, "greeter PAM session")
 
 
 def run_greeter_session(pw: pwd.struct_passwd,
@@ -202,11 +161,11 @@ def run_greeter_session(pw: pwd.struct_passwd,
     ipc_fd = wldm.inherited_socket_fd("WLDM_SOCKET_FD")
 
     try:
-        with open_console_fd() as console:
+        with wldm.session.common.open_console_fd() as console:
             ttydev = wldm.tty.TTYdevice(console, pw.pw_uid, number=tty_number)
 
             try:
-                prepare_greeter_terminal(ttydev)
+                wldm.session.common.prepare_terminal(ttydev)
 
                 with open_greeter_pam_session(pam_service, pw, ttydev) as pamh:
                     env = _new_greeter_environ(pamh, pw)

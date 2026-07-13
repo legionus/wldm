@@ -10,6 +10,7 @@ import wldm.inifile
 import wldm.pam
 import wldm.process
 import wldm.tty
+import wldm.session.common
 import wldm.session.user
 import wldm.wtmp
 
@@ -27,7 +28,7 @@ def patch_session_hook_primitives(monkeypatch, *, extra_groups):
 def patch_parent_session_runtime(monkeypatch, *, tty_class, wait_status, criticals=None):
     monkeypatch.setattr(wldm.tty, "open_console", lambda: 77)
     monkeypatch.setattr(wldm.tty, "TTYdevice", tty_class)
-    monkeypatch.setattr(wldm.session.user, "prepare_user_terminal", lambda ttydev: None)
+    monkeypatch.setattr(wldm.session.common, "prepare_terminal", lambda ttydev: None)
     monkeypatch.setattr(wldm.pam, "start_pam", lambda service, user: "pamh")
     monkeypatch.setattr(wldm.pam, "set_pam_item", lambda pamh, item_type, value: None)
     monkeypatch.setattr(wldm.pam, "putenv", lambda pamh, name, value: None)
@@ -41,7 +42,7 @@ def patch_parent_session_runtime(monkeypatch, *, tty_class, wait_status, critica
     monkeypatch.setattr(wldm.session.user.os, "close", lambda fd: None)
     monkeypatch.setattr(wldm.wtmp, "login", lambda tty_path, username, host="": None)
     monkeypatch.setattr(wldm.wtmp, "logout", lambda tty_path, host="": None)
-    monkeypatch.setattr(wldm.session.user, "finish_user_session", lambda pamh: None)
+    monkeypatch.setattr(wldm.session.common, "close_pam_session", lambda pamh, label: None)
     if criticals is not None:
         monkeypatch.setattr(
             wldm.session.user.logger,
@@ -286,7 +287,7 @@ def test_cmd_main_passes_wrapper_paths_to_run_user_session(monkeypatch):
     assert calls["post_execute"] == ""
 
 
-def test_finish_user_session_always_ends_pam(monkeypatch):
+def test_close_pam_session_always_ends_pam(monkeypatch):
     calls = []
 
     monkeypatch.setattr(wldm.pam, "close_pam_session",
@@ -294,12 +295,12 @@ def test_finish_user_session_always_ends_pam(monkeypatch):
     monkeypatch.setattr(wldm.pam, "end_pam",
                         lambda pamh: calls.append(("end", pamh)))
 
-    wldm.session.user.finish_user_session("handle")
+    wldm.session.common.close_pam_session("handle", "PAM session")
 
     assert calls == [("close", "handle"), ("end", "handle")]
 
 
-def test_finish_user_session_ends_pam_even_on_close_error(monkeypatch):
+def test_close_pam_session_ends_pam_even_on_close_error(monkeypatch):
     calls = []
 
     def fail_close(pamh):
@@ -310,7 +311,7 @@ def test_finish_user_session_ends_pam_even_on_close_error(monkeypatch):
     monkeypatch.setattr(wldm.pam, "end_pam",
                         lambda pamh: calls.append(("end", pamh)))
 
-    wldm.session.user.finish_user_session("handle")
+    wldm.session.common.close_pam_session("handle", "PAM session")
 
     assert calls == [("close", "handle"), ("end", "handle")]
 
@@ -379,8 +380,8 @@ def test_run_user_session_parent_path_opens_and_closes_resources(monkeypatch):
 
     monkeypatch.setattr(wldm.tty, "open_console", lambda: 77)
     monkeypatch.setattr(wldm.tty, "TTYdevice", DummyTTY)
-    monkeypatch.setattr(wldm.session.user, "prepare_user_terminal",
-                        lambda ttydev: calls.append(("prepare_user_terminal", ttydev.fd)))
+    monkeypatch.setattr(wldm.session.common, "prepare_terminal",
+                        lambda ttydev: calls.append(("prepare_terminal", ttydev.fd)))
     monkeypatch.setattr(wldm.pam, "start_pam",
                         lambda service, user: calls.append(("start_pam", service, user)) or "pamh")
     monkeypatch.setattr(wldm.pam, "set_pam_item",
@@ -406,13 +407,13 @@ def test_run_user_session_parent_path_opens_and_closes_resources(monkeypatch):
     monkeypatch.setattr(wldm.session.user.os, "waitpid", lambda pid, flags: (pid, 0))
     monkeypatch.setattr(wldm.session.user.os, "WIFEXITED", lambda status: True)
     monkeypatch.setattr(wldm.session.user.os, "WEXITSTATUS", lambda status: 0)
-    monkeypatch.setattr(wldm.session.user.os, "close", lambda fd: calls.append(("close_console", fd)))
+    monkeypatch.setattr(wldm.session.common.os, "close", lambda fd: calls.append(("close_console", fd)))
     monkeypatch.setattr(wldm.wtmp, "login",
                         lambda tty_path, username, host="": calls.append(("wtmp_login", tty_path, username, host)))
     monkeypatch.setattr(wldm.wtmp, "logout",
                         lambda tty_path, host="": calls.append(("wtmp_logout", tty_path, host)))
-    monkeypatch.setattr(wldm.session.user, "finish_user_session",
-                        lambda pamh: calls.append(("finish_user_session", pamh)))
+    monkeypatch.setattr(wldm.session.common, "close_pam_session",
+                        lambda pamh, label: calls.append(("close_pam_session", pamh, label)))
 
     result = wldm.session.user.run_user_session(
         pw,
@@ -424,7 +425,7 @@ def test_run_user_session_parent_path_opens_and_closes_resources(monkeypatch):
 
     assert result == wldm.EX_SUCCESS
     assert ("tty_init", 77, 1001) in calls
-    assert ("prepare_user_terminal", 55) in calls
+    assert ("prepare_terminal", 55) in calls
     assert ("start_pam", "custom-login", "alice") in calls
     assert ("set_pam_item", "pamh", wldm.pam.PAM_TTY, "/dev/tty12") in calls
     assert ("putenv", "pamh", "XDG_SESSION_TYPE", "wayland") in calls
@@ -437,7 +438,7 @@ def test_run_user_session_parent_path_opens_and_closes_resources(monkeypatch):
     assert ("wtmp_login", "/dev/tty12", "alice", "") in calls
     assert ("wtmp_logout", "/dev/tty12", "") in calls
     assert ("tty_close",) in calls
-    assert ("finish_user_session", "pamh") in calls
+    assert ("close_pam_session", "pamh", "PAM session") in calls
     assert ("close_console", 77) in calls
     assert all(call[0] != "exec_user_program" for call in calls)
 
@@ -485,12 +486,12 @@ def test_run_user_session_aborts_when_pre_hook_fails(monkeypatch):
 
     monkeypatch.setattr(wldm.tty, "open_console", lambda: 77)
     monkeypatch.setattr(wldm.tty, "TTYdevice", DummyTTY)
-    monkeypatch.setattr(wldm.session.user, "prepare_user_terminal", lambda ttydev: None)
+    monkeypatch.setattr(wldm.session.common, "prepare_terminal", lambda ttydev: None)
     monkeypatch.setattr(wldm.session.user, "open_user_pam_session", lambda pam_service, pw_arg, ttydev: wldm.session.user.contextlib.nullcontext("pamh"))
     monkeypatch.setattr(wldm.session.user, "new_user_environ", lambda pamh, pw_arg, ttydev=None: {"HOME": pw_arg.pw_dir})
     monkeypatch.setattr(wldm.session.user, "run_session_hook", lambda *args, **kwargs: False)
     monkeypatch.setattr(wldm.session.user.os, "fork", lambda: (_ for _ in ()).throw(AssertionError("fork should not be called")))
-    monkeypatch.setattr(wldm.session.user.os, "close", lambda fd: calls.append(("close_console", fd)))
+    monkeypatch.setattr(wldm.session.common.os, "close", lambda fd: calls.append(("close_console", fd)))
 
     monkeypatch.setenv("WLDM_SESSION_COMMAND", "exec /bin/bash -l")
 
@@ -509,7 +510,7 @@ def test_process_exit_status_maps_signal_to_shell_style_code(monkeypatch):
     assert wldm.process.process_exit_status(9) == 143
 
 
-def test_prepare_user_terminal_switches_and_sets_controlling_tty(monkeypatch):
+def test_prepare_terminal_switches_and_sets_controlling_tty(monkeypatch):
     calls = []
 
     class DummyTTY:
@@ -519,14 +520,14 @@ def test_prepare_user_terminal_switches_and_sets_controlling_tty(monkeypatch):
         def switch(self):
             calls.append(("tty_switch",))
 
-    monkeypatch.setattr(wldm.session.user.os, "setsid", lambda: calls.append(("setsid",)))
+    monkeypatch.setattr(wldm.session.common.os, "setsid", lambda: calls.append(("setsid",)))
     monkeypatch.setattr(
         wldm.tty,
         "make_control_tty",
         lambda fd: calls.append(("make_control_tty", fd)) or True,
     )
 
-    wldm.session.user.prepare_user_terminal(DummyTTY())
+    wldm.session.common.prepare_terminal(DummyTTY())
 
     assert calls == [
         ("tty_switch",),
@@ -535,7 +536,7 @@ def test_prepare_user_terminal_switches_and_sets_controlling_tty(monkeypatch):
     ]
 
 
-def test_prepare_user_terminal_fails_when_tty_cannot_become_controlling(monkeypatch):
+def test_prepare_terminal_fails_when_tty_cannot_become_controlling(monkeypatch):
     class DummyTTY:
         fd = 55
         filename = "/dev/tty12"
@@ -543,12 +544,12 @@ def test_prepare_user_terminal_fails_when_tty_cannot_become_controlling(monkeypa
         def switch(self):
             return None
 
-    monkeypatch.setattr(wldm.session.user.os, "setsid", lambda: None)
+    monkeypatch.setattr(wldm.session.common.os, "setsid", lambda: None)
     monkeypatch.setattr(wldm.tty, "make_control_tty", lambda fd: False)
 
     try:
-        wldm.session.user.prepare_user_terminal(DummyTTY())
+        wldm.session.common.prepare_terminal(DummyTTY())
     except RuntimeError as exc:
         assert "/dev/tty12" in str(exc)
     else:
-        raise AssertionError("prepare_user_terminal() should have failed")
+        raise AssertionError("prepare_terminal() should have failed")

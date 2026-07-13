@@ -14,6 +14,7 @@ import wldm.lazy_imports
 import wldm.pam
 import wldm.policy
 import wldm.process
+import wldm.session.common
 import wldm.tty
 import wldm.wtmp
 
@@ -78,12 +79,7 @@ def _run_session_hook_command(cmd: list[str], *,
 def new_user_environ(pamh: Optional[Any],
                      pw: pwd.struct_passwd,
                      ttydev: Optional[wldm.tty.TTYdevice] = None) -> Dict[str, str]:
-    env = {}
-
-    if pamh is not None:
-        for name, value in wldm.pam.getenvlist(pamh).items():
-            logger.debug("[+] PAM env %s = %s", name, value)
-            env[name] = value
+    env = wldm.session.common.pam_environment(pamh)
 
     env["HOME"] = pw.pw_dir
     env["USER"] = pw.pw_name
@@ -244,25 +240,6 @@ def exec_user_program(ttydev: wldm.tty.TTYdevice,
     os.execve(prog_args[0], prog_args, env)
 
 
-def prepare_user_terminal(ttydev: wldm.tty.TTYdevice) -> None:
-    ttydev.switch()
-    os.setsid()
-
-    if not wldm.tty.make_control_tty(ttydev.fd):
-        raise RuntimeError(f"unable to make {ttydev.filename} the controlling tty")
-
-
-@contextlib.contextmanager
-def _open_console_fd() -> Iterator[int]:
-    console = wldm.tty.open_console()
-    if console is None:
-        raise RuntimeError("Unable to open console")
-    try:
-        yield console
-    finally:
-        os.close(console)
-
-
 @contextlib.contextmanager
 def open_user_pam_session(pam_service: str,
                           pw: pwd.struct_passwd,
@@ -280,7 +257,7 @@ def open_user_pam_session(pam_service: str,
         logger.debug("[+] PAM session opened")
         yield pamh
     finally:
-        finish_user_session(pamh)
+        wldm.session.common.close_pam_session(pamh, "PAM session")
 
 
 def run_user_session(pw: pwd.struct_passwd,
@@ -289,13 +266,13 @@ def run_user_session(pw: pwd.struct_passwd,
                      pre_execute: str = "",
                      post_execute: str = "") -> int:
     try:
-        with _open_console_fd() as console:
+        with wldm.session.common.open_console_fd() as console:
             logger.debug("[+] Opening free TTY device")
             ttydev = wldm.tty.TTYdevice(console, pw.pw_uid)
             wtmp_line: Optional[str] = None
 
             try:
-                prepare_user_terminal(ttydev)
+                wldm.session.common.prepare_terminal(ttydev)
 
                 with open_user_pam_session(pam_service, pw, ttydev) as pamh:
                     env = new_user_environ(pamh, pw, ttydev)
@@ -345,19 +322,6 @@ def run_user_session(pw: pwd.struct_passwd,
         return wldm.EX_FAILURE
 
     return wldm.EX_FAILURE
-
-
-def finish_user_session(pamh: Optional[Any]) -> None:
-    if pamh is None:
-        return
-    try:
-        logger.debug("[+] Closing PAM session...")
-        wldm.pam.close_pam_session(pamh)
-        logger.debug("[+] PAM session closed")
-    except Exception as e:
-        logger.critical("[!] Error closing PAM session: %s", e)
-    finally:
-        wldm.pam.end_pam(pamh)
 
 
 def cmd_main() -> int:

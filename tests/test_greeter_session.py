@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pwd
 
 import wldm.command
+import wldm.session.common
 import wldm.session.greeter
 import wldm.pam
 import wldm.tty
@@ -38,9 +39,9 @@ class DummyContext:
 
 def patch_run_greeter_session_runtime(monkeypatch, *, ttydev, pamh="pamh", env=None, tty_hook=None):
     monkeypatch.setattr(wldm.session.greeter.wldm, "inherited_socket_fd", lambda env_name: 13)
-    monkeypatch.setattr(wldm.session.greeter, "open_console_fd", lambda: DummyContext(88))
+    monkeypatch.setattr(wldm.session.common, "open_console_fd", lambda: DummyContext(88))
     monkeypatch.setattr(wldm.session.greeter.wldm.tty, "TTYdevice", lambda console, uid, number=0: ttydev)
-    monkeypatch.setattr(wldm.session.greeter, "prepare_greeter_terminal", tty_hook or (lambda tty: None))
+    monkeypatch.setattr(wldm.session.common, "prepare_terminal", tty_hook or (lambda tty: None))
     monkeypatch.setattr(
         wldm.session.greeter,
         "open_greeter_pam_session",
@@ -163,7 +164,7 @@ def test_build_greeter_argv_runs_curses_backend_directly(monkeypatch):
     ]
 
 
-def test_prepare_greeter_terminal_switches_and_sets_controlling_tty(monkeypatch):
+def test_prepare_terminal_switches_and_sets_controlling_tty(monkeypatch):
     calls = []
 
     class DummyTTY:
@@ -173,14 +174,14 @@ def test_prepare_greeter_terminal_switches_and_sets_controlling_tty(monkeypatch)
         def switch(self):
             calls.append(("tty_switch",))
 
-    monkeypatch.setattr(wldm.session.greeter.os, "setsid", lambda: calls.append(("setsid",)))
+    monkeypatch.setattr(wldm.session.common.os, "setsid", lambda: calls.append(("setsid",)))
     monkeypatch.setattr(
         wldm.tty,
         "make_control_tty",
         lambda fd: calls.append(("make_control_tty", fd)) or True,
     )
 
-    wldm.session.greeter.prepare_greeter_terminal(DummyTTY())
+    wldm.session.common.prepare_terminal(DummyTTY())
 
     assert calls == [
         ("tty_switch",),
@@ -189,7 +190,7 @@ def test_prepare_greeter_terminal_switches_and_sets_controlling_tty(monkeypatch)
     ]
 
 
-def test_prepare_greeter_terminal_fails_when_tty_cannot_become_controlling(monkeypatch):
+def test_prepare_terminal_fails_when_tty_cannot_become_controlling(monkeypatch):
     class DummyTTY:
         fd = 55
         filename = "/dev/tty7"
@@ -197,15 +198,15 @@ def test_prepare_greeter_terminal_fails_when_tty_cannot_become_controlling(monke
         def switch(self):
             return None
 
-    monkeypatch.setattr(wldm.session.greeter.os, "setsid", lambda: None)
+    monkeypatch.setattr(wldm.session.common.os, "setsid", lambda: None)
     monkeypatch.setattr(wldm.tty, "make_control_tty", lambda fd: False)
 
     try:
-        wldm.session.greeter.prepare_greeter_terminal(DummyTTY())
+        wldm.session.common.prepare_terminal(DummyTTY())
     except RuntimeError as exc:
         assert "/dev/tty7" in str(exc)
     else:
-        raise AssertionError("prepare_greeter_terminal() should have failed")
+        raise AssertionError("prepare_terminal() should have failed")
 
 
 def test_redirect_greeter_stderr_replaces_fd_2(monkeypatch):
@@ -304,23 +305,23 @@ def test_build_greeter_argv_requires_unprivileged_context(monkeypatch):
 
 
 def test_open_console_fd_raises_when_console_is_unavailable(monkeypatch):
-    monkeypatch.setattr(wldm.session.greeter.wldm.tty, "open_console", lambda: None)
+    monkeypatch.setattr(wldm.session.common.wldm.tty, "open_console", lambda: None)
 
     try:
-        with wldm.session.greeter.open_console_fd():
+        with wldm.session.common.open_console_fd():
             raise AssertionError("open_console_fd() should have failed")
     except RuntimeError as exc:
         assert "Unable to open console" in str(exc)
 
 
-def test_finish_greeter_session_handles_close_errors(monkeypatch):
+def test_close_pam_session_handles_close_errors(monkeypatch):
     calls = []
-    monkeypatch.setattr(wldm.session.greeter.wldm.pam, "close_pam_session",
+    monkeypatch.setattr(wldm.session.common.wldm.pam, "close_pam_session",
                         lambda pamh: (_ for _ in ()).throw(RuntimeError("boom")))
-    monkeypatch.setattr(wldm.session.greeter.wldm.pam, "end_pam",
+    monkeypatch.setattr(wldm.session.common.wldm.pam, "end_pam",
                         lambda pamh: calls.append(("end_pam", pamh)))
 
-    wldm.session.greeter.finish_greeter_session("pamh")
+    wldm.session.common.close_pam_session("pamh", "greeter PAM session")
 
     assert calls == [("end_pam", "pamh")]
 
