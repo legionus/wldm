@@ -5,7 +5,7 @@
 import asyncio
 import socket
 from contextlib import suppress
-from typing import Any
+from typing import Any, Awaitable, Callable
 from asyncio.subprocess import Process as AsyncProcess
 
 import wldm
@@ -15,6 +15,9 @@ import wldm.process
 import wldm.secret
 
 logger = wldm.logger
+
+AUTH_TIMEOUT_WARNING_MESSAGE = "Authentication time is running out. Hurry up..."
+AUTH_TIMEOUT_EXPIRED_MESSAGE = "Authentication timed out."
 
 
 class AuthSessionState:
@@ -163,3 +166,36 @@ async def continue_auth_session(auth_session: AuthSessionState,
         response.clear()
 
     return await read_auth_worker_message(auth_session)
+
+
+async def run_auth_timeout(auth_session: AuthSessionState,
+                           timeout: int,
+                           is_current: Callable[[], bool],
+                           send_auth_message: Callable[[str, str], Awaitable[None]],
+                           expire: Callable[[], Awaitable[None]]) -> None:
+    """Run one daemon-side idle timeout for a pending auth conversation."""
+    warning_delay = max(0, timeout - max(1, timeout // 3))
+
+    try:
+        if warning_delay > 0:
+            await asyncio.sleep(warning_delay)
+
+            if not is_current():
+                return
+
+            await send_auth_message("warning", AUTH_TIMEOUT_WARNING_MESSAGE)
+
+        await asyncio.sleep(max(0, timeout - warning_delay))
+
+        if not is_current():
+            return
+
+        logger.info("pam-worker pid=%d service=%s user=%s tty=%s timed out after %d seconds",
+                    auth_session.proc.pid, auth_session.service,
+                    auth_session.username, auth_session.tty or "<none>", timeout)
+
+        await expire()
+        await send_auth_message("error", AUTH_TIMEOUT_EXPIRED_MESSAGE)
+
+    except asyncio.CancelledError:
+        pass

@@ -17,6 +17,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 
 from pathlib import Path
@@ -28,7 +29,6 @@ SRC_DIR = REPO_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-import wldm  # pylint: disable=wrong-import-position
 import wldm.protocol.greeter as greeter_protocol  # pylint: disable=wrong-import-position
 
 
@@ -41,6 +41,9 @@ Exec=/bin/true
 DesktopNames=stub
 """
 
+AUTH_TIMEOUT_WARNING_MESSAGE = "Authentication time is running out. Hurry up..."
+AUTH_TIMEOUT_EXPIRED_MESSAGE = "Authentication timed out."
+
 
 class StubDaemon:
     def __init__(self, args: argparse.Namespace, sock: socket.socket) -> None:
@@ -49,9 +52,66 @@ class StubDaemon:
         self.username = ""
         self.session_pid = 1000
         self.active_sessions: list[dict[str, object]] = []
+        self.auth_pending = False
+        self.auth_timed_out = False
+        self.auth_timeout_token = 0
+        self.auth_warning_timer: threading.Timer | None = None
+        self.auth_expire_timer: threading.Timer | None = None
+        self.write_lock = threading.Lock()
 
     def write_message(self, message: dict[str, Any]) -> None:
-        self.sock.sendall(greeter_protocol.encode_message(message))
+        with self.write_lock:
+            self.sock.sendall(greeter_protocol.encode_message(message))
+
+    def cancel_auth_timeout(self) -> None:
+        self.auth_timeout_token += 1
+
+        for timer in (self.auth_warning_timer, self.auth_expire_timer):
+            if timer is not None:
+                timer.cancel()
+
+        self.auth_warning_timer = None
+        self.auth_expire_timer = None
+
+    def send_auth_timeout_message(self, style: str, text: str) -> None:
+        self.write_message(
+            greeter_protocol.new_event(
+                greeter_protocol.EVENT_AUTH_MESSAGE,
+                {"style": style, "text": text},
+            )
+        )
+
+    def warn_auth_timeout(self, token: int) -> None:
+        if token != self.auth_timeout_token or not self.auth_pending:
+            return
+
+        self.send_auth_timeout_message("warning", AUTH_TIMEOUT_WARNING_MESSAGE)
+
+    def expire_auth_timeout(self, token: int) -> None:
+        if token != self.auth_timeout_token or not self.auth_pending:
+            return
+
+        self.auth_pending = False
+        self.auth_timed_out = True
+        self.send_auth_timeout_message("error", AUTH_TIMEOUT_EXPIRED_MESSAGE)
+
+    def start_auth_timeout(self) -> None:
+        timeout = self.args.auth_timeout
+        if timeout <= 0:
+            return
+
+        self.cancel_auth_timeout()
+        token = self.auth_timeout_token
+        warning_delay = max(0, timeout - max(1, timeout // 3))
+
+        if warning_delay > 0:
+            self.auth_warning_timer = threading.Timer(warning_delay, self.warn_auth_timeout, args=(token,))
+            self.auth_warning_timer.daemon = True
+            self.auth_warning_timer.start()
+
+        self.auth_expire_timer = threading.Timer(timeout, self.expire_auth_timeout, args=(token,))
+        self.auth_expire_timer.daemon = True
+        self.auth_expire_timer.start()
 
     def respond(self, request: dict[str, Any], payload: dict[str, Any] | None = None) -> None:
         self.write_message(greeter_protocol.new_response(request, ok=True, payload=payload or {}))
@@ -67,6 +127,10 @@ class StubDaemon:
         }
 
     def handle_create_session(self, request: dict[str, Any]) -> None:
+        self.cancel_auth_timeout()
+        self.auth_pending = False
+        self.auth_timed_out = False
+
         payload = request.get("payload", {})
         username = payload.get("username", "")
         self.username = secret_to_text(username).strip()
@@ -83,8 +147,14 @@ class StubDaemon:
                 text=self.args.prompt,
             )
         )
+        self.auth_pending = True
+        self.start_auth_timeout()
 
     def handle_continue_session(self, request: dict[str, Any]) -> None:
+        if self.auth_timed_out:
+            self.reject(request, "auth_failed", AUTH_TIMEOUT_EXPIRED_MESSAGE)
+            return
+
         payload = request.get("payload", {})
         response = secret_to_text(payload.get("response", ""))
 
@@ -96,6 +166,8 @@ class StubDaemon:
             self.reject(request, "auth_retryable", "Authentication failed.")
             return
 
+        self.cancel_auth_timeout()
+        self.auth_pending = False
         self.write_message(greeter_protocol.new_conversation_response(request, "ready"))
 
     def handle_start_session(self, request: dict[str, Any]) -> None:
@@ -152,6 +224,9 @@ class StubDaemon:
 
         if action == greeter_protocol.ACTION_CANCEL_SESSION:
             self.username = ""
+            self.auth_pending = False
+            self.auth_timed_out = False
+            self.cancel_auth_timeout()
             self.respond(request)
             return
 
@@ -166,18 +241,21 @@ class StubDaemon:
         self.reject(request, "bad_request", f"Unsupported action: {action}")
 
     def run(self) -> None:
-        while True:
-            message = greeter_protocol.read_message_socket(self.sock)
-            if message is None:
-                return
+        try:
+            while True:
+                message = greeter_protocol.read_message_socket(self.sock)
+                if message is None:
+                    return
 
-            print(f"<- {message}", file=sys.stderr, flush=True)
+                print(f"<- {message}", file=sys.stderr, flush=True)
 
-            if not greeter_protocol.is_request(message):
-                print(f"ignoring non-request message: {message}", file=sys.stderr, flush=True)
-                continue
+                if not greeter_protocol.is_request(message):
+                    print(f"ignoring non-request message: {message}", file=sys.stderr, flush=True)
+                    continue
 
-            self.handle_request(message)
+                self.handle_request(message)
+        finally:
+            self.cancel_auth_timeout()
 
 
 def secret_to_text(value: object) -> str:
@@ -251,6 +329,12 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--password", default="password", help="password required when --auth=password")
     parser.add_argument("--prompt", default="Password:", help="authentication prompt text")
     parser.add_argument("--prompt-style", choices=("secret", "visible", "info", "error"), default="secret")
+    parser.add_argument(
+        "--auth-timeout",
+        type=int,
+        default=0,
+        help="seconds before pending authentication times out; 0 disables",
+    )
     parser.add_argument("--session-result", choices=("success", "failure", "hang"), default="success")
     parser.add_argument("--reexec-after-start", action="store_true", help="send re-exec after accepting start-session")
     parser.add_argument("--delay", type=float, default=0.5, help="delay before session-finished event")

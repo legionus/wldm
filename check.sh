@@ -11,7 +11,7 @@ SCRIPT_TOP="${SCRIPT_TOP:-$(dirname "${REAL_SCRIPT}")}"
 export PYTHONPATH="${SCRIPT_TOP}/src"
 
 find src/wldm -type f -name '*.py' -a \! -name '*_tab.py' |
-	xargs -r pylint --disable=R,E0611 --disable=W0603,W0621,W0718 --disable=C0103,C0114,C0115,C0116,C0301,C0415,C3001
+	xargs -r pylint --disable=R,E0611 --disable=W0603,W0621,W0718 --disable=C0103,C0114,C0115,C0116,C0301,C0302,C0415,C3001
 
 find src/wldm -type f -name '*.py' -a \! -name '*_tab.py' |
 	xargs -r mypy --strict

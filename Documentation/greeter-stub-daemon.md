@@ -50,6 +50,17 @@ Change the prompt text or style:
 tests/greeter_stub_daemon.py --prompt "Verification code:" --prompt-style visible
 ```
 
+Show daemon-side authentication timeout messages while the greeter waits for a
+reply:
+
+```bash
+tests/greeter_stub_daemon.py --auth-timeout 10
+```
+
+The stub sends the same `auth-message` warning and error events as the real
+daemon. The warning is sent when the last third of the timeout remains, and the
+error is sent when the pending authentication expires.
+
 ## Session Result Modes
 
 Report a successful session start and finish:

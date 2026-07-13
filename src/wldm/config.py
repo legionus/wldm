@@ -49,6 +49,7 @@ def read_config() -> wldm.inifile.IniFile:
             "command": "cage -d -s -m last --",
             "pam-service": "system-login",
             "max-restarts": "3",
+            "auth-timeout": "60",
             "user-sessions": "yes",
             "log-path": "",
         },

@@ -34,6 +34,7 @@ EVENT_SESSION_STARTING = "session-starting"
 EVENT_SESSION_FINISHED = "session-finished"
 EVENT_STATE_CHANGED = "state-changed"
 EVENT_REEXEC = "re-exec"
+EVENT_AUTH_MESSAGE = "auth-message"
 
 TYPE_REQUEST = 1
 TYPE_RESPONSE = 2
@@ -341,6 +342,10 @@ def encode_message(message: Dict[str, Any]) -> bytes:
 
         elif message.get("event") == EVENT_STATE_CHANGED:
             _encode_response_payload(body, ACTION_GET_STATE, payload)
+
+        elif message.get("event") == EVENT_AUTH_MESSAGE:
+            body.extend(framing.encode_text(str(payload.get("style", ""))))
+            body.extend(framing.encode_text(str(payload.get("text", ""))))
     else:
         raise ProtocolError("unknown protocol message type")
 
@@ -452,6 +457,11 @@ def decode_message(raw: bytes | str) -> Dict[str, Any]:
 
         elif event_name == EVENT_STATE_CHANGED:
             decoded["payload"], offset = _decode_response_payload(ACTION_GET_STATE, payload, offset)
+
+        elif event_name == EVENT_AUTH_MESSAGE:
+            style, offset = _decode_text(payload, offset)
+            text, offset = _decode_text(payload, offset)
+            decoded["payload"] = {"style": style, "text": text}
 
         return _finish_decoded_message(decoded, payload, offset, raw)
 

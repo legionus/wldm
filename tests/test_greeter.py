@@ -584,6 +584,50 @@ def test_handle_event_updates_status_label(monkeypatch):
     )
     assert app.status_label.text == "Session failed with exit status 7."
 
+    greeter.GreeterApp.handle_event(
+        app,
+        {
+            "v": 1,
+            "type": "event",
+            "event": greeter.greeter_protocol.EVENT_AUTH_MESSAGE,
+            "payload": {"style": "error", "text": "Authentication timed out."},
+        },
+    )
+    assert app.status_label.text == "Authentication timed out."
+
+
+def test_auth_message_error_resets_pending_auth_flow(monkeypatch):
+    greeter = load_greeter_module(monkeypatch)
+    monkeypatch.setattr(greeter.wldm.sessions, "desktop_sessions", lambda username="": [])
+    app = new_greeter_app(
+        greeter,
+        auth_username="alice",
+        conversation_pending=True,
+        conversation_prompt_style="secret",
+        conversation_prompt_text="Password:",
+        username_entry=StubEntry(""),
+        password_entry=StubEntry("secret"),
+        status_label=DummyLabel(),
+    )
+
+    greeter.GreeterApp.handle_event(
+        app,
+        {
+            "v": 1,
+            "type": "event",
+            "event": greeter.greeter_protocol.EVENT_AUTH_MESSAGE,
+            "payload": {"style": "error", "text": "Authentication timed out."},
+        },
+    )
+
+    assert app.conversation_pending is False
+    assert app.session_ready is False
+    assert app.auth_username == ""
+    assert app.username_entry.text == "alice"
+    assert app.username_entry.focused is True
+    assert app.password_entry.text == ""
+    assert app.status_label.text == "Authentication timed out."
+
 
 def test_handle_event_reexecs_self(monkeypatch):
     greeter = load_greeter_module(monkeypatch)

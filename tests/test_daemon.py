@@ -35,6 +35,7 @@ def make_config(user="gdm",
                 command="cage -s -m last --",
                 pam_service="system-login",
                 max_restarts="3",
+                auth_timeout="60",
                 user_sessions="yes",
                 seat="seat0",
                 daemon_log="/tmp/wldm/daemon.log",
@@ -60,6 +61,7 @@ def make_config(user="gdm",
             "command": command,
             "pam-service": pam_service,
             "max-restarts": max_restarts,
+            "auth-timeout": auth_timeout,
             "user-sessions": user_sessions,
             "log-path": greeter_log,
         },
@@ -276,6 +278,57 @@ def test_process_request_cancel_session_clears_auth_state():
 
     assert outcome["ok"] is True
     assert state.clients["greeter"].auth_session is None
+
+
+def test_auth_timeout_task_warns_then_stops_session(monkeypatch):
+    state = make_daemon_state(wldm.daemon, greeter_writer=True)
+    auth_session = make_daemon_auth_session(wldm.daemon, "alice")
+    state.clients["greeter"].auth_session = auth_session
+    sleeps = []
+    stops = []
+
+    async def fake_sleep(seconds):
+        sleeps.append(seconds)
+
+    async def fake_stop_auth_session(session, *, send_cancel=False):
+        stops.append((session, send_cancel))
+
+    monkeypatch.setattr(wldm.daemon.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(wldm.daemon.daemon_auth, "stop_auth_session", fake_stop_auth_session)
+
+    async def run_task():
+        wldm.daemon.reset_auth_timeout(
+            state.clients["greeter"],
+            auth_session,
+            make_config(auth_timeout="6"),
+            wldm.daemon.send_message,
+        )
+        task = state.clients["greeter"].auth_timer
+        assert task is not None
+        await task
+
+    asyncio.run(run_task())
+
+    events = [greeter_protocol.decode_message(line) for line in state.clients["greeter"].writer.lines]
+
+    assert sleeps == [4, 2]
+    assert events == [
+        {
+            "v": 1,
+            "type": "event",
+            "event": greeter_protocol.EVENT_AUTH_MESSAGE,
+            "payload": {"style": "warning", "text": wldm.daemon.daemon_auth.AUTH_TIMEOUT_WARNING_MESSAGE},
+        },
+        {
+            "v": 1,
+            "type": "event",
+            "event": greeter_protocol.EVENT_AUTH_MESSAGE,
+            "payload": {"style": "error", "text": wldm.daemon.daemon_auth.AUTH_TIMEOUT_EXPIRED_MESSAGE},
+        },
+    ]
+    assert stops == [(auth_session, True)]
+    assert state.clients["greeter"].auth_session is None
+    assert state.clients["greeter"].auth_timer is None
 
 
 def test_load_last_session_reads_state_file(tmp_path):

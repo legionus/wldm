@@ -14,6 +14,7 @@ def make_args(**overrides):
     values = {
         "actions": ["poweroff", "reboot"],
         "auth": "accept",
+        "auth_timeout": 0.0,
         "backend": "gtk",
         "data_dir": "/srv/wldm/data",
         "delay": 0.0,
@@ -98,6 +99,51 @@ def test_stub_daemon_accepts_password_flow():
         assert continue_answer["ok"] is True
         assert continue_answer["payload"] == {"state": "ready"}
     finally:
+        left.close()
+        right.close()
+
+
+def test_stub_daemon_sends_auth_timeout_events():
+    left, right = socket.socketpair()
+    try:
+        daemon = stub.StubDaemon(make_args(auth_timeout=10.0), left)
+        create = greeter_protocol.new_request(greeter_protocol.ACTION_CREATE_SESSION, {"username": "alice"})
+        daemon.handle_request(create)
+
+        assert read_message(right)["ok"] is True
+
+        token = daemon.auth_timeout_token
+        daemon.warn_auth_timeout(token)
+        warning = read_message(right)
+        assert warning == {
+            "v": 1,
+            "type": "event",
+            "event": greeter_protocol.EVENT_AUTH_MESSAGE,
+            "payload": {"style": "warning", "text": stub.AUTH_TIMEOUT_WARNING_MESSAGE},
+        }
+
+        daemon.expire_auth_timeout(token)
+        expired = read_message(right)
+        assert expired == {
+            "v": 1,
+            "type": "event",
+            "event": greeter_protocol.EVENT_AUTH_MESSAGE,
+            "payload": {"style": "error", "text": stub.AUTH_TIMEOUT_EXPIRED_MESSAGE},
+        }
+        assert daemon.auth_pending is False
+        assert daemon.auth_timed_out is True
+
+        cont = greeter_protocol.new_request(
+            greeter_protocol.ACTION_CONTINUE_SESSION,
+            {"response": SecretBytes("secret")},
+        )
+        daemon.handle_request(cont)
+
+        answer = read_message(right)
+        assert answer["ok"] is False
+        assert answer["error"]["code"] == "auth_failed"
+    finally:
+        daemon.cancel_auth_timeout()
         left.close()
         right.close()
 

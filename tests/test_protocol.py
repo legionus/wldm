@@ -130,6 +130,22 @@ def test_encode_and_decode_conversation_response():
     }
 
 
+def test_encode_and_decode_auth_message_event():
+    msg = greeter_protocol.new_event(
+        greeter_protocol.EVENT_AUTH_MESSAGE,
+        {"style": "warning", "text": "Authentication time is running out. Hurry up..."},
+    )
+
+    decoded = greeter_protocol.decode_message(greeter_protocol.encode_message(msg))
+
+    assert decoded == {
+        "v": 1,
+        "type": "event",
+        "event": greeter_protocol.EVENT_AUTH_MESSAGE,
+        "payload": {"style": "warning", "text": "Authentication time is running out. Hurry up..."},
+    }
+
+
 def test_auth_field_is_too_long_checks_wire_length():
     assert greeter_protocol.auth_field_is_too_long("a" * 256) is False
     assert greeter_protocol.auth_field_is_too_long("a" * 257) is True

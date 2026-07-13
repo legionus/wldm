@@ -425,6 +425,26 @@ Meaning:
 
 - Broadcast whenever the daemon's observer-facing state snapshot changes.
 
+### `auth-message`
+
+Wire layout:
+
+```text
+event(auth-message) = event("auth-message") + style + text
+```
+
+Fields:
+
+- `style` (`string`) frontend display style, usually `warning` or `error`
+- `text` (`string`) human-readable authentication status message
+
+Meaning:
+
+- Sent to the greeter while an authentication conversation is pending.
+- Allows the daemon to report authentication policy events, such as an
+  approaching or expired authentication timeout, without waiting for another
+  greeter request.
+
 ### `re-exec`
 
 Wire layout:

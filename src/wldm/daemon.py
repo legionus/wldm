@@ -8,7 +8,7 @@ import os
 import signal
 import socket
 from contextlib import suppress
-from typing import Any, Dict, Optional
+from typing import Any, Awaitable, Callable, Dict, Optional
 from asyncio.subprocess import Process as AsyncProcess
 
 import wldm
@@ -92,7 +92,7 @@ class SessionState:
 
 
 class ClientState:
-    __slots__ = ("proc", "writer", "task", "failures", "ready", "auth_session")
+    __slots__ = ("proc", "writer", "task", "failures", "ready", "auth_session", "auth_timer")
 
     def __init__(self,
                  proc: Optional[AsyncProcess] = None,
@@ -100,13 +100,71 @@ class ClientState:
                  task: Optional[asyncio.Task[None]] = None,
                  failures: int = 0,
                  ready: bool = False,
-                 auth_session: Optional[daemon_auth.AuthSessionState] = None) -> None:
+                 auth_session: Optional[daemon_auth.AuthSessionState] = None,
+                 auth_timer: Optional[asyncio.Task[None]] = None) -> None:
         self.proc = proc
         self.writer = writer
         self.task = task
         self.failures = failures
         self.ready = ready
         self.auth_session = auth_session
+        self.auth_timer = auth_timer
+
+
+def cancel_auth_timeout(client: ClientState) -> None:
+    """Cancel any daemon-side auth timeout task for one client."""
+    if client.auth_timer is not None:
+        client.auth_timer.cancel()
+        client.auth_timer = None
+
+
+async def stop_client_auth_session(client: ClientState, *, send_cancel: bool = False) -> None:
+    """Stop one auth session and cancel its timeout task."""
+    cancel_auth_timeout(client)
+
+    if client.auth_session is not None:
+        await daemon_auth.stop_auth_session(client.auth_session, send_cancel=send_cancel)
+        client.auth_session = None
+
+
+def reset_auth_timeout(
+    client: ClientState,
+    auth_session: daemon_auth.AuthSessionState,
+    cfg: wldm.inifile.IniFile,
+    send: Callable[[Optional[asyncio.StreamWriter], Dict[str, Any]], Awaitable[bool]],
+) -> None:
+    """Start a new timeout task for one pending auth conversation."""
+    cancel_auth_timeout(client)
+
+    timeout = cfg.get_int("greeter", "auth-timeout", default=0)
+    if timeout <= 0:
+        return
+
+    async def send_auth_message(style: str, text: str) -> None:
+        await send(
+            client.writer,
+            greeter_protocol.new_event(
+                greeter_protocol.EVENT_AUTH_MESSAGE,
+                {"style": style, "text": text},
+            ),
+        )
+
+    async def expire() -> None:
+        await daemon_auth.stop_auth_session(auth_session, send_cancel=True)
+        if client.auth_session is auth_session:
+            client.auth_session = None
+        if client.auth_timer is asyncio.current_task():
+            client.auth_timer = None
+
+    client.auth_timer = asyncio.create_task(
+        daemon_auth.run_auth_timeout(
+            auth_session,
+            timeout,
+            lambda: client.auth_session is auth_session and not auth_session.ready,
+            send_auth_message,
+            expire,
+        )
+    )
 
 
 POWER_ACTION_COMMANDS = {
@@ -210,7 +268,8 @@ def process_request(state: DaemonState,
 
     if req["action"] == greeter_protocol.ACTION_START_SESSION:
         payload = req["payload"]
-        auth_session = client_state(state, client_name).auth_session
+        client = client_state(state, client_name)
+        auth_session = client.auth_session
 
         if auth_session is None:
             return RequestOutcome(
@@ -238,7 +297,8 @@ def process_request(state: DaemonState,
             session_icon=str(payload.get("icon", "")),
             session_desktop_file=str(payload.get("desktop_file", "")),
         )
-        client_state(state, client_name).auth_session = None
+        cancel_auth_timeout(client)
+        client.auth_session = None
         return outcome
 
     if req["action"] in POWER_ACTION_COMMANDS:
@@ -444,8 +504,7 @@ async def handle_request_async(state: DaemonState,
                         client.auth_session.username,
                         username.as_bytes().decode("utf-8", errors="replace"))
 
-            await daemon_auth.stop_auth_session(client.auth_session, send_cancel=True)
-            client.auth_session = None
+            await stop_client_auth_session(client, send_cancel=True)
 
         username_text = username.as_bytes().decode("utf-8", errors="replace")
         username.clear()
@@ -462,8 +521,7 @@ async def handle_request_async(state: DaemonState,
                            new_auth_session.proc.pid, new_auth_session.service,
                            new_auth_session.username, new_auth_session.tty or "<none>")
 
-            await daemon_auth.stop_auth_session(new_auth_session)
-            client.auth_session = None
+            await stop_client_auth_session(client)
             await send_message(
                 client.writer,
                 greeter_protocol.new_error(req, "auth_failed", "Authentication worker closed unexpectedly"),
@@ -472,6 +530,7 @@ async def handle_request_async(state: DaemonState,
 
         if message["kind"] == pam_worker_protocol.KIND_READY:
             new_auth_session.ready = True
+            cancel_auth_timeout(client)
 
         response = daemon_auth.conversation_response_from_worker(req, message)
 
@@ -481,10 +540,11 @@ async def handle_request_async(state: DaemonState,
                            new_auth_session.username, new_auth_session.tty or "<none>",
                            message.get("message", "Authentication failed"))
 
-            await daemon_auth.stop_auth_session(new_auth_session)
-            client.auth_session = None
+            await stop_client_auth_session(client)
 
         await send_message(client.writer, response)
+        if message["kind"] == pam_worker_protocol.KIND_PROMPT:
+            reset_auth_timeout(client, new_auth_session, cfg, send_message)
         return
 
     if greeter_protocol.is_request(req, action=greeter_protocol.ACTION_CONTINUE_SESSION):
@@ -518,8 +578,7 @@ async def handle_request_async(state: DaemonState,
                            auth_session.proc.pid, auth_session.service,
                            auth_session.username, auth_session.tty or "<none>")
 
-            await daemon_auth.stop_auth_session(auth_session)
-            client.auth_session = None
+            await stop_client_auth_session(client)
             await send_message(
                 client.writer,
                 greeter_protocol.new_error(req, "auth_failed", "Authentication worker closed unexpectedly"),
@@ -528,6 +587,7 @@ async def handle_request_async(state: DaemonState,
 
         if message["kind"] == pam_worker_protocol.KIND_READY:
             auth_session.ready = True
+            cancel_auth_timeout(client)
 
         response = daemon_auth.conversation_response_from_worker(req, message)
 
@@ -537,16 +597,15 @@ async def handle_request_async(state: DaemonState,
                            auth_session.username, auth_session.tty or "<none>",
                            message.get("message", "Authentication failed"))
 
-            await daemon_auth.stop_auth_session(auth_session)
-            client.auth_session = None
+            await stop_client_auth_session(client)
 
         await send_message(client.writer, response)
+        if message["kind"] == pam_worker_protocol.KIND_PROMPT:
+            reset_auth_timeout(client, auth_session, cfg, send_message)
         return
 
     if greeter_protocol.is_request(req, action=greeter_protocol.ACTION_CANCEL_SESSION):
-        if client.auth_session is not None:
-            await daemon_auth.stop_auth_session(client.auth_session, send_cancel=True)
-            client.auth_session = None
+        await stop_client_auth_session(client, send_cancel=True)
 
         await send_message(client.writer, greeter_protocol.new_response(req, ok=True, payload={}))
         return
@@ -622,9 +681,7 @@ async def handle_client(state: DaemonState,
             await handle_request_async(state, name, req, cfg)
 
     finally:
-        if client.auth_session is not None:
-            await daemon_auth.stop_auth_session(client.auth_session, send_cancel=True)
-            client.auth_session = None
+        await stop_client_auth_session(client, send_cancel=True)
 
         if client.writer is writer:
             client.writer = None
@@ -814,9 +871,7 @@ async def ensure_managed_clients(state: DaemonState,
 
 async def cleanup_async(state: DaemonState) -> None:
     for client in state.clients.values():
-        if client.auth_session is not None:
-            await daemon_auth.stop_auth_session(client.auth_session, send_cancel=True)
-            client.auth_session = None
+        await stop_client_auth_session(client, send_cancel=True)
 
     for name in list(state.clients):
         await close_client_channel(state, name)

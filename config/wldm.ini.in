@@ -63,6 +63,9 @@ pam-service = system-login
 # How many consecutive greeter crashes are tolerated before the daemon stops.
 max-restarts = 3
 
+# Authentication conversation timeout in seconds. Set to 0 to disable.
+auth-timeout = 60
+
 # If enabled, also scan the typed user's session directory after a username is
 # entered.
 user-sessions = yes

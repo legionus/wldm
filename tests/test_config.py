@@ -36,6 +36,7 @@ def test_read_config_uses_explicit_repo_config(monkeypatch):
     assert cfg["greeter"]["user-session-dir"] == ".local/share/wayland-sessions"
     assert cfg["greeter"]["command"] == "cage -d -s -m last --"
     assert cfg["greeter"]["max-restarts"] == "3"
+    assert cfg["greeter"]["auth-timeout"] == "60"
     assert cfg["greeter"]["user-sessions"] == "yes"
     assert cfg["greeter"]["log-path"] == ""
     assert cfg["session"]["pam-service"] == "login"
@@ -91,6 +92,7 @@ def test_read_config_sets_default_runtime_greeter_values(monkeypatch):
     assert cfg["greeter"]["theme"] == "default"
     assert cfg["greeter"]["session-dirs"] == "/usr/share/wayland-sessions"
     assert cfg["greeter"]["user-session-dir"] == ".local/share/wayland-sessions"
+    assert cfg["greeter"]["auth-timeout"] == "60"
     assert cfg["greeter"]["user-sessions"] == "yes"
     assert cfg["greeter"]["log-path"] == ""
     assert cfg["session"]["pam-service"] == "login"
@@ -118,6 +120,18 @@ def test_read_config_sets_default_greeter_restart_limit(monkeypatch):
     cfg = wldm.config.read_config()
 
     assert cfg["greeter"]["max-restarts"] == "3"
+
+
+def test_read_config_sets_default_greeter_auth_timeout(monkeypatch):
+    monkeypatch.delenv("WLDM_CONFIG", raising=False)
+    monkeypatch.setattr(pwd, "getpwuid", lambda uid: pwd.struct_passwd(
+        ("fallback-user", "x", 1000, 1000, "", "/home/fallback-user", "/bin/sh")))
+    monkeypatch.setattr(grp, "getgrgid", lambda gid: grp.struct_group(
+        ("fallback-group", "x", 1000, [])))
+
+    cfg = wldm.config.read_config()
+
+    assert cfg["greeter"]["auth-timeout"] == "60"
 
 
 def test_read_config_loads_devel_overrides_when_selected_explicitly(monkeypatch):

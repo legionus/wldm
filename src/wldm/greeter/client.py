@@ -84,6 +84,15 @@ def handle_event(app: greeter_contracts.GreeterClientApp, event: dict[str, Any])
         app.reexec_self()
         return
 
+    if event_name == greeter_protocol.EVENT_AUTH_MESSAGE:
+        style = str(payload.get("style", ""))
+        text = str(payload.get("text", ""))
+        if style == "error":
+            app.reset_auth_flow()
+        if text:
+            app.set_status(text, error=style == "error")
+        return
+
     if event_name == greeter_protocol.EVENT_SESSION_FINISHED:
         app.set_auth_state(False)
         app.clear_conversation_state()

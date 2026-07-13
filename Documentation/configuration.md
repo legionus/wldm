@@ -82,6 +82,11 @@ baking those paths into the main config.
   PAM service used for the greeter session. Default: `system-login`.
 - `max-restarts`
   How many failed greeter starts are tolerated before the daemon stops.
+- `auth-timeout`
+  Authentication conversation timeout in seconds. When the timeout is enabled,
+  the daemon warns the greeter when the remaining time is low and cancels the
+  PAM worker if the greeter does not answer in time. Set to `0` to disable.
+  Default: `60`.
 - `user-sessions`
   If enabled, the greeter also reads `~/.local/share/wayland-sessions` after a
   username is entered.

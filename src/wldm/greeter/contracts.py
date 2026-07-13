@@ -55,6 +55,9 @@ class GreeterClientApp(Protocol):
     def clear_conversation_state(self) -> None:
         """Forget the current authentication conversation state."""
 
+    def reset_auth_flow(self) -> None:
+        """Return the frontend to the initial username entry stage."""
+
     def clear_username_selection(self) -> None:
         """Move the username cursor to the end of the entry text."""
 
