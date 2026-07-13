@@ -37,10 +37,13 @@ SUBST = \
 	's|@sysconfdir@|$(SYSCONFDIR)|g' \
 	$(NULL)
 
-.PHONY: all install install-python install-launcher install-data install-config install-systemd install-dbus-policy uninstall
+.PHONY: all check-deps install install-python install-launcher install-data install-config install-systemd install-dbus-policy uninstall
 
 all:
 	@:
+
+check-deps:
+	@./check-deps.sh
 
 install: install-python install-launcher install-data install-config install-systemd install-dbus-policy
 
