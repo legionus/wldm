@@ -23,7 +23,7 @@ For the daemon/greeter protocol, see
 - There is no pathname listener.
 
 The implementation lives in
-[`src/wldm/pam_worker_protocol.py`](../src/wldm/pam_worker_protocol.py).
+[`src/wldm/protocol/pam_worker.py`](../src/wldm/protocol/pam_worker.py).
 
 ## Frame Format
 

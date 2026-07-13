@@ -76,7 +76,7 @@ INTERNAL_ROLES = {
     "user-session": "wldm.session.user",
     "greeter-session": "wldm.session.greeter",
     "dbus-adapter": "wldm.dbus_adapter",
-    "pam-worker": "wldm.pam_worker",
+    "pam-worker": "wldm.pam.worker",
 }
 
 

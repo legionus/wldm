@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import wldm.pam as pam
 import wldm.pam._ffi as ffi
-import wldm.pam_worker as pam_worker
+import wldm.pam.worker as pam_worker
 import wldm.protocol.pam_worker as pam_worker_protocol
 
 

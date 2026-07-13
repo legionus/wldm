@@ -84,7 +84,7 @@ The daemon is the only process expected to run as `root`.
 
 ### PAM Worker
 
-[`src/wldm/pam_worker.py`](../src/wldm/pam_worker.py) is a small privileged
+[`src/wldm/pam/worker.py`](../src/wldm/pam/worker.py) is a small privileged
 helper dedicated to one in-progress greeter authentication attempt.
 Its private daemon-facing wire contract is documented in
 [`pam-worker-protocol.md`](pam-worker-protocol.md).
