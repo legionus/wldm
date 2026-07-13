@@ -73,8 +73,8 @@ def run_internal_role(role: str, module_name: str) -> int:
 
 INTERNAL_ROLES = {
     "greeter": "wldm.greeter.launcher",
-    "user-session": "wldm.user_session",
-    "greeter-session": "wldm.greeter_session",
+    "user-session": "wldm.session.user",
+    "greeter-session": "wldm.session.greeter",
     "dbus-adapter": "wldm.dbus_adapter",
     "pam-worker": "wldm.pam_worker",
 }

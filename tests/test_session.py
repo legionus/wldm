@@ -10,7 +10,7 @@ import wldm.inifile
 import wldm.pam
 import wldm.process
 import wldm.tty
-import wldm.user_session
+import wldm.session.user
 import wldm.wtmp
 
 
@@ -19,32 +19,32 @@ def make_config(session: dict[str, str]) -> wldm.inifile.IniFile:
 
 
 def patch_session_hook_primitives(monkeypatch, *, extra_groups):
-    monkeypatch.setattr(wldm.user_session.os, "getgrouplist", lambda user, gid: extra_groups)
-    monkeypatch.setattr(wldm.user_session.os.path, "isabs", lambda path: True)
-    monkeypatch.setattr(wldm.user_session.os, "access", lambda path, mode: True)
+    monkeypatch.setattr(wldm.session.user.os, "getgrouplist", lambda user, gid: extra_groups)
+    monkeypatch.setattr(wldm.session.user.os.path, "isabs", lambda path: True)
+    monkeypatch.setattr(wldm.session.user.os, "access", lambda path, mode: True)
 
 
 def patch_parent_session_runtime(monkeypatch, *, tty_class, wait_status, criticals=None):
     monkeypatch.setattr(wldm.tty, "open_console", lambda: 77)
     monkeypatch.setattr(wldm.tty, "TTYdevice", tty_class)
-    monkeypatch.setattr(wldm.user_session, "prepare_user_terminal", lambda ttydev: None)
+    monkeypatch.setattr(wldm.session.user, "prepare_user_terminal", lambda ttydev: None)
     monkeypatch.setattr(wldm.pam, "start_pam", lambda service, user: "pamh")
     monkeypatch.setattr(wldm.pam, "set_pam_item", lambda pamh, item_type, value: None)
     monkeypatch.setattr(wldm.pam, "putenv", lambda pamh, name, value: None)
     monkeypatch.setattr(wldm.pam, "open_pam_session", lambda pamh: None)
-    monkeypatch.setattr(wldm.user_session, "new_user_environ", lambda pamh, pw_arg, ttydev=None: {})
-    monkeypatch.setattr(wldm.user_session, "run_session_hook", lambda *args, **kwargs: True)
-    monkeypatch.setattr(wldm.user_session.os, "fork", lambda: 1234)
-    monkeypatch.setattr(wldm.user_session.os, "waitpid", lambda pid, flags: (pid, wait_status))
-    monkeypatch.setattr(wldm.user_session.os, "WIFEXITED", lambda status: True)
-    monkeypatch.setattr(wldm.user_session.os, "WEXITSTATUS", lambda status: wait_status)
-    monkeypatch.setattr(wldm.user_session.os, "close", lambda fd: None)
+    monkeypatch.setattr(wldm.session.user, "new_user_environ", lambda pamh, pw_arg, ttydev=None: {})
+    monkeypatch.setattr(wldm.session.user, "run_session_hook", lambda *args, **kwargs: True)
+    monkeypatch.setattr(wldm.session.user.os, "fork", lambda: 1234)
+    monkeypatch.setattr(wldm.session.user.os, "waitpid", lambda pid, flags: (pid, wait_status))
+    monkeypatch.setattr(wldm.session.user.os, "WIFEXITED", lambda status: True)
+    monkeypatch.setattr(wldm.session.user.os, "WEXITSTATUS", lambda status: wait_status)
+    monkeypatch.setattr(wldm.session.user.os, "close", lambda fd: None)
     monkeypatch.setattr(wldm.wtmp, "login", lambda tty_path, username, host="": None)
     monkeypatch.setattr(wldm.wtmp, "logout", lambda tty_path, host="": None)
-    monkeypatch.setattr(wldm.user_session, "finish_user_session", lambda pamh: None)
+    monkeypatch.setattr(wldm.session.user, "finish_user_session", lambda pamh: None)
     if criticals is not None:
         monkeypatch.setattr(
-            wldm.user_session.logger,
+            wldm.session.user.logger,
             "critical",
             lambda msg, *args: criticals.append(msg % args if args else msg),
         )
@@ -62,7 +62,7 @@ def test_new_user_environ_merges_pam_and_user_fields(monkeypatch):
     pw = pwd.struct_passwd(("alice", "x", 1001, 1001, "", "/home/alice", "/bin/bash"))
     ttydev = SimpleNamespace(number=12)
 
-    env = wldm.user_session.new_user_environ(object(), pw, ttydev)
+    env = wldm.session.user.new_user_environ(object(), pw, ttydev)
 
     assert env["HOME"] == "/home/alice"
     assert env["USER"] == "alice"
@@ -83,7 +83,7 @@ def test_new_user_environ_exports_desktop_names(monkeypatch):
     monkeypatch.setenv("WLDM_SESSION_DESKTOP_NAMES", "KDE:Plasma")
     pw = pwd.struct_passwd(("alice", "x", 1001, 1001, "", "/home/alice", "/bin/bash"))
 
-    env = wldm.user_session.new_user_environ(object(), pw)
+    env = wldm.session.user.new_user_environ(object(), pw)
 
     assert env["XDG_SESSION_DESKTOP"] == "KDE"
     assert env["XDG_CURRENT_DESKTOP"] == "KDE:Plasma"
@@ -107,9 +107,9 @@ def test_run_session_hook_executes_command_as_user(monkeypatch):
         calls["extra_groups"] = extra_groups
         return SimpleNamespace(returncode=0)
 
-    monkeypatch.setattr(wldm.user_session, "_run_session_hook_command", fake_run)
+    monkeypatch.setattr(wldm.session.user, "_run_session_hook_command", fake_run)
 
-    result = wldm.user_session.run_session_hook(
+    result = wldm.session.user.run_session_hook(
         "pre",
         "/usr/libexec/pre-hook",
         pw,
@@ -135,17 +135,17 @@ def test_run_session_hook_reports_failure(monkeypatch):
 
     patch_session_hook_primitives(monkeypatch, extra_groups=[pw.pw_gid])
     monkeypatch.setattr(
-        wldm.user_session,
+        wldm.session.user,
         "_run_session_hook_command",
         lambda *args, **kwargs: SimpleNamespace(returncode=7),
     )
     monkeypatch.setattr(
-        wldm.user_session.logger,
+        wldm.session.user.logger,
         "critical",
         lambda msg, *args: criticals.append(msg % args if args else msg),
     )
 
-    result = wldm.user_session.run_session_hook("pre", "/usr/libexec/pre-hook", pw, {}, ttydev, "sway")
+    result = wldm.session.user.run_session_hook("pre", "/usr/libexec/pre-hook", pw, {}, ttydev, "sway")
 
     assert result is False
     assert any("pre hook failed" in message for message in criticals)
@@ -155,20 +155,20 @@ def test_cmd_main_fails_without_session_command(monkeypatch):
     pw = pwd.struct_passwd(("alice", "x", 1001, 1001, "", "/home/alice", "/bin/bash"))
     calls = []
 
-    monkeypatch.setattr(wldm.user_session.pwd, "getpwnam", lambda username: pw)
+    monkeypatch.setattr(wldm.session.user.pwd, "getpwnam", lambda username: pw)
     monkeypatch.setattr(
         wldm.config,
         "read_config",
         lambda: make_config({"pam-service": "custom-login", "execute": "", "pre-execute": "", "post-execute": ""}),
     )
     monkeypatch.setattr(
-        wldm.user_session,
+        wldm.session.user,
         "run_user_session",
         lambda *args: calls.append(args) or wldm.EX_FAILURE,
     )
     monkeypatch.setenv("WLDM_SESSION_USER", "alice")
 
-    result = wldm.user_session.cmd_main()
+    result = wldm.session.user.cmd_main()
 
     assert result == wldm.EX_FAILURE
     assert calls == [(pw, "custom-login", "", "", "")]
@@ -177,10 +177,10 @@ def test_cmd_main_fails_without_session_command(monkeypatch):
 def test_build_session_argv_uses_shell_for_non_absolute_command(monkeypatch):
     mark_unprivileged(monkeypatch)
     monkeypatch.setenv("WLDM_SESSION_COMMAND", 'startplasma-wayland --profile "KDE Plasma"')
-    monkeypatch.setattr(wldm.user_session.os.path, "isabs", lambda path: False)
-    monkeypatch.setattr(wldm.user_session.os, "access", lambda path, mode: False)
+    monkeypatch.setattr(wldm.session.user.os.path, "isabs", lambda path: False)
+    monkeypatch.setattr(wldm.session.user.os, "access", lambda path, mode: False)
 
-    argv = wldm.user_session.build_session_argv("/bin/bash")
+    argv = wldm.session.user.build_session_argv("/bin/bash")
 
     assert argv == ["/bin/bash", "-c", "startplasma-wayland --profile 'KDE Plasma'"]
 
@@ -188,10 +188,10 @@ def test_build_session_argv_uses_shell_for_non_absolute_command(monkeypatch):
 def test_build_session_argv_preserves_absolute_executable(monkeypatch):
     mark_unprivileged(monkeypatch)
     monkeypatch.setenv("WLDM_SESSION_COMMAND", '/usr/bin/startplasma-wayland --profile "KDE Plasma"')
-    monkeypatch.setattr(wldm.user_session.os.path, "isabs", lambda path: path.startswith("/"))
-    monkeypatch.setattr(wldm.user_session.os, "access", lambda path, mode: True)
+    monkeypatch.setattr(wldm.session.user.os.path, "isabs", lambda path: path.startswith("/"))
+    monkeypatch.setattr(wldm.session.user.os, "access", lambda path, mode: True)
 
-    argv = wldm.user_session.build_session_argv("/bin/bash")
+    argv = wldm.session.user.build_session_argv("/bin/bash")
 
     assert argv == ["/usr/bin/startplasma-wayland", "--profile", "KDE Plasma"]
 
@@ -201,10 +201,10 @@ def test_build_session_argv_expands_desktop_entry_field_codes(monkeypatch):
     monkeypatch.setenv("WLDM_SESSION_COMMAND", "sway --name %c --desktop-file %k %u %%done")
     monkeypatch.setenv("WLDM_SESSION_NAME", "Sway Session")
     monkeypatch.setenv("WLDM_SESSION_DESKTOP_FILE", "/usr/share/wayland-sessions/sway.desktop")
-    monkeypatch.setattr(wldm.user_session.os.path, "isabs", lambda path: False)
-    monkeypatch.setattr(wldm.user_session.os, "access", lambda path, mode: False)
+    monkeypatch.setattr(wldm.session.user.os.path, "isabs", lambda path: False)
+    monkeypatch.setattr(wldm.session.user.os, "access", lambda path, mode: False)
 
-    argv = wldm.user_session.build_session_argv("/bin/bash")
+    argv = wldm.session.user.build_session_argv("/bin/bash")
 
     assert argv == [
         "/bin/bash",
@@ -217,24 +217,24 @@ def test_build_session_argv_expands_desktop_entry_icon_field(monkeypatch):
     mark_unprivileged(monkeypatch)
     monkeypatch.setenv("WLDM_SESSION_COMMAND", "labwc %i")
     monkeypatch.setenv("WLDM_SESSION_ICON", "labwc-icon")
-    monkeypatch.setattr(wldm.user_session.os.path, "isabs", lambda path: False)
-    monkeypatch.setattr(wldm.user_session.os, "access", lambda path, mode: False)
+    monkeypatch.setattr(wldm.session.user.os.path, "isabs", lambda path: False)
+    monkeypatch.setattr(wldm.session.user.os, "access", lambda path, mode: False)
 
-    argv = wldm.user_session.build_session_argv("/bin/bash")
+    argv = wldm.session.user.build_session_argv("/bin/bash")
 
     assert argv == ["/bin/bash", "-c", "labwc --icon labwc-icon"]
 
 
 def test_build_session_argv_rejects_invalid_desktop_entry_field_codes(monkeypatch):
     mark_unprivileged(monkeypatch)
-    monkeypatch.setattr(wldm.user_session.os.path, "isabs", lambda path: False)
-    monkeypatch.setattr(wldm.user_session.os, "access", lambda path, mode: False)
+    monkeypatch.setattr(wldm.session.user.os.path, "isabs", lambda path: False)
+    monkeypatch.setattr(wldm.session.user.os, "access", lambda path, mode: False)
 
     for command in ["sway %Z", "sway %", "sway icon=%i"]:
         monkeypatch.setenv("WLDM_SESSION_COMMAND", command)
 
         try:
-            wldm.user_session.build_session_argv("/bin/bash")
+            wldm.session.user.build_session_argv("/bin/bash")
         except RuntimeError:
             pass
         else:
@@ -246,7 +246,7 @@ def test_build_session_argv_requires_unprivileged_context(monkeypatch):
     monkeypatch.setenv("WLDM_SESSION_COMMAND", "sway")
 
     try:
-        wldm.user_session.build_session_argv("/bin/bash")
+        wldm.session.user.build_session_argv("/bin/bash")
     except RuntimeError as exc:
         assert "requires dropped privileges" in str(exc)
     else:
@@ -257,7 +257,7 @@ def test_cmd_main_passes_wrapper_paths_to_run_user_session(monkeypatch):
     pw = pwd.struct_passwd(("alice", "x", 1001, 1001, "", "/home/alice", "/bin/bash"))
     calls = {}
 
-    monkeypatch.setattr(wldm.user_session.pwd, "getpwnam", lambda username: pw)
+    monkeypatch.setattr(wldm.session.user.pwd, "getpwnam", lambda username: pw)
     monkeypatch.setattr(
         wldm.config,
         "read_config",
@@ -272,11 +272,11 @@ def test_cmd_main_passes_wrapper_paths_to_run_user_session(monkeypatch):
         calls["pre_execute"] = pre_execute
         calls["post_execute"] = post_execute
 
-    monkeypatch.setattr(wldm.user_session, "run_user_session", fake_run_user_session)
+    monkeypatch.setattr(wldm.session.user, "run_user_session", fake_run_user_session)
 
     monkeypatch.setenv("WLDM_SESSION_USER", "alice")
 
-    result = wldm.user_session.cmd_main()
+    result = wldm.session.user.cmd_main()
 
     assert result is None
     assert calls["pw"] == pw
@@ -294,7 +294,7 @@ def test_finish_user_session_always_ends_pam(monkeypatch):
     monkeypatch.setattr(wldm.pam, "end_pam",
                         lambda pamh: calls.append(("end", pamh)))
 
-    wldm.user_session.finish_user_session("handle")
+    wldm.session.user.finish_user_session("handle")
 
     assert calls == [("close", "handle"), ("end", "handle")]
 
@@ -310,7 +310,7 @@ def test_finish_user_session_ends_pam_even_on_close_error(monkeypatch):
     monkeypatch.setattr(wldm.pam, "end_pam",
                         lambda pamh: calls.append(("end", pamh)))
 
-    wldm.user_session.finish_user_session("handle")
+    wldm.session.user.finish_user_session("handle")
 
     assert calls == [("close", "handle"), ("end", "handle")]
 
@@ -318,8 +318,8 @@ def test_finish_user_session_ends_pam_even_on_close_error(monkeypatch):
 def test_close_inherited_fds_preserves_keep_fds(monkeypatch):
     calls = []
 
-    monkeypatch.setattr(wldm.user_session.os, "sysconf", lambda name: 16)
-    monkeypatch.setattr(wldm.user_session.os, "closerange", lambda start, end: calls.append(("closerange", start, end)))
+    monkeypatch.setattr(wldm.session.user.os, "sysconf", lambda name: 16)
+    monkeypatch.setattr(wldm.session.user.os, "closerange", lambda start, end: calls.append(("closerange", start, end)))
 
     wldm.close_inherited_fds((7,))
 
@@ -331,14 +331,14 @@ def test_close_inherited_fds_preserves_keep_fds(monkeypatch):
 
 def test_cmd_main_fails_for_unknown_user(monkeypatch):
     monkeypatch.setattr(
-        wldm.user_session.pwd,
+        wldm.session.user.pwd,
         "getpwnam",
         lambda username: (_ for _ in ()).throw(KeyError(username)),
     )
 
     monkeypatch.setenv("WLDM_SESSION_USER", "missing")
 
-    result = wldm.user_session.cmd_main()
+    result = wldm.session.user.cmd_main()
 
     assert result == wldm.EX_FAILURE
 
@@ -347,13 +347,13 @@ def test_run_user_session_returns_early_when_console_is_unavailable(monkeypatch)
     closed = []
 
     monkeypatch.setattr(wldm.tty, "open_console", lambda: None)
-    monkeypatch.setattr(wldm.user_session.os, "close", lambda fd: closed.append(fd))
+    monkeypatch.setattr(wldm.session.user.os, "close", lambda fd: closed.append(fd))
 
     pw = pwd.struct_passwd(("alice", "x", 1001, 1001, "", "/home/alice", "/bin/bash"))
 
     monkeypatch.setenv("WLDM_SESSION_COMMAND", "exec /bin/bash -l")
 
-    assert wldm.user_session.run_user_session(pw, "login") == wldm.EX_FAILURE
+    assert wldm.session.user.run_user_session(pw, "login") == wldm.EX_FAILURE
     assert closed == []
 
 
@@ -379,7 +379,7 @@ def test_run_user_session_parent_path_opens_and_closes_resources(monkeypatch):
 
     monkeypatch.setattr(wldm.tty, "open_console", lambda: 77)
     monkeypatch.setattr(wldm.tty, "TTYdevice", DummyTTY)
-    monkeypatch.setattr(wldm.user_session, "prepare_user_terminal",
+    monkeypatch.setattr(wldm.session.user, "prepare_user_terminal",
                         lambda ttydev: calls.append(("prepare_user_terminal", ttydev.fd)))
     monkeypatch.setattr(wldm.pam, "start_pam",
                         lambda service, user: calls.append(("start_pam", service, user)) or "pamh")
@@ -389,32 +389,32 @@ def test_run_user_session_parent_path_opens_and_closes_resources(monkeypatch):
                         lambda pamh, name, value: calls.append(("putenv", pamh, name, value)))
     monkeypatch.setattr(wldm.pam, "open_pam_session",
                         lambda pamh: calls.append(("open_pam_session", pamh)))
-    monkeypatch.setattr(wldm.user_session, "new_user_environ",
+    monkeypatch.setattr(wldm.session.user, "new_user_environ",
                         lambda pamh, pw_arg, ttydev=None:
                         calls.append(("new_user_environ", pamh, pw_arg.pw_name)) or {"HOME": pw_arg.pw_dir})
     monkeypatch.setattr(
-        wldm.user_session,
+        wldm.session.user,
         "run_session_hook",
         lambda name, command, pw_arg, env, ttydev, session_prog:
             calls.append(("run_session_hook", name, command, session_prog, env)) or True,
     )
-    monkeypatch.setattr(wldm.user_session, "exec_user_program",
+    monkeypatch.setattr(wldm.session.user, "exec_user_program",
                         lambda ttydev, username, uid, gid, workdir, shell, wrapper, env:
                         calls.append(("exec_user_program", ttydev.fd, username, uid, gid, workdir,
                                       shell, wrapper, env)))
-    monkeypatch.setattr(wldm.user_session.os, "fork", lambda: 1234)
-    monkeypatch.setattr(wldm.user_session.os, "waitpid", lambda pid, flags: (pid, 0))
-    monkeypatch.setattr(wldm.user_session.os, "WIFEXITED", lambda status: True)
-    monkeypatch.setattr(wldm.user_session.os, "WEXITSTATUS", lambda status: 0)
-    monkeypatch.setattr(wldm.user_session.os, "close", lambda fd: calls.append(("close_console", fd)))
+    monkeypatch.setattr(wldm.session.user.os, "fork", lambda: 1234)
+    monkeypatch.setattr(wldm.session.user.os, "waitpid", lambda pid, flags: (pid, 0))
+    monkeypatch.setattr(wldm.session.user.os, "WIFEXITED", lambda status: True)
+    monkeypatch.setattr(wldm.session.user.os, "WEXITSTATUS", lambda status: 0)
+    monkeypatch.setattr(wldm.session.user.os, "close", lambda fd: calls.append(("close_console", fd)))
     monkeypatch.setattr(wldm.wtmp, "login",
                         lambda tty_path, username, host="": calls.append(("wtmp_login", tty_path, username, host)))
     monkeypatch.setattr(wldm.wtmp, "logout",
                         lambda tty_path, host="": calls.append(("wtmp_logout", tty_path, host)))
-    monkeypatch.setattr(wldm.user_session, "finish_user_session",
+    monkeypatch.setattr(wldm.session.user, "finish_user_session",
                         lambda pamh: calls.append(("finish_user_session", pamh)))
 
-    result = wldm.user_session.run_user_session(
+    result = wldm.session.user.run_user_session(
         pw,
         "custom-login",
         "",
@@ -463,7 +463,7 @@ def test_run_user_session_parent_path_logs_nonzero_exit(monkeypatch):
 
     monkeypatch.setenv("WLDM_SESSION_COMMAND", "exec /bin/bash -l")
 
-    result = wldm.user_session.run_user_session(pw, "login")
+    result = wldm.session.user.run_user_session(pw, "login")
 
     assert result == 7
     assert any("exited abnormally" in message for message in criticals)
@@ -485,16 +485,16 @@ def test_run_user_session_aborts_when_pre_hook_fails(monkeypatch):
 
     monkeypatch.setattr(wldm.tty, "open_console", lambda: 77)
     monkeypatch.setattr(wldm.tty, "TTYdevice", DummyTTY)
-    monkeypatch.setattr(wldm.user_session, "prepare_user_terminal", lambda ttydev: None)
-    monkeypatch.setattr(wldm.user_session, "open_user_pam_session", lambda pam_service, pw_arg, ttydev: wldm.user_session.contextlib.nullcontext("pamh"))
-    monkeypatch.setattr(wldm.user_session, "new_user_environ", lambda pamh, pw_arg, ttydev=None: {"HOME": pw_arg.pw_dir})
-    monkeypatch.setattr(wldm.user_session, "run_session_hook", lambda *args, **kwargs: False)
-    monkeypatch.setattr(wldm.user_session.os, "fork", lambda: (_ for _ in ()).throw(AssertionError("fork should not be called")))
-    monkeypatch.setattr(wldm.user_session.os, "close", lambda fd: calls.append(("close_console", fd)))
+    monkeypatch.setattr(wldm.session.user, "prepare_user_terminal", lambda ttydev: None)
+    monkeypatch.setattr(wldm.session.user, "open_user_pam_session", lambda pam_service, pw_arg, ttydev: wldm.session.user.contextlib.nullcontext("pamh"))
+    monkeypatch.setattr(wldm.session.user, "new_user_environ", lambda pamh, pw_arg, ttydev=None: {"HOME": pw_arg.pw_dir})
+    monkeypatch.setattr(wldm.session.user, "run_session_hook", lambda *args, **kwargs: False)
+    monkeypatch.setattr(wldm.session.user.os, "fork", lambda: (_ for _ in ()).throw(AssertionError("fork should not be called")))
+    monkeypatch.setattr(wldm.session.user.os, "close", lambda fd: calls.append(("close_console", fd)))
 
     monkeypatch.setenv("WLDM_SESSION_COMMAND", "exec /bin/bash -l")
 
-    result = wldm.user_session.run_user_session(pw, "login", "", "/usr/libexec/pre-hook", "")
+    result = wldm.session.user.run_user_session(pw, "login", "", "/usr/libexec/pre-hook", "")
 
     assert result == wldm.EX_FAILURE
     assert ("tty_close",) in calls
@@ -519,14 +519,14 @@ def test_prepare_user_terminal_switches_and_sets_controlling_tty(monkeypatch):
         def switch(self):
             calls.append(("tty_switch",))
 
-    monkeypatch.setattr(wldm.user_session.os, "setsid", lambda: calls.append(("setsid",)))
+    monkeypatch.setattr(wldm.session.user.os, "setsid", lambda: calls.append(("setsid",)))
     monkeypatch.setattr(
         wldm.tty,
         "make_control_tty",
         lambda fd: calls.append(("make_control_tty", fd)) or True,
     )
 
-    wldm.user_session.prepare_user_terminal(DummyTTY())
+    wldm.session.user.prepare_user_terminal(DummyTTY())
 
     assert calls == [
         ("tty_switch",),
@@ -543,11 +543,11 @@ def test_prepare_user_terminal_fails_when_tty_cannot_become_controlling(monkeypa
         def switch(self):
             return None
 
-    monkeypatch.setattr(wldm.user_session.os, "setsid", lambda: None)
+    monkeypatch.setattr(wldm.session.user.os, "setsid", lambda: None)
     monkeypatch.setattr(wldm.tty, "make_control_tty", lambda fd: False)
 
     try:
-        wldm.user_session.prepare_user_terminal(DummyTTY())
+        wldm.session.user.prepare_user_terminal(DummyTTY())
     except RuntimeError as exc:
         assert "/dev/tty12" in str(exc)
     else:

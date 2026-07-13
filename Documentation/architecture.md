@@ -103,7 +103,7 @@ launch user programs. It only owns the blocking PAM authentication flow.
 
 ### Greeter Session Wrapper
 
-[`src/wldm/greeter_session.py`](../src/wldm/greeter_session.py) exists to keep
+[`src/wldm/session/greeter.py`](../src/wldm/session/greeter.py) exists to keep
 the greeter compositor out of the root daemon while still creating a real
 PAM/logind session for the greeter user.
 
@@ -145,7 +145,7 @@ the daemon after successful authentication.
 
 ### User Session Wrapper
 
-[`src/wldm/user_session.py`](../src/wldm/user_session.py) creates the final
+[`src/wldm/session/user.py`](../src/wldm/session/user.py) creates the final
 user session. Like the greeter wrapper, it performs session setup before
 `execve()`-ing the selected user program.
 
