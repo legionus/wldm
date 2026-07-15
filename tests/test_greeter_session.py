@@ -69,14 +69,17 @@ def test_new_greeter_environ_preserves_safe_base_env_and_adds_runtime_dir(monkey
             "PYTHONPATH": "/srv/wldm/src",
             "XKB_DEFAULT_LAYOUT": "us,ru",
             "XKB_DEFAULT_OPTIONS": "grp:alt_shift_toggle",
+            "GDK_BACKEND": "x11",
+            "QT_QPA_PLATFORM": "xcb",
             "XDG_SESSION_ID": "19",
             "XDG_RUNTIME_DIR": "/run/user/0",
+            "XDG_SESSION_TYPE": "x11",
         },
     )
     monkeypatch.setattr(
         wldm.pam,
         "getenvlist",
-        lambda pamh: {"XDG_RUNTIME_DIR": "/run/user/1001", "LANG": "C.UTF-8"},
+        lambda pamh: {"XDG_RUNTIME_DIR": "/run/user/1001", "LANG": "C.UTF-8", "XDG_SESSION_TYPE": "x11"},
     )
     pw = pwd.struct_passwd(("gdm", "x", 1001, 1001, "", "/var/lib/gdm", "/bin/false"))
 
@@ -90,6 +93,9 @@ def test_new_greeter_environ_preserves_safe_base_env_and_adds_runtime_dir(monkey
     assert env["USER"] == "gdm"
     assert env["WLDM_ROLE"] == "greeter"
     assert env["XDG_RUNTIME_DIR"] == "/run/user/1001"
+    assert env["XDG_SESSION_TYPE"] == "wayland"
+    assert env["GDK_BACKEND"] == "wayland"
+    assert env["QT_QPA_PLATFORM"] == "wayland"
     assert env["LANG"] == "C.UTF-8"
     assert "XDG_SESSION_ID" not in env
 

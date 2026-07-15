@@ -72,6 +72,9 @@ def _new_greeter_environ(pamh: Optional[Any],
     env["LOGNAME"] = pw.pw_name
     env["TERM"] = wldm.policy.DEFAULT_TERM
     env["WLDM_ROLE"] = "greeter"
+    env["XDG_SESSION_TYPE"] = wldm.policy.SESSION_TYPE_WAYLAND
+    env["GDK_BACKEND"] = "wayland"
+    env["QT_QPA_PLATFORM"] = "wayland"
 
     env.setdefault("XDG_RUNTIME_DIR", f"/run/user/{pw.pw_uid}")
 
